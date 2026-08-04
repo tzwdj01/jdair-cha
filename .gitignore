@@ -1,0 +1,10 @@
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/*.pyd
+**/*.xlsx
+**/device_catalog_cache.json
+**/runtime/log/
+**/*.log
+venv
+**/runtime/LocalConfig.xml
