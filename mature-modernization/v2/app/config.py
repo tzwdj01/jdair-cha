@@ -55,6 +55,16 @@ def normalize_base_url(value: str) -> str:
     return normalized
 
 
+def env_url(name: str, default: str = "") -> str:
+    raw = os.getenv(name, default).strip()
+    if not raw:
+        return ""
+    parsed = urlparse(raw.rstrip("/"))
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise ValueError(f"{name} must be an HTTP(S) URL")
+    return raw.rstrip("/")
+
+
 def release_marker(name: str, default: str) -> str:
     try:
         value = (RELEASE_ROOT / name).read_text(encoding="utf-8").strip()
@@ -80,12 +90,36 @@ class Settings:
     dashboard_stale_seconds: int
     dashboard_initial_wait_seconds: float
     dashboard_state_dir: str
+    realtime_session_ttl_seconds: int
+    realtime_cleanup_interval_seconds: int
+    realtime_closed_retention_seconds: int
+    realtime_command_timeout_seconds: float
+    aee_api_base_url: str
+    aee_origin: str
+    aee_gateway_host: str
+    aee_gateway_port: int
+    aee_gateway_ssl: bool
+    aee_gateway_http_proxy: str
+    aee_username: str
+    aee_password: str
+    aee_login_timeout_seconds: float
+    aee_connect_timeout_seconds: float
     feature_dashboard_v2: bool
     feature_realtime_readonly: bool
     feature_realtime_audio: bool
     feature_realtime_control: bool
     feature_account_pool_v2: bool
     feature_records_v2: bool
+
+    def realtime_aee_is_configured(self) -> bool:
+        return bool(
+            self.aee_api_base_url
+            and self.aee_origin
+            and self.aee_gateway_host
+            and self.aee_gateway_port > 0
+            and self.aee_username
+            and self.aee_password
+        )
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -147,6 +181,46 @@ class Settings:
                 "/opt/jdair-cha/v2/data",
             ).strip()
             or "/opt/jdair-cha/v2/data",
+            realtime_session_ttl_seconds=env_int(
+                "CHA_V2_REALTIME_SESSION_TTL_SECONDS",
+                60,
+            ),
+            realtime_cleanup_interval_seconds=env_int(
+                "CHA_V2_REALTIME_CLEANUP_INTERVAL_SECONDS",
+                10,
+            ),
+            realtime_closed_retention_seconds=env_int(
+                "CHA_V2_REALTIME_CLOSED_RETENTION_SECONDS",
+                300,
+            ),
+            realtime_command_timeout_seconds=env_float(
+                "CHA_V2_REALTIME_COMMAND_TIMEOUT_SECONDS",
+                5.0,
+            ),
+            aee_api_base_url=env_url("CHA_V2_AEE_API_BASE_URL"),
+            aee_origin=env_url(
+                "CHA_V2_AEE_ORIGIN",
+            ),
+            aee_gateway_host=os.getenv(
+                "CHA_V2_AEE_GATEWAY_HOST",
+                "",
+            ).strip(),
+            aee_gateway_port=env_int("CHA_V2_AEE_GATEWAY_PORT", 7711),
+            aee_gateway_ssl=env_bool("CHA_V2_AEE_GATEWAY_SSL"),
+            aee_gateway_http_proxy=os.getenv(
+                "CHA_V2_AEE_GATEWAY_HTTP_PROXY",
+                "",
+            ).strip(),
+            aee_username=os.getenv("CHA_V2_AEE_USERNAME", "").strip(),
+            aee_password=os.getenv("CHA_V2_AEE_PASSWORD", ""),
+            aee_login_timeout_seconds=env_float(
+                "CHA_V2_AEE_LOGIN_TIMEOUT_SECONDS",
+                15.0,
+            ),
+            aee_connect_timeout_seconds=env_float(
+                "CHA_V2_AEE_CONNECT_TIMEOUT_SECONDS",
+                15.0,
+            ),
             feature_dashboard_v2=env_bool("CHA_V2_FEATURE_DASHBOARD_V2"),
             feature_realtime_readonly=env_bool(
                 "CHA_V2_FEATURE_REALTIME_READONLY"

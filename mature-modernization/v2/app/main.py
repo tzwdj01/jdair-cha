@@ -13,6 +13,8 @@ from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
 
 from .config import Settings
+from .realtime.api import create_realtime_router
+from .realtime.session_manager import RealtimeSessionManager
 from .services.dashboard import (
     DashboardAuthenticationError,
     DashboardService,
@@ -36,6 +38,7 @@ started_at = dt.datetime.now(UTC)
 dashboard_template_path = (
     Path(__file__).resolve().parent / "templates" / "m2_dashboard.html"
 )
+realtime_manager = RealtimeSessionManager(settings)
 
 
 def iso_now() -> str:
@@ -68,7 +71,11 @@ def envelope(
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    yield
+    await realtime_manager.start()
+    try:
+        yield
+    finally:
+        await realtime_manager.shutdown()
 
 
 app = FastAPI(
@@ -104,6 +111,16 @@ async def request_context(request: Request, call_next):
     response.headers["Referrer-Policy"] = "same-origin"
     response.headers["Cache-Control"] = "no-store"
     return response
+
+
+app.include_router(
+    create_realtime_router(
+        settings,
+        legacy_client,
+        realtime_manager,
+        envelope,
+    )
+)
 
 
 @app.exception_handler(Exception)
@@ -148,7 +165,12 @@ async def readiness(request: Request):
         legacy_latency_ms = None
 
     required = settings.legacy_is_required()
-    ready = not required or legacy_status == "ok"
+    realtime_configured = settings.realtime_aee_is_configured()
+    realtime_required = settings.feature_realtime_readonly
+    ready = (
+        (not required or legacy_status == "ok")
+        and (not realtime_required or realtime_configured)
+    )
     return envelope(
         request,
         {
@@ -161,7 +183,18 @@ async def readiness(request: Request):
                 },
                 "postgresql": {"status": "not_enabled", "required": False},
                 "redis": {"status": "not_enabled", "required": False},
-                "mcs8": {"status": "not_enabled", "required": False},
+                "mcs8": {
+                    "status": (
+                        "configured"
+                        if realtime_configured
+                        else (
+                            "misconfigured"
+                            if realtime_required
+                            else "not_enabled"
+                        )
+                    ),
+                    "required": realtime_required,
+                },
             },
         },
         ok=ready,
@@ -181,7 +214,18 @@ async def upstream_health(request: Request):
                     "status": status,
                     "http_status": result.status_code,
                     "latency_ms": round(result.latency_ms, 2),
-                }
+                },
+                "mcs8": {
+                    "status": (
+                        "configured"
+                        if settings.realtime_aee_is_configured()
+                        else (
+                            "misconfigured"
+                            if settings.feature_realtime_readonly
+                            else "not_enabled"
+                        )
+                    )
+                },
             },
             status_code=200 if status == "ok" else 503,
         )
@@ -193,7 +237,18 @@ async def upstream_health(request: Request):
                     "status": "unavailable",
                     "http_status": None,
                     "latency_ms": None,
-                }
+                },
+                "mcs8": {
+                    "status": (
+                        "configured"
+                        if settings.realtime_aee_is_configured()
+                        else (
+                            "misconfigured"
+                            if settings.feature_realtime_readonly
+                            else "not_enabled"
+                        )
+                    )
+                },
             },
             ok=False,
             status_code=503,

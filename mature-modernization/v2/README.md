@@ -3,7 +3,7 @@
 This service is deployed beside the existing CHA application. It owns only
 the `/api/v2/` namespace and does not replace existing `/api/*` routes.
 
-## M2 dashboard preview
+## M2 dashboard and M3.1 realtime session
 
 - `GET /api/v2/health`
 - `GET /api/v2/health/live`
@@ -19,6 +19,17 @@ the `/api/v2/` namespace and does not replace existing `/api/*` routes.
 - `GET /api/v2/dashboard/coverage`
 - `GET /api/v2/dashboard/exceptions`
 - `GET /api/v2/dashboard/freshness`
+- `GET /api/v2/realtime` (single-stream page; feature-gated)
+- `GET /api/v2/realtime/devices`
+- `POST /api/v2/realtime/sessions`
+- `GET /api/v2/realtime/sessions/{session_id}`
+- `POST /api/v2/realtime/sessions/{session_id}/heartbeat`
+- `POST /api/v2/realtime/sessions/{session_id}/streams`
+- `DELETE /api/v2/realtime/sessions/{session_id}/streams/{stream_id}`
+- `DELETE /api/v2/realtime/sessions/{session_id}`
+- `WS /ws/v2/realtime/{session_id}/control`
+- `WS /ws/v2/realtime/{session_id}/gateway`
+- `WS /ws/v2/realtime/{session_id}/media`
 - `GET /api/v2/docs`
 
 M2 enables only `dashboard_v2`. It uses a narrow, read-only adapter to the
@@ -30,9 +41,23 @@ block the whole dashboard. Device trend samples are stored in
 
 The legacy page and every legacy `/api/*` contract remain unchanged.
 
+The committed release keeps `realtime_readonly=false`. A development or test
+environment may explicitly enable it and provide AEE credentials through
+environment variables. The browser receives only a CHA session cookie and
+same-origin WebSocket paths. The V2 service logs in to AEE server-side, keeps
+gateway and media tokens in process memory, rewrites `ConnecteInfo`, and
+relays the SDK WebSockets without returning either token to browser code.
+M3.1 limits each CHA session to one video stream. Audio and device control
+remain disabled.
+
 ## Local test
 
 ```bash
 python -m unittest discover -s tests -v
 uvicorn app.main:app --host 127.0.0.1 --port 8791
 ```
+
+The real-device baseline additionally reads the existing CHA URL and login
+from `CHA_M3_LEGACY_URL`, `CHA_LOGIN_USER` and `CHA_LOGIN_PASS`. AEE settings
+use the `CHA_V2_AEE_*` environment variables documented in `.env.example`;
+none are written into the result JSON or browser/server log.
