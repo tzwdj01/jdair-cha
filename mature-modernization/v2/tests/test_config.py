@@ -41,6 +41,11 @@ class ConfigTests(unittest.TestCase):
         self.assertGreater(settings.dashboard_video_ttl_seconds, 0)
         self.assertGreater(settings.dashboard_initial_wait_seconds, 0)
         self.assertTrue(settings.dashboard_state_dir)
+        self.assertGreater(settings.realtime_session_ttl_seconds, 0)
+        self.assertGreater(settings.realtime_command_timeout_seconds, 0)
+        self.assertEqual(settings.aee_username, "")
+        self.assertEqual(settings.aee_password, "")
+        self.assertFalse(settings.realtime_aee_is_configured())
 
     def test_base_url_is_normalized_and_validated(self) -> None:
         self.assertEqual(
