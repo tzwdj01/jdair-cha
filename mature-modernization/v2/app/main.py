@@ -1,19 +1,25 @@
 from __future__ import annotations
 
 import datetime as dt
+import json
 import time
 import uuid
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Query, Request
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 
 from .config import Settings
+from .services.dashboard import (
+    DashboardAuthenticationError,
+    DashboardService,
+    DashboardSourceError,
+)
 from .services.legacy import (
     LegacyClient,
-    LegacyPayloadError,
     LegacyTransportError,
 )
 
@@ -24,8 +30,12 @@ legacy_client = LegacyClient(
     settings.legacy_base_url,
     settings.legacy_timeout_seconds,
 )
+dashboard_service = DashboardService(legacy_client, settings)
 started_monotonic = time.monotonic()
 started_at = dt.datetime.now(UTC)
+dashboard_template_path = (
+    Path(__file__).resolve().parent / "templates" / "m2_dashboard.html"
+)
 
 
 def iso_now() -> str:
@@ -208,95 +218,196 @@ async def features(request: Request):
     return envelope(request, {"features": settings.public_features()})
 
 
-@app.get("/api/v2/dashboard/overview")
-async def dashboard_overview(request: Request):
-    if not settings.feature_dashboard_v2:
-        return envelope(
-            request,
-            {
-                "code": "feature_disabled",
-                "feature": "dashboard_v2",
-                "message": "The v2 dashboard is not enabled for this release.",
-            },
-            ok=False,
-            status_code=404,
-        )
+def feature_disabled(request: Request) -> JSONResponse:
+    return envelope(
+        request,
+        {
+            "code": "feature_disabled",
+            "feature": "dashboard_v2",
+            "message": "The v2 dashboard is not enabled for this release.",
+        },
+        ok=False,
+        status_code=404,
+    )
 
-    cookie = request.headers.get("cookie", "")
-    if not cookie:
+
+async def dashboard_snapshot(
+    request: Request,
+    days: int,
+    city: str,
+    refresh: bool,
+) -> JSONResponse:
+    if not settings.feature_dashboard_v2:
+        return feature_disabled(request)
+    try:
+        data = await dashboard_service.snapshot(
+            request.headers.get("cookie", ""),
+            days=days,
+            city=city,
+            force=refresh,
+        )
+    except DashboardAuthenticationError:
         return envelope(
             request,
             {
                 "code": "authentication_required",
-                "message": "An authenticated CHA session is required.",
+                "message": "请先登录现有 CHA 系统，再打开 M2 态势看板。",
+                "login_url": "/",
             },
             ok=False,
             status_code=401,
         )
-
-    try:
-        result = await legacy_client.dashboard(cookie)
-    except LegacyTransportError:
+    except DashboardSourceError as exc:
         return envelope(
             request,
             {
-                "code": "legacy_unavailable",
-                "message": "The existing CHA data service is unavailable.",
+                "code": "dashboard_source_unavailable",
+                "message": "设备数据源当前不可用，且没有可用缓存。",
+                "detail": str(exc)[:180],
             },
             ok=False,
             status_code=503,
         )
+    return envelope(request, data)
 
-    if result.status_code in {401, 403}:
-        return envelope(
-            request,
-            {
-                "code": "authentication_required",
-                "message": "The CHA session is missing or expired.",
-            },
-            ok=False,
-            status_code=401,
-        )
-    if result.status_code != 200:
-        return envelope(
-            request,
-            {
-                "code": "legacy_error",
-                "message": "The existing CHA data service returned an error.",
-            },
-            ok=False,
-            status_code=502,
-        )
 
+@app.get("/api/v2/dashboard", response_class=HTMLResponse)
+async def dashboard_page(request: Request):
+    if not settings.feature_dashboard_v2:
+        return HTMLResponse(
+            status_code=404,
+            content=(
+                "<!doctype html><meta charset='utf-8'>"
+                "<title>M2 看板未启用</title>"
+                "<body style='font-family:sans-serif;padding:32px'>"
+                "<h1>M2 态势看板尚未启用</h1>"
+                "<p>当前版本的 dashboard_v2 功能开关处于关闭状态。</p>"
+                "<p><a href='/'>返回现有系统</a></p></body>"
+            ),
+        )
     try:
-        legacy_data = result.json()
-    except LegacyPayloadError:
-        return envelope(
-            request,
-            {
-                "code": "legacy_payload_error",
-                "message": "The existing CHA dashboard payload is invalid.",
-            },
-            ok=False,
-            status_code=502,
+        html = dashboard_template_path.read_text(encoding="utf-8")
+    except OSError:
+        return HTMLResponse(
+            status_code=500,
+            content="M2 dashboard template is unavailable.",
         )
+    return HTMLResponse(
+        content=html.replace("{{CHA_V2_VERSION}}", settings.version).replace(
+            "{{CHA_V2_BUILD}}",
+            settings.build,
+        )
+    )
 
-    devices = legacy_data.get("devices", {})
-    cities = legacy_data.get("cities", [])
+
+@app.get("/api/v2/dashboard/overview")
+async def dashboard_overview(
+    request: Request,
+    days: int = Query(3, ge=1, le=30),
+    city: str = Query("", max_length=32),
+    refresh: bool = Query(False),
+):
+    return await dashboard_snapshot(request, days, city, refresh)
+
+
+@app.get("/api/v2/dashboard/device-trend")
+async def dashboard_device_trend(
+    request: Request,
+    city: str = Query("", max_length=32),
+    refresh: bool = Query(False),
+):
+    response = await dashboard_snapshot(request, 3, city, refresh)
+    if response.status_code != 200:
+        return response
+    data = json.loads(response.body)["data"]
     return envelope(
         request,
         {
-            "summary": {
-                "devices": {
-                    "total": int(devices.get("total", 0) or 0),
-                    "online": int(devices.get("online", 0) or 0),
-                    "offline": int(devices.get("offline", 0) or 0),
-                },
-                "cities": cities if isinstance(cities, list) else [],
-            },
-            "source": {
-                "kind": "legacy_compatibility_adapter",
-                "latency_ms": round(result.latency_ms, 2),
-            },
+            "mode": "sampled_snapshot",
+            "device_status": data["device_status"],
+            "device_trend": data["device_trend"],
         },
+    )
+
+
+@app.get("/api/v2/dashboard/video-trend")
+async def dashboard_video_trend(
+    request: Request,
+    days: int = Query(3, ge=1, le=30),
+    city: str = Query("", max_length=32),
+    refresh: bool = Query(False),
+):
+    response = await dashboard_snapshot(request, days, city, refresh)
+    if response.status_code != 200:
+        return response
+    data = json.loads(response.body)["data"]
+    return envelope(
+        request,
+        {"scope": data["scope"], "video_trend": data["video_trend"]},
+    )
+
+
+@app.get("/api/v2/dashboard/geography")
+async def dashboard_geography(
+    request: Request,
+    days: int = Query(3, ge=1, le=30),
+    city: str = Query("", max_length=32),
+    refresh: bool = Query(False),
+):
+    response = await dashboard_snapshot(request, days, city, refresh)
+    if response.status_code != 200:
+        return response
+    data = json.loads(response.body)["data"]
+    return envelope(
+        request,
+        {
+            "scope": data["scope"],
+            "geography": data["geography"],
+            "map_points": data["map_points"],
+        },
+    )
+
+
+@app.get("/api/v2/dashboard/coverage")
+async def dashboard_coverage(
+    request: Request,
+    days: int = Query(3, ge=1, le=30),
+    city: str = Query("", max_length=32),
+    refresh: bool = Query(False),
+):
+    response = await dashboard_snapshot(request, days, city, refresh)
+    if response.status_code != 200:
+        return response
+    data = json.loads(response.body)["data"]
+    return envelope(request, data["coverage"])
+
+
+@app.get("/api/v2/dashboard/exceptions")
+async def dashboard_exceptions(
+    request: Request,
+    days: int = Query(3, ge=1, le=30),
+    city: str = Query("", max_length=32),
+    refresh: bool = Query(False),
+):
+    response = await dashboard_snapshot(request, days, city, refresh)
+    if response.status_code != 200:
+        return response
+    data = json.loads(response.body)["data"]
+    return envelope(request, data["exceptions"])
+
+
+@app.get("/api/v2/dashboard/freshness")
+async def dashboard_freshness(
+    request: Request,
+    days: int = Query(3, ge=1, le=30),
+    city: str = Query("", max_length=32),
+    refresh: bool = Query(False),
+):
+    response = await dashboard_snapshot(request, days, city, refresh)
+    if response.status_code != 200:
+        return response
+    data = json.loads(response.body)["data"]
+    return envelope(
+        request,
+        {"scope": data["scope"], "freshness": data["freshness"]},
     )

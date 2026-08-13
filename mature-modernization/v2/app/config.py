@@ -36,6 +36,17 @@ def env_float(name: str, default: float) -> float:
     return value if value > 0 else default
 
 
+def env_int(name: str, default: int) -> int:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        return default
+    return value if value > 0 else default
+
+
 def normalize_base_url(value: str) -> str:
     normalized = value.strip().rstrip("/")
     parsed = urlparse(normalized)
@@ -61,6 +72,14 @@ class Settings:
     allowed_hosts: tuple[str, ...]
     legacy_base_url: str
     legacy_timeout_seconds: float
+    dashboard_device_ttl_seconds: int
+    dashboard_video_ttl_seconds: int
+    dashboard_flight_ttl_seconds: int
+    dashboard_routine_ttl_seconds: int
+    dashboard_trend_ttl_seconds: int
+    dashboard_stale_seconds: int
+    dashboard_initial_wait_seconds: float
+    dashboard_state_dir: str
     feature_dashboard_v2: bool
     feature_realtime_readonly: bool
     feature_realtime_audio: bool
@@ -93,8 +112,41 @@ class Settings:
             ),
             legacy_timeout_seconds=env_float(
                 "CHA_V2_LEGACY_TIMEOUT_SECONDS",
-                5.0,
+                20.0,
             ),
+            dashboard_device_ttl_seconds=env_int(
+                "CHA_V2_DASHBOARD_DEVICE_TTL_SECONDS",
+                15,
+            ),
+            dashboard_video_ttl_seconds=env_int(
+                "CHA_V2_DASHBOARD_VIDEO_TTL_SECONDS",
+                180,
+            ),
+            dashboard_flight_ttl_seconds=env_int(
+                "CHA_V2_DASHBOARD_FLIGHT_TTL_SECONDS",
+                60,
+            ),
+            dashboard_routine_ttl_seconds=env_int(
+                "CHA_V2_DASHBOARD_ROUTINE_TTL_SECONDS",
+                300,
+            ),
+            dashboard_trend_ttl_seconds=env_int(
+                "CHA_V2_DASHBOARD_TREND_TTL_SECONDS",
+                300,
+            ),
+            dashboard_stale_seconds=env_int(
+                "CHA_V2_DASHBOARD_STALE_SECONDS",
+                3600,
+            ),
+            dashboard_initial_wait_seconds=env_float(
+                "CHA_V2_DASHBOARD_INITIAL_WAIT_SECONDS",
+                1.5,
+            ),
+            dashboard_state_dir=os.getenv(
+                "CHA_V2_DASHBOARD_STATE_DIR",
+                "/opt/jdair-cha/v2/data",
+            ).strip()
+            or "/opt/jdair-cha/v2/data",
             feature_dashboard_v2=env_bool("CHA_V2_FEATURE_DASHBOARD_V2"),
             feature_realtime_readonly=env_bool(
                 "CHA_V2_FEATURE_REALTIME_READONLY"

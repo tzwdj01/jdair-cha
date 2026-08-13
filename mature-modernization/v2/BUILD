@@ -1,1 +1,1 @@
-m1-legacy-adapter
+m2-dashboard-preview

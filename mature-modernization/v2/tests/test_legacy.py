@@ -10,6 +10,7 @@ from app.services.legacy import LegacyClient
 
 class _Handler(http.server.BaseHTTPRequestHandler):
     cookie_seen = ""
+    query_seen = ""
 
     def log_message(self, *_args) -> None:
         return
@@ -27,6 +28,11 @@ class _Handler(http.server.BaseHTTPRequestHandler):
                     "cities": ["Beijing"],
                 }
             ).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+        elif self.path.startswith("/api/flights?"):
+            _Handler.query_seen = self.path
+            body = json.dumps({"total": 3, "records": []}).encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
         else:
@@ -68,6 +74,16 @@ class LegacyClientTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.status_code, 200)
         self.assertEqual(_Handler.cookie_seen, "cha_session=test")
         self.assertEqual(result.json()["devices"]["online"], 2)
+
+    async def test_allowlisted_query_is_encoded(self) -> None:
+        result = await self.client.flights("cha_session=test", "2026-08-13")
+        self.assertEqual(result.status_code, 200)
+        self.assertIn("date=2026-08-13", _Handler.query_seen)
+        self.assertIn("size=100", _Handler.query_seen)
+
+    async def test_non_allowlisted_path_is_rejected(self) -> None:
+        with self.assertRaises(ValueError):
+            await self.client.get("http://example.com/private", None)
 
 
 if __name__ == "__main__":

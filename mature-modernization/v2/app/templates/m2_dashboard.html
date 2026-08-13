@@ -1,0 +1,991 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark light">
+  <link rel="icon" href="data:,">
+  <title>CHA 态势总览 · M2</title>
+  <style>
+    :root {
+      --bg: #07121d;
+      --bg-elevated: #0b1926;
+      --panel: rgba(12, 30, 44, .9);
+      --panel-strong: #0e2333;
+      --panel-soft: #102b3d;
+      --line: rgba(104, 168, 202, .22);
+      --line-strong: rgba(71, 193, 239, .42);
+      --text: #e8f5fb;
+      --muted: #88a9b9;
+      --accent: #27b7ed;
+      --accent-strong: #0d8fd1;
+      --accent-soft: rgba(39, 183, 237, .13);
+      --green: #29d3a2;
+      --green-soft: rgba(41, 211, 162, .12);
+      --amber: #f6b84f;
+      --amber-soft: rgba(246, 184, 79, .12);
+      --red: #ff6577;
+      --red-soft: rgba(255, 101, 119, .12);
+      --shadow: 0 18px 50px rgba(0, 0, 0, .28);
+      --radius: 14px;
+      --header-height: 58px;
+    }
+    html[data-theme="light"] {
+      --bg: #eef4f7;
+      --bg-elevated: #f7fbfd;
+      --panel: rgba(255, 255, 255, .94);
+      --panel-strong: #ffffff;
+      --panel-soft: #eef7fb;
+      --line: rgba(33, 99, 129, .16);
+      --line-strong: rgba(13, 143, 209, .35);
+      --text: #173044;
+      --muted: #617d8e;
+      --accent: #0789c6;
+      --accent-strong: #00699e;
+      --accent-soft: rgba(7, 137, 198, .09);
+      --green: #009b70;
+      --green-soft: rgba(0, 155, 112, .09);
+      --amber: #c77c00;
+      --amber-soft: rgba(199, 124, 0, .1);
+      --red: #d63b52;
+      --red-soft: rgba(214, 59, 82, .09);
+      --shadow: 0 16px 45px rgba(47, 83, 102, .13);
+    }
+    * { box-sizing: border-box; }
+    html { min-height: 100%; background: var(--bg); }
+    body {
+      min-width: 1180px;
+      min-height: 100vh;
+      margin: 0;
+      color: var(--text);
+      background:
+        radial-gradient(circle at 14% -10%, rgba(39, 183, 237, .16), transparent 32%),
+        radial-gradient(circle at 88% 2%, rgba(41, 211, 162, .08), transparent 26%),
+        var(--bg);
+      font: 13px/1.45 "Microsoft YaHei UI", "PingFang SC", Arial, sans-serif;
+    }
+    button, select { font: inherit; }
+    button { color: inherit; }
+    a { color: inherit; text-decoration: none; }
+    .topbar {
+      position: sticky;
+      z-index: 20;
+      top: 0;
+      height: var(--header-height);
+      display: flex;
+      align-items: center;
+      gap: 18px;
+      padding: 0 22px;
+      border-bottom: 1px solid var(--line);
+      background: color-mix(in srgb, var(--bg-elevated) 90%, transparent);
+      backdrop-filter: blur(16px);
+      box-shadow: 0 8px 30px rgba(0, 0, 0, .12);
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      min-width: 330px;
+    }
+    .brand-mark {
+      width: 34px;
+      height: 34px;
+      display: grid;
+      place-items: center;
+      border: 1px solid var(--line-strong);
+      border-radius: 10px;
+      background: linear-gradient(145deg, rgba(39, 183, 237, .2), rgba(39, 183, 237, .04));
+      color: var(--accent);
+      box-shadow: inset 0 0 20px rgba(39, 183, 237, .08);
+    }
+    .brand-mark svg { width: 22px; height: 22px; }
+    .brand h1 { margin: 0; font-size: 17px; letter-spacing: .4px; }
+    .brand p { margin: 1px 0 0; color: var(--muted); font-size: 11px; }
+    .pilot-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 8px;
+      border: 1px solid var(--line-strong);
+      border-radius: 999px;
+      color: var(--accent);
+      background: var(--accent-soft);
+      font-size: 11px;
+      white-space: nowrap;
+    }
+    .pilot-badge::before {
+      content: "";
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--green);
+      box-shadow: 0 0 0 4px var(--green-soft);
+    }
+    .top-actions {
+      margin-left: auto;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .button, .select {
+      height: 32px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      color: var(--text);
+      outline: none;
+    }
+    .select { min-width: 112px; padding: 0 28px 0 10px; }
+    .button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 0 11px;
+      cursor: pointer;
+      transition: .18s ease;
+    }
+    .button:hover { border-color: var(--line-strong); background: var(--panel-soft); }
+    .button.primary {
+      border-color: rgba(39, 183, 237, .5);
+      background: linear-gradient(180deg, rgba(39, 183, 237, .24), rgba(13, 143, 209, .16));
+      color: var(--text);
+    }
+    .button:disabled { opacity: .55; cursor: wait; }
+    .icon-button { width: 32px; padding: 0; }
+    .status-line {
+      min-width: 148px;
+      color: var(--muted);
+      font-size: 11px;
+      text-align: right;
+      white-space: nowrap;
+    }
+    main { padding: 15px 18px 24px; }
+    .notice {
+      display: none;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 12px;
+      padding: 9px 12px;
+      border: 1px solid rgba(246, 184, 79, .35);
+      border-radius: 10px;
+      color: var(--amber);
+      background: var(--amber-soft);
+    }
+    .notice.show { display: flex; }
+    .metric-grid {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+    .metric {
+      position: relative;
+      min-height: 95px;
+      overflow: hidden;
+      padding: 13px 14px 11px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: linear-gradient(150deg, var(--panel), color-mix(in srgb, var(--panel) 90%, var(--accent-soft)));
+      box-shadow: var(--shadow);
+    }
+    .metric::after {
+      content: "";
+      position: absolute;
+      width: 80px;
+      height: 80px;
+      right: -28px;
+      top: -30px;
+      border-radius: 50%;
+      background: var(--accent-soft);
+    }
+    .metric.green::after { background: var(--green-soft); }
+    .metric.amber::after { background: var(--amber-soft); }
+    .metric.red::after { background: var(--red-soft); }
+    .metric-label { color: var(--muted); font-size: 12px; }
+    .metric-value {
+      margin-top: 8px;
+      font-size: 27px;
+      font-weight: 700;
+      line-height: 1;
+      font-variant-numeric: tabular-nums;
+    }
+    .metric-value small { margin-left: 3px; color: var(--muted); font-size: 12px; font-weight: 500; }
+    .metric-foot {
+      margin-top: 9px;
+      color: var(--muted);
+      font-size: 11px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .metric-foot b { color: var(--text); font-weight: 600; }
+    .layout-top {
+      display: grid;
+      grid-template-columns: 1.18fr .82fr 1fr;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+    .layout-middle {
+      display: grid;
+      grid-template-columns: 1.25fr .75fr;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+    .layout-bottom {
+      display: grid;
+      grid-template-columns: 1.45fr .55fr;
+      gap: 10px;
+    }
+    .panel {
+      min-width: 0;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--panel);
+      box-shadow: var(--shadow);
+    }
+    .panel-header {
+      height: 43px;
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      padding: 0 13px;
+      border-bottom: 1px solid var(--line);
+      background: linear-gradient(180deg, var(--panel-soft), transparent);
+    }
+    .panel-header h2 { margin: 0; font-size: 13px; font-weight: 650; }
+    .panel-header .sub { color: var(--muted); font-size: 10px; }
+    .panel-header .right { margin-left: auto; color: var(--muted); font-size: 10px; }
+    .panel-body { padding: 12px; }
+    .chart { width: 100%; height: 228px; display: block; }
+    .status-wrap {
+      height: 228px;
+      display: grid;
+      grid-template-columns: 148px 1fr;
+      align-items: center;
+      gap: 14px;
+    }
+    .donut {
+      position: relative;
+      width: 138px;
+      height: 138px;
+      display: grid;
+      place-items: center;
+      border-radius: 50%;
+      background: conic-gradient(var(--green) 0deg, var(--green) var(--donut-angle, 0deg), var(--red) var(--donut-angle, 0deg), var(--red) 360deg);
+      box-shadow: 0 0 35px rgba(39, 183, 237, .08);
+    }
+    .donut::before {
+      content: "";
+      width: 94px;
+      height: 94px;
+      border-radius: 50%;
+      background: var(--panel-strong);
+      box-shadow: inset 0 0 20px rgba(0, 0, 0, .18);
+    }
+    .donut-center { position: absolute; text-align: center; }
+    .donut-center strong { display: block; font-size: 26px; line-height: 1; }
+    .donut-center span { color: var(--muted); font-size: 10px; }
+    .legend-list { display: grid; gap: 9px; }
+    .legend-row {
+      display: grid;
+      grid-template-columns: 9px 1fr auto;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 9px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: color-mix(in srgb, var(--panel-soft) 55%, transparent);
+    }
+    .legend-dot { width: 7px; height: 7px; border-radius: 50%; }
+    .legend-row b { font-size: 15px; font-variant-numeric: tabular-nums; }
+    .legend-row span { color: var(--muted); font-size: 11px; }
+    .geo-map {
+      position: relative;
+      height: 228px;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background:
+        linear-gradient(var(--line) 1px, transparent 1px),
+        linear-gradient(90deg, var(--line) 1px, transparent 1px),
+        radial-gradient(ellipse at 54% 55%, var(--accent-soft), transparent 62%),
+        var(--bg-elevated);
+      background-size: 36px 36px, 36px 36px, auto, auto;
+    }
+    .geo-map::before {
+      content: "设备地理态势 · 经纬度投影";
+      position: absolute;
+      left: 10px;
+      top: 8px;
+      z-index: 2;
+      color: var(--muted);
+      font-size: 10px;
+    }
+    .map-bubble {
+      position: absolute;
+      min-width: 30px;
+      height: 30px;
+      display: grid;
+      place-items: center;
+      transform: translate(-50%, -50%);
+      border: 1px solid rgba(255, 255, 255, .42);
+      border-radius: 50%;
+      color: white;
+      background: rgba(13, 143, 209, .88);
+      box-shadow: 0 0 0 6px rgba(39, 183, 237, .09), 0 5px 18px rgba(0, 0, 0, .25);
+      cursor: pointer;
+      font-size: 10px;
+      font-weight: 700;
+    }
+    .map-bubble.alert { background: rgba(255, 101, 119, .88); box-shadow: 0 0 0 6px rgba(255, 101, 119, .09), 0 5px 18px rgba(0, 0, 0, .25); }
+    .map-label {
+      position: absolute;
+      transform: translate(-50%, 16px);
+      color: var(--text);
+      font-size: 10px;
+      white-space: nowrap;
+      text-shadow: 0 1px 4px var(--bg);
+      pointer-events: none;
+    }
+    .progress-list { display: grid; gap: 12px; }
+    .progress-item { display: grid; gap: 6px; }
+    .progress-head { display: flex; justify-content: space-between; gap: 10px; }
+    .progress-head span { color: var(--muted); font-size: 11px; }
+    .progress-head b { font-size: 12px; }
+    .progress-track {
+      height: 8px;
+      overflow: hidden;
+      border-radius: 99px;
+      background: color-mix(in srgb, var(--line) 72%, transparent);
+    }
+    .progress-bar {
+      height: 100%;
+      width: 0;
+      border-radius: 99px;
+      background: linear-gradient(90deg, var(--accent-strong), var(--accent));
+      box-shadow: 0 0 14px var(--accent-soft);
+      transition: width .5s ease;
+    }
+    .progress-bar.green { background: linear-gradient(90deg, #0b9b73, var(--green)); }
+    .progress-bar.amber { background: linear-gradient(90deg, #c47c00, var(--amber)); }
+    .coverage-note {
+      margin-top: 17px;
+      padding: 9px 10px;
+      border: 1px dashed var(--line);
+      border-radius: 8px;
+      color: var(--muted);
+      background: color-mix(in srgb, var(--panel-soft) 55%, transparent);
+      font-size: 10px;
+    }
+    .geo-table-wrap, .exception-table-wrap { overflow: auto; }
+    table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+    th {
+      position: sticky;
+      z-index: 1;
+      top: 0;
+      height: 31px;
+      padding: 0 8px;
+      border-bottom: 1px solid var(--line);
+      color: var(--muted);
+      background: var(--panel-strong);
+      font-size: 10px;
+      font-weight: 600;
+      text-align: left;
+      white-space: nowrap;
+    }
+    td {
+      height: 31px;
+      padding: 0 8px;
+      border-bottom: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 11px;
+    }
+    tbody tr { transition: background .12s ease; }
+    tbody tr:hover { background: var(--accent-soft); }
+    tbody tr.clickable { cursor: pointer; }
+    .geo-table-wrap { height: 224px; }
+    .exception-table-wrap { height: 278px; }
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 42px;
+      height: 19px;
+      padding: 0 6px;
+      border-radius: 999px;
+      font-size: 9px;
+    }
+    .tag.high { color: var(--red); background: var(--red-soft); border: 1px solid rgba(255, 101, 119, .24); }
+    .tag.medium { color: var(--amber); background: var(--amber-soft); border: 1px solid rgba(246, 184, 79, .24); }
+    .tag.info { color: var(--accent); background: var(--accent-soft); border: 1px solid rgba(39, 183, 237, .24); }
+    .status-dot {
+      display: inline-block;
+      width: 6px;
+      height: 6px;
+      margin-right: 5px;
+      border-radius: 50%;
+      background: var(--muted);
+    }
+    .status-dot.online, .status-dot.fresh { background: var(--green); box-shadow: 0 0 0 3px var(--green-soft); }
+    .status-dot.offline, .status-dot.unavailable { background: var(--red); box-shadow: 0 0 0 3px var(--red-soft); }
+    .status-dot.stale { background: var(--amber); box-shadow: 0 0 0 3px var(--amber-soft); }
+    .freshness-list {
+      display: grid;
+      gap: 7px;
+      max-height: 278px;
+      overflow: auto;
+    }
+    .freshness-row {
+      padding: 8px 9px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: color-mix(in srgb, var(--panel-soft) 48%, transparent);
+    }
+    .freshness-title { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    .freshness-title b { font-size: 11px; }
+    .freshness-title span { color: var(--muted); font-size: 9px; }
+    .freshness-meta {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      margin-top: 5px;
+      color: var(--muted);
+      font-size: 9px;
+    }
+    .empty {
+      height: 100%;
+      min-height: 90px;
+      display: grid;
+      place-items: center;
+      color: var(--muted);
+      text-align: center;
+    }
+    .auth-screen {
+      display: none;
+      min-height: calc(100vh - var(--header-height) - 50px);
+      place-items: center;
+    }
+    .auth-screen.show { display: grid; }
+    .auth-card {
+      width: 460px;
+      padding: 30px;
+      border: 1px solid var(--line-strong);
+      border-radius: 18px;
+      background: var(--panel);
+      box-shadow: var(--shadow);
+      text-align: center;
+    }
+    .auth-card .brand-mark { margin: 0 auto 16px; width: 48px; height: 48px; }
+    .auth-card h2 { margin: 0 0 8px; font-size: 20px; }
+    .auth-card p { margin: 0 0 20px; color: var(--muted); }
+    .dashboard-shell.hidden { display: none; }
+    .skeleton {
+      position: relative;
+      overflow: hidden;
+      color: transparent !important;
+      border-radius: 5px;
+      background: color-mix(in srgb, var(--line) 70%, transparent);
+    }
+    .skeleton::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      transform: translateX(-100%);
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,.08), transparent);
+      animation: shimmer 1.2s infinite;
+    }
+    @keyframes shimmer { to { transform: translateX(100%); } }
+    @media (max-width: 1320px) {
+      .metric-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      .layout-top { grid-template-columns: 1.15fr .85fr; }
+      .layout-top .geo-panel { grid-column: 1 / -1; }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+          <path d="M4 18.5h16M6.2 16V9.4L12 5l5.8 4.4V16"/>
+          <path d="M9 16v-4h6v4M3.5 8.5 12 2.8l8.5 5.7"/>
+        </svg>
+      </div>
+      <div>
+        <h1>京东航空维修部视频监察平台</h1>
+        <p>态势总览 / Operational Situation Overview</p>
+      </div>
+      <span class="pilot-badge">M2 独立灰度</span>
+    </div>
+    <div class="top-actions">
+      <select id="days" class="select" aria-label="趋势统计时间" title="仅控制视频记录趋势时间范围">
+        <option value="1">今天</option>
+        <option value="3" selected>近 3 天</option>
+        <option value="7">近 7 天</option>
+        <option value="14">近 14 天</option>
+        <option value="30">近 30 天</option>
+      </select>
+      <select id="city" class="select" aria-label="城市筛选">
+        <option value="">全部城市</option>
+      </select>
+      <button id="refreshBtn" class="button primary" type="button">刷新数据</button>
+      <a class="button" href="/" target="_blank" rel="noopener">现有系统</a>
+      <button id="themeBtn" class="button icon-button" type="button" title="切换日间/夜间">☼</button>
+      <div class="status-line">
+        <div id="userLine">正在验证会话…</div>
+        <div id="updateLine">版本 {{CHA_V2_VERSION}} · {{CHA_V2_BUILD}}</div>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <div id="authScreen" class="auth-screen">
+      <section class="auth-card">
+        <div class="brand-mark">⌁</div>
+        <h2>需要登录现有 CHA 系统</h2>
+        <p id="authMessage">M2 看板沿用现有登录会话，不保存或修改您的账号凭证。</p>
+        <a class="button primary" href="/">前往登录</a>
+      </section>
+    </div>
+
+    <div id="dashboardShell" class="dashboard-shell">
+      <div id="notice" class="notice"></div>
+
+      <section class="metric-grid" aria-label="核心指标">
+        <article class="metric">
+          <div class="metric-label">纳管终端</div>
+          <div id="metricDevices" class="metric-value skeleton">--</div>
+          <div id="metricDevicesFoot" class="metric-foot">当前筛选范围</div>
+        </article>
+        <article class="metric green">
+          <div class="metric-label">设备在线率</div>
+          <div id="metricOnline" class="metric-value skeleton">--</div>
+          <div id="metricOnlineFoot" class="metric-foot">在线 / 离线</div>
+        </article>
+        <article class="metric">
+          <div class="metric-label">近 3 日视频文件</div>
+          <div id="metricFiles" class="metric-value skeleton">--</div>
+          <div id="metricFilesFoot" class="metric-foot">设备文件覆盖率</div>
+        </article>
+        <article class="metric">
+          <div class="metric-label">近 3 日存储量</div>
+          <div id="metricStorage" class="metric-value skeleton">--</div>
+          <div id="metricStorageFoot" class="metric-foot">平台文件统计</div>
+        </article>
+        <article class="metric amber">
+          <div class="metric-label">今日航班动态</div>
+          <div id="metricFlights" class="metric-value skeleton">--</div>
+          <div class="metric-foot">辅助查询数据源</div>
+        </article>
+        <article class="metric amber">
+          <div class="metric-label">今日例行任务</div>
+          <div id="metricRoutines" class="metric-value skeleton">--</div>
+          <div class="metric-foot">辅助查询数据源</div>
+        </article>
+      </section>
+
+      <section class="layout-top">
+        <article class="panel">
+          <header class="panel-header">
+            <h2>视频记录趋势</h2>
+            <span class="sub">按日期统计平台文件数量</span>
+            <span id="trendStatus" class="right">等待数据</span>
+          </header>
+          <div class="panel-body"><svg id="trendChart" class="chart" role="img" aria-label="视频记录趋势"></svg></div>
+        </article>
+
+        <article class="panel">
+          <header class="panel-header">
+            <h2>设备在线状态</h2>
+            <span class="sub">当前快照</span>
+          </header>
+          <div class="panel-body">
+            <div class="status-wrap">
+              <div id="statusDonut" class="donut" style="--donut-angle:0deg">
+                <div class="donut-center"><strong id="donutRate">--</strong><span>在线率</span></div>
+              </div>
+              <div class="legend-list">
+                <div class="legend-row"><i class="legend-dot" style="background:var(--green)"></i><span>在线设备</span><b id="legendOnline">--</b></div>
+                <div class="legend-row"><i class="legend-dot" style="background:var(--red)"></i><span>离线设备</span><b id="legendOffline">--</b></div>
+                <div class="legend-row"><i class="legend-dot" style="background:var(--accent)"></i><span>覆盖城市</span><b id="legendCities">--</b></div>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <article class="panel geo-panel">
+          <header class="panel-header">
+            <h2>设备地理态势</h2>
+            <span class="sub">点击气泡筛选城市</span>
+            <span id="mapStatus" class="right">真实经纬度投影</span>
+          </header>
+          <div class="panel-body"><div id="geoMap" class="geo-map"></div></div>
+        </article>
+      </section>
+
+      <section class="layout-middle">
+        <article class="panel">
+          <header class="panel-header">
+            <h2>城市设备与视频覆盖</h2>
+            <span class="sub">点击行进行城市下钻</span>
+            <span id="geoCount" class="right">--</span>
+          </header>
+          <div class="geo-table-wrap">
+            <table>
+              <colgroup>
+                <col style="width:18%"><col style="width:12%"><col style="width:12%">
+                <col style="width:12%"><col style="width:16%"><col style="width:16%"><col style="width:14%">
+              </colgroup>
+              <thead><tr><th>城市</th><th>设备</th><th>在线</th><th>离线</th><th>在线率</th><th>文件数量</th><th>存储量</th></tr></thead>
+              <tbody id="geoRows"></tbody>
+            </table>
+          </div>
+        </article>
+
+        <article class="panel">
+          <header class="panel-header">
+            <h2>覆盖质量</h2>
+            <span class="sub">M2 首版口径</span>
+          </header>
+          <div class="panel-body">
+            <div class="progress-list">
+              <div class="progress-item">
+                <div class="progress-head"><span>设备在线覆盖</span><b id="coverageOnlineText">--</b></div>
+                <div class="progress-track"><div id="coverageOnline" class="progress-bar green"></div></div>
+              </div>
+              <div class="progress-item">
+                <div class="progress-head"><span>近 3 日有文件设备</span><b id="coverageFilesText">--</b></div>
+                <div class="progress-track"><div id="coverageFiles" class="progress-bar"></div></div>
+              </div>
+              <div class="progress-item">
+                <div class="progress-head"><span>有文件城市覆盖</span><b id="coverageCitiesText">--</b></div>
+                <div class="progress-track"><div id="coverageCities" class="progress-bar amber"></div></div>
+              </div>
+            </div>
+            <div id="coverageNote" class="coverage-note">正在加载指标口径…</div>
+          </div>
+        </article>
+      </section>
+
+      <section class="layout-bottom">
+        <article class="panel">
+          <header class="panel-header">
+            <h2>重点异常</h2>
+            <span class="sub">离线、无近期文件、定位延迟</span>
+            <span id="exceptionCount" class="right">--</span>
+          </header>
+          <div class="exception-table-wrap">
+            <table>
+              <colgroup>
+                <col style="width:8%"><col style="width:13%"><col style="width:15%">
+                <col style="width:10%"><col style="width:10%"><col style="width:12%"><col style="width:32%">
+              </colgroup>
+              <thead><tr><th>等级</th><th>设备编号</th><th>设备名称</th><th>城市</th><th>状态</th><th>近 3 日文件</th><th>异常说明</th></tr></thead>
+              <tbody id="exceptionRows"></tbody>
+            </table>
+          </div>
+        </article>
+
+        <article class="panel">
+          <header class="panel-header">
+            <h2>数据新鲜度</h2>
+            <span class="sub">单源异常不阻断整屏</span>
+          </header>
+          <div class="panel-body"><div id="freshnessList" class="freshness-list"></div></div>
+        </article>
+      </section>
+    </div>
+  </main>
+
+  <script>
+    const state = { data: null, loading: false, timer: null };
+    const $ = (id) => document.getElementById(id);
+    const fmt = new Intl.NumberFormat("zh-CN");
+
+    function escapeHtml(value) {
+      return String(value ?? "").replace(/[&<>"']/g, (char) => ({
+        "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;"
+      })[char]);
+    }
+    function formatNumber(value, fallback = "--") {
+      return value === null || value === undefined ? fallback : fmt.format(Number(value) || 0);
+    }
+    function formatPercent(value) {
+      return value === null || value === undefined ? "--" : `${Number(value).toFixed(1)}%`;
+    }
+    function formatSize(mb) {
+      if (mb === null || mb === undefined) return "--";
+      const value = Number(mb) || 0;
+      return value >= 1024 ? `${(value / 1024).toFixed(2)} GB` : `${value.toFixed(0)} MB`;
+    }
+    function localTime(value) {
+      if (!value) return "--";
+      const date = new Date(value);
+      return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleTimeString("zh-CN", {hour12:false});
+    }
+    function setMetric(id, html) {
+      const el = $(id);
+      el.classList.remove("skeleton");
+      el.innerHTML = html;
+    }
+    function showNotice(message, level = "warn") {
+      const el = $("notice");
+      if (!message) { el.className = "notice"; el.textContent = ""; return; }
+      el.className = `notice show ${level}`;
+      el.textContent = message;
+    }
+    function showAuth(message) {
+      $("dashboardShell").classList.add("hidden");
+      $("authScreen").classList.add("show");
+      if (message) $("authMessage").textContent = message;
+      $("userLine").textContent = "会话未登录";
+    }
+    function showDashboard() {
+      $("dashboardShell").classList.remove("hidden");
+      $("authScreen").classList.remove("show");
+    }
+
+    async function loadDashboard(force = false) {
+      if (state.loading) return;
+      state.loading = true;
+      $("refreshBtn").disabled = true;
+      $("refreshBtn").textContent = force ? "强制刷新中…" : "加载中…";
+      const query = new URLSearchParams({
+        days: $("days").value,
+        city: $("city").value,
+        refresh: force ? "true" : "false"
+      });
+      try {
+        const response = await fetch(`/api/v2/dashboard/overview?${query}`, {cache: "no-store"});
+        const payload = await response.json();
+        if (response.status === 401) {
+          showAuth(payload?.data?.message || "请先登录现有 CHA 系统。");
+          return;
+        }
+        if (!response.ok || !payload.ok) {
+          throw new Error(payload?.data?.message || `数据接口返回 ${response.status}`);
+        }
+        showDashboard();
+        state.data = payload.data;
+        renderAll(payload.data, payload.meta);
+      } catch (error) {
+        showNotice(`M2 看板加载失败：${error.message || error}`);
+      } finally {
+        state.loading = false;
+        $("refreshBtn").disabled = false;
+        $("refreshBtn").textContent = "刷新数据";
+      }
+    }
+
+    function renderAll(data, meta) {
+      const summary = data.summary;
+      const scope = data.scope;
+      $("userLine").textContent = `已登录：${scope.generated_for || "--"}`;
+      $("updateLine").textContent = `更新于 ${localTime(meta.generated_at)} · v${meta.version}`;
+      syncCities(scope.available_cities || [], scope.city || "");
+      renderMetrics(summary);
+      renderStatus(data.device_status, summary.cities.total);
+      renderTrend(data.video_trend || []);
+      renderMap(data.map_points || []);
+      renderGeography(data.geography || []);
+      renderCoverage(data.coverage || {});
+      renderExceptions(data.exceptions || {});
+      renderFreshness(data.freshness || []);
+
+      const unavailable = (data.freshness || []).filter((item) => item.status === "unavailable");
+      const stale = (data.freshness || []).filter((item) => item.status === "stale");
+      if (unavailable.length) {
+        showNotice(`部分指标正在后台预热或暂时不可用：${unavailable.map((item) => item.label).join("、")}。看板会自动补齐，不影响已就绪模块。`);
+        window.clearTimeout(state.timer);
+        state.timer = window.setTimeout(() => loadDashboard(false), 9000);
+      } else if (stale.length) {
+        showNotice(`当前使用最近一次成功缓存：${stale.map((item) => item.label).join("、")}。`);
+      } else {
+        showNotice("");
+      }
+    }
+
+    function syncCities(cities, selected) {
+      const select = $("city");
+      const current = selected || select.value;
+      select.innerHTML = `<option value="">全部城市</option>` + cities.map((city) =>
+        `<option value="${escapeHtml(city)}">${escapeHtml(city)}</option>`
+      ).join("");
+      if ([...select.options].some((option) => option.value === current)) select.value = current;
+    }
+
+    function renderMetrics(summary) {
+      const devices = summary.devices;
+      const files = summary.files;
+      const operations = summary.operations;
+      setMetric("metricDevices", `${formatNumber(devices.total)}<small>台</small>`);
+      $("metricDevicesFoot").innerHTML = `覆盖 <b>${formatNumber(summary.cities.total)}</b> 个城市`;
+      setMetric("metricOnline", `${formatPercent(devices.online_rate)}`);
+      $("metricOnlineFoot").innerHTML = `在线 <b>${formatNumber(devices.online)}</b> / 离线 <b>${formatNumber(devices.offline)}</b>`;
+      setMetric("metricFiles", `${formatNumber(files.count)}<small>个</small>`);
+      $("metricFilesFoot").innerHTML = files.device_coverage_rate === null
+        ? "后台统计预热中"
+        : `设备覆盖率 <b>${formatPercent(files.device_coverage_rate)}</b>`;
+      setMetric("metricStorage", files.size_mb === null ? "--" : formatSize(files.size_mb));
+      $("metricStorageFoot").textContent = files.size_mb === null ? "后台统计预热中" : "平台文件近 3 日汇总";
+      setMetric("metricFlights", `${formatNumber(operations.flights_today)}<small>班</small>`);
+      setMetric("metricRoutines", `${formatNumber(operations.routine_tasks_today)}<small>项</small>`);
+    }
+
+    function renderStatus(status, cityCount) {
+      const rate = Number(status.online_rate) || 0;
+      $("statusDonut").style.setProperty("--donut-angle", `${Math.max(0, Math.min(360, rate * 3.6))}deg`);
+      $("donutRate").textContent = formatPercent(rate);
+      $("legendOnline").textContent = formatNumber(status.online);
+      $("legendOffline").textContent = formatNumber(status.offline);
+      $("legendCities").textContent = formatNumber(cityCount);
+    }
+
+    function renderTrend(rows) {
+      const svg = $("trendChart");
+      const width = Math.max(540, svg.clientWidth || 680);
+      const height = 228;
+      svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+      if (!rows.length) {
+        svg.innerHTML = `<text x="${width / 2}" y="${height / 2}" fill="var(--muted)" text-anchor="middle">文件趋势正在后台预热</text>`;
+        $("trendStatus").textContent = "预热中";
+        return;
+      }
+      const margin = {left: 42, right: 16, top: 18, bottom: 31};
+      const plotW = width - margin.left - margin.right;
+      const plotH = height - margin.top - margin.bottom;
+      const values = rows.map((row) => Number(row.count) || 0);
+      const max = Math.max(1, ...values);
+      const x = (index) => margin.left + (rows.length === 1 ? plotW / 2 : index * plotW / (rows.length - 1));
+      const y = (value) => margin.top + plotH - (value / max) * plotH;
+      const line = rows.map((row, index) => `${index ? "L" : "M"} ${x(index)} ${y(values[index])}`).join(" ");
+      const area = `${line} L ${x(rows.length - 1)} ${margin.top + plotH} L ${x(0)} ${margin.top + plotH} Z`;
+      const grid = [0, .25, .5, .75, 1].map((part) => {
+        const gy = margin.top + plotH * part;
+        const value = Math.round(max * (1 - part));
+        return `<line x1="${margin.left}" y1="${gy}" x2="${width - margin.right}" y2="${gy}" stroke="var(--line)" stroke-width="1"/>
+          <text x="${margin.left - 8}" y="${gy + 3}" fill="var(--muted)" font-size="9" text-anchor="end">${value}</text>`;
+      }).join("");
+      const labels = rows.map((row, index) => `<text x="${x(index)}" y="${height - 8}" fill="var(--muted)" font-size="9" text-anchor="middle">${escapeHtml(row.label)}</text>`).join("");
+      const points = rows.map((row, index) => `<g><circle cx="${x(index)}" cy="${y(values[index])}" r="4" fill="var(--accent)" stroke="var(--panel-strong)" stroke-width="2"/><title>${escapeHtml(row.date)}：${values[index]} 个文件</title></g>`).join("");
+      svg.innerHTML = `
+        <defs><linearGradient id="trendFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--accent)" stop-opacity=".34"/><stop offset="1" stop-color="var(--accent)" stop-opacity=".02"/></linearGradient></defs>
+        ${grid}<path d="${area}" fill="url(#trendFill)"/><path d="${line}" fill="none" stroke="var(--accent)" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round"/>
+        ${points}${labels}`;
+      $("trendStatus").textContent = `${rows.length} 天 · 共 ${formatNumber(values.reduce((sum, value) => sum + value, 0))} 个`;
+    }
+
+    function renderMap(points) {
+      const map = $("geoMap");
+      if (!points.length) {
+        map.innerHTML = `<div class="empty">暂无可用于地理投影的经纬度</div>`;
+        return;
+      }
+      const lngMin = 73, lngMax = 135, latMin = 18, latMax = 54;
+      map.innerHTML = points.map((point) => {
+        const left = 7 + Math.max(0, Math.min(1, (Number(point.lng) - lngMin) / (lngMax - lngMin))) * 86;
+        const top = 10 + (1 - Math.max(0, Math.min(1, (Number(point.lat) - latMin) / (latMax - latMin)))) * 80;
+        const offline = Math.max(0, Number(point.devices) - Number(point.online));
+        const alert = offline > 0 ? " alert" : "";
+        const size = Math.max(30, Math.min(52, 26 + Math.sqrt(Number(point.devices) || 1) * 5));
+        return `<button class="map-bubble${alert}" style="left:${left}%;top:${top}%;width:${size}px;height:${size}px" data-city="${escapeHtml(point.city)}" title="${escapeHtml(point.city)}：${point.devices} 台设备，${point.online} 台在线">${point.devices}</button>
+          <span class="map-label" style="left:${left}%;top:${top}%">${escapeHtml(point.city)}</span>`;
+      }).join("");
+      map.querySelectorAll(".map-bubble").forEach((button) => button.addEventListener("click", () => selectCity(button.dataset.city)));
+      $("mapStatus").textContent = `${points.length} 个城市有定位`;
+    }
+
+    function renderGeography(rows) {
+      $("geoCount").textContent = `共 ${rows.length} 个城市`;
+      $("geoRows").innerHTML = rows.length ? rows.map((row) => `
+        <tr class="clickable" data-city="${escapeHtml(row.city)}">
+          <td><b>${escapeHtml(row.city)}</b></td>
+          <td>${formatNumber(row.devices)}</td>
+          <td><span class="status-dot online"></span>${formatNumber(row.online)}</td>
+          <td><span class="status-dot ${row.offline ? "offline" : "online"}"></span>${formatNumber(row.offline)}</td>
+          <td>${formatPercent(row.online_rate)}</td>
+          <td>${formatNumber(row.file_count)}</td>
+          <td>${formatSize(row.size_mb)}</td>
+        </tr>`).join("") : `<tr><td colspan="7"><div class="empty">暂无城市数据</div></td></tr>`;
+      $("geoRows").querySelectorAll("tr[data-city]").forEach((row) => row.addEventListener("click", () => selectCity(row.dataset.city)));
+    }
+
+    function selectCity(city) {
+      $("city").value = city || "";
+      loadDashboard(false);
+    }
+
+    function setProgress(id, textId, value) {
+      const numeric = value === null || value === undefined ? null : Math.max(0, Math.min(100, Number(value) || 0));
+      $(id).style.width = numeric === null ? "0%" : `${numeric}%`;
+      $(textId).textContent = numeric === null ? "预热中" : `${numeric.toFixed(1)}%`;
+    }
+    function renderCoverage(coverage) {
+      setProgress("coverageOnline", "coverageOnlineText", coverage.online_device_rate);
+      setProgress("coverageFiles", "coverageFilesText", coverage.recent_file_device_rate);
+      setProgress("coverageCities", "coverageCitiesText", coverage.city_file_coverage_rate);
+      $("coverageNote").textContent = coverage.note || "指标口径未说明。";
+    }
+
+    function renderExceptions(data) {
+      $("exceptionCount").textContent = `共 ${formatNumber(data.total)} 项`;
+      const labels = {high: "高", medium: "中", info: "提示"};
+      $("exceptionRows").innerHTML = (data.items || []).length ? data.items.map((item) => `
+        <tr>
+          <td><span class="tag ${escapeHtml(item.severity)}">${labels[item.severity] || "提示"}</span></td>
+          <td>${escapeHtml(item.dev_id)}</td>
+          <td title="${escapeHtml(item.name)}">${escapeHtml(item.name)}</td>
+          <td>${escapeHtml(item.city)}</td>
+          <td><span class="status-dot ${item.online ? "online" : "offline"}"></span>${item.online ? "在线" : "离线"}</td>
+          <td>${formatNumber(item.file_count)}</td>
+          <td title="${escapeHtml((item.reasons || []).join("；"))}">${escapeHtml((item.reasons || []).join("；"))}</td>
+        </tr>`).join("") : `<tr><td colspan="7"><div class="empty">当前筛选范围未发现重点异常</div></td></tr>`;
+    }
+
+    function renderFreshness(rows) {
+      const statusLabel = {fresh: "正常", stale: "缓存", unavailable: "不可用"};
+      $("freshnessList").innerHTML = rows.length ? rows.map((item) => `
+        <div class="freshness-row">
+          <div class="freshness-title">
+            <b><span class="status-dot ${escapeHtml(item.status)}"></span>${escapeHtml(item.label)}</b>
+            <span>${statusLabel[item.status] || item.status}</span>
+          </div>
+          <div class="freshness-meta">
+            <span>${item.fetched_at ? `更新 ${localTime(item.fetched_at)}` : escapeHtml(item.error || "等待数据")}</span>
+            <span>${item.latency_ms === null ? "--" : `${Number(item.latency_ms).toFixed(0)} ms`}${item.cache_hit ? " · 缓存" : ""}</span>
+          </div>
+        </div>`).join("") : `<div class="empty">暂无新鲜度数据</div>`;
+    }
+
+    function initTheme() {
+      const stored = localStorage.getItem("cha-m2-theme");
+      const theme = stored || "dark";
+      document.documentElement.dataset.theme = theme;
+      $("themeBtn").textContent = theme === "dark" ? "☼" : "◐";
+    }
+    function toggleTheme() {
+      const next = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+      document.documentElement.dataset.theme = next;
+      localStorage.setItem("cha-m2-theme", next);
+      $("themeBtn").textContent = next === "dark" ? "☼" : "◐";
+      if (state.data) renderTrend(state.data.video_trend || []);
+    }
+
+    $("refreshBtn").addEventListener("click", () => loadDashboard(true));
+    $("days").addEventListener("change", () => loadDashboard(false));
+    $("city").addEventListener("change", () => loadDashboard(false));
+    $("themeBtn").addEventListener("click", toggleTheme);
+    window.addEventListener("resize", () => {
+      window.clearTimeout(window.__chaResize);
+      window.__chaResize = window.setTimeout(() => state.data && renderTrend(state.data.video_trend || []), 120);
+    });
+    initTheme();
+    loadDashboard(false);
+    window.setInterval(() => loadDashboard(false), 60000);
+  </script>
+</body>
+</html>

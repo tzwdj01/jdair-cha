@@ -35,6 +35,13 @@ class ConfigTests(unittest.TestCase):
         ):
             self.assertTrue(Settings.from_env().legacy_is_required())
 
+    def test_dashboard_runtime_defaults_are_positive(self) -> None:
+        settings = Settings.from_env()
+        self.assertGreater(settings.dashboard_device_ttl_seconds, 0)
+        self.assertGreater(settings.dashboard_video_ttl_seconds, 0)
+        self.assertGreater(settings.dashboard_initial_wait_seconds, 0)
+        self.assertTrue(settings.dashboard_state_dir)
+
     def test_base_url_is_normalized_and_validated(self) -> None:
         self.assertEqual(
             normalize_base_url("http://127.0.0.1:8790/"),
