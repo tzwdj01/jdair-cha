@@ -23,3 +23,5 @@ venv
 **/*audit-result*.json
 **/*rollback-drill-result*.json
 **/*dashboard-production*.png
+**/m3-*-result.json
+**/m3-*.png

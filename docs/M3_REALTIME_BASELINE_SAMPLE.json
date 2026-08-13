@@ -1,0 +1,46 @@
+{
+  "device": "WXB***",
+  "first_play": {
+    "ready_state": 4,
+    "width": 1920,
+    "height": 1080,
+    "current_time": 1.8,
+    "track_state": "live",
+    "session_status": "PLAYING",
+    "playback_status": "PLAYING",
+    "heartbeat_status": "12:00:00"
+  },
+  "first_release": {
+    "session_status": "READY",
+    "playback_status": "CLOSED",
+    "connection_status": "会话保留，可再次播放",
+    "has_src_object": false
+  },
+  "second_play": {
+    "width": 1920,
+    "height": 1080,
+    "playback_status": "PLAYING"
+  },
+  "first_session_closed": {
+    "session_status": "CLOSED",
+    "playback_status": "CLOSED",
+    "has_src_object": false
+  },
+  "fresh_session_play": {
+    "width": 1920,
+    "height": 1080,
+    "track_state": "live",
+    "session_status": "PLAYING",
+    "playback_status": "PLAYING"
+  },
+  "final_closed": {
+    "session_status": "CLOSED",
+    "playback_status": "CLOSED",
+    "has_src_object": false
+  },
+  "failure": null,
+  "page_errors": [],
+  "browser_log": "stored separately in UTF-8",
+  "server_log": "stored separately in UTF-8",
+  "screenshot": null
+}
