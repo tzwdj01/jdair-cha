@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CHA 单路实时视频</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/api/v2/realtime/assets/realtime.css">
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">M3.1 · 只读实时监察</p>
+        <h1>单设备实时视频</h1>
+        <p class="subtitle">CHA 会话编排 · AEE 原生 Gateway / mcs8_admin / openVideo</p>
+      </div>
+      <div class="build">v{{CHA_V2_VERSION}} · {{CHA_V2_BUILD}}</div>
+    </header>
+
+    <section class="workbench">
+      <aside class="control-panel">
+        <div class="panel-title">
+          <span>会话控制</span>
+          <span id="featureBadge" class="badge neutral">待机</span>
+        </div>
+
+        <label for="deviceSelect">设备</label>
+        <select id="deviceSelect">
+          <option value="">正在加载设备…</option>
+        </select>
+
+        <div class="actions">
+          <button id="startButton" class="primary">开始播放</button>
+          <button id="stopStreamButton" disabled>关闭视频</button>
+          <button id="closeSessionButton" disabled>关闭会话</button>
+        </div>
+
+        <dl class="status-grid">
+          <div>
+            <dt>CHA 会话</dt>
+            <dd id="sessionStatus">未创建</dd>
+          </div>
+          <div>
+            <dt>AEE 连接</dt>
+            <dd id="connectionStatus">未连接</dd>
+          </div>
+          <div>
+            <dt>播放状态</dt>
+            <dd id="playbackStatus">未播放</dd>
+          </div>
+          <div>
+            <dt>设备</dt>
+            <dd id="currentDevice">—</dd>
+          </div>
+          <div>
+            <dt>画面</dt>
+            <dd id="videoMetrics">—</dd>
+          </div>
+          <div>
+            <dt>心跳</dt>
+            <dd id="heartbeatStatus">未启动</dd>
+          </div>
+        </dl>
+
+        <p id="message" class="message" aria-live="polite"></p>
+      </aside>
+
+      <section class="video-panel">
+        <div class="video-head">
+          <div>
+            <span id="videoBadge" class="badge neutral">未播放</span>
+            <strong id="videoTitle">请选择设备开始播放</strong>
+          </div>
+          <span id="firstFrameStatus">等待操作</span>
+        </div>
+        <div class="video-stage">
+          <video id="video" autoplay muted playsinline></video>
+          <div id="videoPlaceholder" class="placeholder">
+            <div class="pulse"></div>
+            <p>视频未连接</p>
+          </div>
+        </div>
+        <div class="lifecycle">
+          <span>创建 CHA session</span>
+          <i></i>
+          <span>连接 AEE Gateway</span>
+          <i></i>
+          <span>加入 mcs8_admin</span>
+          <i></i>
+          <span>openVideo</span>
+          <i></i>
+          <span>首帧 / 关闭释放</span>
+        </div>
+      </section>
+    </section>
+  </main>
+
+  <script src="/api/v2/realtime/assets/mcs8Client.js"></script>
+  <script src="/api/v2/realtime/assets/realtime.js"></script>
+</body>
+</html>
