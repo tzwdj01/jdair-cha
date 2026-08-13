@@ -8,3 +8,11 @@
 **/*.log
 venv
 **/runtime/LocalConfig.xml
+**/.env
+**/.env.*
+!**/.env.example
+**/wheelhouse/
+**/*.tar.gz
+**/*.zip
+**/server-backups/
+**/*backup*.json

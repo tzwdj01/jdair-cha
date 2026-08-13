@@ -1,0 +1,123 @@
+from __future__ import annotations
+
+import os
+from dataclasses import dataclass
+from pathlib import Path
+from urllib.parse import urlparse
+
+
+TRUE_VALUES = {"1", "true", "yes", "on", "enabled"}
+RELEASE_ROOT = Path(__file__).resolve().parents[1]
+
+
+def env_bool(name: str, default: bool = False) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in TRUE_VALUES
+
+
+def env_csv(name: str, default: tuple[str, ...]) -> tuple[str, ...]:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    values = tuple(item.strip() for item in raw.split(",") if item.strip())
+    return values or default
+
+
+def env_float(name: str, default: float) -> float:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    try:
+        value = float(raw)
+    except ValueError:
+        return default
+    return value if value > 0 else default
+
+
+def normalize_base_url(value: str) -> str:
+    normalized = value.strip().rstrip("/")
+    parsed = urlparse(normalized)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise ValueError("CHA_V2_LEGACY_BASE_URL must be an HTTP(S) URL")
+    return normalized
+
+
+def release_marker(name: str, default: str) -> str:
+    try:
+        value = (RELEASE_ROOT / name).read_text(encoding="utf-8").strip()
+    except OSError:
+        return default
+    return value or default
+
+
+@dataclass(frozen=True)
+class Settings:
+    service_name: str
+    environment: str
+    version: str
+    build: str
+    allowed_hosts: tuple[str, ...]
+    legacy_base_url: str
+    legacy_timeout_seconds: float
+    feature_dashboard_v2: bool
+    feature_realtime_readonly: bool
+    feature_realtime_audio: bool
+    feature_realtime_control: bool
+    feature_account_pool_v2: bool
+    feature_records_v2: bool
+
+    @classmethod
+    def from_env(cls) -> "Settings":
+        return cls(
+            service_name=os.getenv("CHA_V2_SERVICE_NAME", "jdair-cha-v2"),
+            environment=os.getenv("CHA_V2_ENVIRONMENT", "production"),
+            version=os.getenv(
+                "CHA_V2_VERSION",
+                release_marker("VERSION", "0.2.0"),
+            ),
+            build=os.getenv(
+                "CHA_V2_BUILD",
+                release_marker("BUILD", "m1-legacy-adapter"),
+            ),
+            allowed_hosts=env_csv(
+                "CHA_V2_ALLOWED_HOSTS",
+                ("cha.jdair.top", "127.0.0.1", "localhost"),
+            ),
+            legacy_base_url=normalize_base_url(
+                os.getenv(
+                    "CHA_V2_LEGACY_BASE_URL",
+                    "http://127.0.0.1:8790",
+                )
+            ),
+            legacy_timeout_seconds=env_float(
+                "CHA_V2_LEGACY_TIMEOUT_SECONDS",
+                5.0,
+            ),
+            feature_dashboard_v2=env_bool("CHA_V2_FEATURE_DASHBOARD_V2"),
+            feature_realtime_readonly=env_bool(
+                "CHA_V2_FEATURE_REALTIME_READONLY"
+            ),
+            feature_realtime_audio=env_bool("CHA_V2_FEATURE_REALTIME_AUDIO"),
+            feature_realtime_control=env_bool(
+                "CHA_V2_FEATURE_REALTIME_CONTROL"
+            ),
+            feature_account_pool_v2=env_bool(
+                "CHA_V2_FEATURE_ACCOUNT_POOL_V2"
+            ),
+            feature_records_v2=env_bool("CHA_V2_FEATURE_RECORDS_V2"),
+        )
+
+    def public_features(self) -> dict[str, bool]:
+        return {
+            "dashboard_v2": self.feature_dashboard_v2,
+            "realtime_readonly": self.feature_realtime_readonly,
+            "realtime_audio": self.feature_realtime_audio,
+            "realtime_control": self.feature_realtime_control,
+            "account_pool_v2": self.feature_account_pool_v2,
+            "records_v2": self.feature_records_v2,
+        }
+
+    def legacy_is_required(self) -> bool:
+        return self.feature_dashboard_v2 or self.feature_records_v2
