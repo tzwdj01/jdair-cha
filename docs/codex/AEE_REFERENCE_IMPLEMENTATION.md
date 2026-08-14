@@ -1,217 +1,394 @@
-# AEE Reference Implementation Principles
+# AEE Reference Implementation Principle
 
 ## 1. Purpose
 
-This document defines the engineering decision process for work involving AEE,
-MCS8, realtime video, WebRTC, WebSocket, the AEE browser SDK, codec/RTP
-parameters, stream profiles, device capability and media-session lifecycle.
+`http://aee.jdcloud.com/` 是本项目的重要上游能力参考实现。
 
-AEE is the behavioral reference implementation for upstream capabilities. It
-is not a license to copy credentials, production configuration, private
-endpoints or unreviewed PoC code into CHA. CHA remains responsible for
-authentication, authorization, session orchestration, observability, product
-UX and safe resource cleanup.
+AEE 的作用不是作为 CHA 的前端依赖，也不是作为需要复制的实现，而是用于：
 
-The mandatory sequence is:
+> 验证底层 MCS8 / AEE 实际能力、协议行为、SDK 行为、设备行为和媒体链路行为。
 
-```text
-AEE reference
-  -> CHA comparison evidence
-  -> capability classification
-  -> CHA design
-  -> bounded implementation
-  -> real-device verification
-```
+对于 AEE 已经具备、CHA 尚未实现的功能，或者 CHA 实现过程中出现：
 
-Do not skip the evidence stage and guess an implementation.
+* 不明协议；
+* 不明参数；
+* 不明 SDK 行为；
+* WebSocket 行为异常；
+* RTP 参数不明确；
+* codec 行为不明确；
+* stream profile 不明确；
+* capability 不明确；
+* 设备兼容性问题；
+* 媒体链路问题；
+* AEE 与 CHA 同设备表现不一致；
 
-## 2. When This Document Applies
+不得优先自行猜测、重新设计协议或增加复杂 workaround。
 
-Read and follow this document before changing code or architecture when any of
-the following is true:
+应优先进行：
 
-- AEE has a capability that CHA does not yet expose.
-- MCS8/AEE SDK behavior, protocol fields or method semantics are unclear.
-- WebSocket connection, reconnect, heartbeat or shutdown behavior is unclear.
-- RTP, codec, capability negotiation or stream-profile behavior is unclear.
-- The same device behaves differently in AEE and CHA.
-- A media connection, first frame, track, consumer or release step fails.
-- Device compatibility differs by model, firmware, tenant, account or profile.
-- A proposal would introduce FFmpeg, a media relay, an SFU, a custom decoder,
-  protocol emulation or another complex workaround.
+**AEE → CHA 对照验证。**
 
-## 3. Evidence Hierarchy
+---
 
-Use the strongest available evidence and record its date, environment, user
-role, device and scenario:
+# 2. Reference Environment
 
-1. **Observed AEE native behavior** in the approved AEE page with a real device.
-2. **Captured AEE protocol behavior**, including redacted HTTP, WebSocket, SDK,
-   SDP, RTP, codec, capability and lifecycle observations.
-3. **The pinned AEE/MCS8 SDK and its provenance** already used by this
-   repository.
-4. **Observed CHA behavior** from the same account class, device and scenario.
-5. Existing repository tests, probes, reports and Runbooks.
-6. Assumptions or recollection, which are not implementation evidence.
+在具备合法权限的情况下，应尽可能使用相同的：
 
-Documentation and old probes may establish a baseline, but a current
-device-specific discrepancy requires current comparison evidence.
+* 用户；
+* 设备；
+* 操作场景；
+* 浏览器；
+* 网络环境；
+* 时间窗口；
 
-All evidence must be redacted. Never store passwords, reusable tokens,
-Authorization headers, cookies, unredacted `ConnecteInfo`, production env
-files or private credentials in Git, reports, screenshots or logs.
+分别验证 AEE 和 CHA。
 
-## 4. AEE-to-CHA Comparison Procedure
+应尽量控制变量，使：
 
-### 4.1 Define a bounded question
+> AEE 与 CHA 的差异成为主要变量。
 
-State exactly what is unknown. Examples:
+---
 
-- Which `openVideo` method and parameters does AEE use for this device?
-- Which stream profile is selected?
-- Which H.264 profile/level or other codec is negotiated?
-- Does AEE receive a live track and first frame from the device?
-- What is the correct close/leave/disconnect order?
+# 3. Allowed Observation
 
-Do not start with a proposed workaround.
+允许通过：
 
-### 4.2 Establish a control
+* 浏览器开发者工具；
+* Network；
+* Console；
+* WebSocket inspector；
+* Performance；
+* Sources；
+* 合法测试脚本；
 
-Use:
+观察：
 
-- the affected device;
-- one known-good comparison device where possible;
-- an approved user with the same required permissions;
-- the AEE native page and the equivalent CHA page/operation;
-- the same network and a short, non-disruptive observation window.
+* HTTP 请求；
+* HTTP response；
+* WebSocket 建立过程；
+* WebSocket 生命周期；
+* WebSocket message；
+* SDK 方法调用；
+* SDK 参数；
+* SDK 返回值；
+* `rtpParameters`；
+* codec；
+* stream profile；
+* capability；
+* SDP / ICE / DTLS 等浏览器正常暴露的媒体协商信息；
+* 静态 JS/WASM 依赖；
+* 页面状态变化；
+* 会话建立行为；
+* 重连行为；
+* 资源释放行为；
+* 播放停止行为；
+* 多路播放行为；
+* 浏览器资源变化。
 
-Do not run uncontrolled tests against business devices. Follow the production
-Canary and rollback requirements in `docs/M3_REALTIME_RUNBOOK.md`.
+目标是理解：
 
-### 4.3 Capture comparable observations
+> AEE 实际依赖的底层 MCS8 / AEE 能力以及正确使用方式。
 
-Collect only what is needed:
+---
 
-- HTTP request purpose, status, timing and redacted response shape;
-- Gateway and Media WebSocket open/message/close sequence;
-- room resolution and join events;
-- SDK method names, argument shapes and event ordering;
-- SDP offer/answer summaries;
-- codec MIME type, payload type, profile/level and relevant fmtp values;
-- RTP capabilities and selected producer/consumer parameters;
-- requested stream type/profile/quality;
-- consumer creation, MediaStream binding, track state and resolution;
-- first-frame timing and timeout behavior;
-- `closeVideo`/`closeAudio`, consumer close, room leave and socket disconnect;
-- final active session/stream/Gateway/Media counters.
+# 4. Security and Access Boundary
 
-Keep raw logs separate from structured JSON results. Use UTF-8 for all text.
+严格禁止：
 
-### 4.4 Compare behavior
+* 绕过 AEE 权限；
+* 获取无权访问的数据；
+* 破解认证；
+* 绕过授权检查；
+* 提取与任务无关的用户数据；
+* 将 AEE Cookie 固化进 CHA；
+* 将 AEE 长期 Token 固化进 CHA；
+* 将个人认证信息提交到 Git；
+* 将敏感凭证写入日志、测试数据或文档；
+* 让 CHA 浏览器长期直接依赖 AEE 页面私有接口；
+* 将 AEE 页面作为 CHA 生产运行时依赖；
+* 简单复制 AEE 前端代码形成强耦合。
 
-Create a small comparison table:
+AEE 是：
 
-| Step | AEE native | CHA | Difference | Evidence |
-| --- | --- | --- | --- | --- |
-| Login/token | | | | |
-| Gateway connect | | | | |
-| Media resolve/connect | | | | |
-| Room join | | | | |
-| `openVideo` request | | | | |
-| Consumer/track | | | | |
-| First frame | | | | |
-| Close/release | | | | |
+**Reference Implementation**
 
-The comparison must distinguish an upstream/device failure from a CHA
-orchestration failure.
+而不是：
 
-## 5. Capability Classification
+**Runtime Dependency**。
 
-Classify the result before designing a change:
+---
 
-1. **AEE NATIVE / CHA SUPPORTED**
-   Behavior is confirmed and CHA already matches it. No feature work is
-   required; improve tests or operations evidence only if needed.
+# 5. Evidence First
 
-2. **AEE NATIVE / CHA GAP**
-   AEE works, CHA differs, and the protocol/SDK delta is identified. Implement
-   the smallest change that makes CHA follow the confirmed AEE behavior.
+如果 CHA 和 AEE 在同一设备、同一场景上的表现不同：
 
-3. **AEE NATIVE / POLICY-GATED**
-   AEE supports the capability, but CHA intentionally disables it for security,
-   authorization, product-scope or production-safety reasons. Do not bypass the
-   gate.
+不得首先修改 CHA。
 
-4. **DEVICE / ACCOUNT / TENANT SPECIFIC**
-   Behavior depends on device model, firmware, account permission, tenant,
-   stream profile or current device state. Record the compatibility boundary;
-   do not generalize from one device.
+必须首先形成：
 
-5. **AEE VERIFICATION REQUIRED**
-   Evidence is missing, stale or contradictory. Do not guess. Record the exact
-   verification plan in `TASK_GOAL.md` and continue only with unrelated work.
+# AEE vs CHA Evidence
 
-6. **NOT AEE NATIVE / ARCHITECTURE DECISION REQUIRED**
-   AEE does not provide the required behavior. Any FFmpeg, custom media server,
-   SFU, decoder, transcoder or protocol workaround requires a separate approved
-   architecture decision, threat model, capacity plan, rollback plan and
-   operational ownership. It must not be introduced as an incidental fix.
+至少记录：
 
-## 6. CHA Design Rules
+## Test Context
 
-- Reuse the verified AEE native media chain whenever available.
-- Keep CHA session management separate from AEE media objects.
-- Keep long-lived AEE credentials and reusable tokens server-side.
-- The browser may receive only the minimum same-origin session/relay material
-  proven necessary; document any unavoidable temporary exposure.
-- Do not modify the vendored AEE SDK unless comparison evidence proves a pinned
-  SDK defect and the change has an explicit maintenance/provenance plan.
-- Do not replace existing business APIs to solve a media issue.
-- Add only the capability required by the active milestone.
-- Preserve receive-only behavior unless an independently approved milestone
-  explicitly covers send media or device control.
-- Treat first-frame success and deterministic release as separate acceptance
-  requirements.
+* 时间；
+* Device ID / 可安全记录的设备标识；
+* 浏览器；
+* 用户权限场景；
+* 操作步骤；
+* 网络环境。
 
-## 7. Lifecycle and Release Requirements
+## AEE Behaviour
 
-Every realtime change must account for:
+记录：
 
-```text
-login/token
--> Gateway connect
--> Media resolve/connect
--> room join
--> openVideo/openAudio
--> consumer/track/first frame
--> close consumer
--> leave room
--> disconnect Media/Gateway
--> clear CHA session
-```
+* 请求；
+* WebSocket；
+* SDK 调用；
+* 参数；
+* codec；
+* RTP；
+* capability；
+* stream profile；
+* 状态变化；
+* 播放结果；
+* 资源释放结果。
 
-Normal close, selective stream close, browser disconnect, first-frame timeout,
-upstream failure, duplicate close and service shutdown must not leave active
-tracks, consumers, sockets, background tasks or zombie CHA sessions.
+## CHA Behaviour
 
-Verification must include the relevant automated tests plus a bounded
-real-device comparison when upstream behavior is involved. Production
-activation requires feature flags, Canary isolation, backup, rollback and
-post-close counters returning to zero.
+以相同维度记录 CHA。
 
-## 8. Decision Record
+## Difference
 
-For every material AEE-related decision, add a concise entry to
-`TASK_GOAL.md` under **Evidence / Decision Log** containing:
+明确指出：
 
-- date and milestone;
-- question;
-- AEE evidence;
-- CHA evidence;
-- classification;
-- decision and non-goals;
-- verification result or `AEE VERIFICATION REQUIRED`;
-- links to sanitized repository evidence.
+* 相同项；
+* 不同项；
+* 已确认事实；
+* 尚未确认事项。
 
-Unknowns must remain explicit. Absence of evidence is not evidence that AEE
-cannot provide a capability.
+## Conclusion
+
+最后才能形成修复假设。
+
+不得：
+
+> 先提出架构方案，再反向寻找证据。
+
+---
+
+# 6. Capability Classification
+
+完成观察后必须将能力分类。
+
+## Class A — Backend Read-only Capability
+
+可直接通过：
+
+`CHA Backend Adapter`
+
+复用的只读接口。
+
+例如：
+
+* 查询类能力；
+* 状态类能力；
+* metadata；
+* capability 查询。
+
+---
+
+## Class B — SDK / Protocol Media Capability
+
+应通过：
+
+`SDK Adapter`
+
+或：
+
+`Protocol Adapter`
+
+复用的底层媒体能力。
+
+例如：
+
+* 实时播放；
+* media session；
+* RTP；
+* codec；
+* stream selection；
+* WebRTC negotiation；
+* audio；
+* reconnect。
+
+---
+
+## Class C — CHA Business Aggregation
+
+底层能力可以借鉴或调用，但业务逻辑应在 CHA 内重新聚合实现。
+
+例如：
+
+* 多设备编排；
+* 看板；
+* 设备分组；
+* 告警联动；
+* 会话池；
+* UI 状态；
+* 业务权限；
+* 业务审计。
+
+---
+
+## Class D — Reference Only
+
+只用于理解，不应形成 CHA 运行时依赖的 AEE 页面内部实现。
+
+例如：
+
+* AEE 页面状态管理；
+* 页面私有 API；
+* AEE 专用 UI glue code；
+* 页面私有路由；
+* 与 CHA 业务无关的内部实现。
+
+---
+
+# 7. Architecture Escalation Gate
+
+在没有充分证据证明现有 MCS8 / AEE / 浏览器原生能力无法满足需求之前，不得引入：
+
+* FFmpeg；
+* 自建媒体服务器；
+* 自建 SFU；
+* 自定义 decoder；
+* 自定义 transcoding pipeline；
+* 大型流媒体基础设施；
+* 复杂 proxy；
+* 复杂 protocol translation；
+* 大型 workaround。
+
+如果确实需要引入上述组件，必须先形成：
+
+## Architecture Escalation Evidence
+
+包括：
+
+1. 当前需求；
+2. CHA 当前表现；
+3. AEE 同场景表现；
+4. AEE 使用的能力；
+5. 已尝试的原生 MCS8 / SDK 方案；
+6. 为什么无法满足；
+7. 新基础设施解决的问题；
+8. 运维成本；
+9. 安全风险；
+10. 回滚方案。
+
+无上述证据：
+
+> 不批准架构升级。
+
+---
+
+# 8. When AEE Cannot Be Accessed
+
+如果当前 Codex 执行环境无法访问 AEE，或者没有合法认证上下文：
+
+不得猜测 AEE 行为。
+
+相关事项必须标记：
+
+`AEE VERIFICATION REQUIRED`
+
+并记录：
+
+* Question；
+* Device；
+* Scenario；
+* Expected Observation；
+* Required Network Evidence；
+* Required WebSocket Evidence；
+* Required SDK Evidence；
+* Required Media Evidence。
+
+如果该未知项阻塞当前实现：
+
+暂停该依赖分支。
+
+如果不阻塞：
+
+继续完成其它可以独立验证的工作。
+
+---
+
+# 9. Decision Principle
+
+本项目媒体能力相关问题的默认决策顺序为：
+
+**现象**
+
+↓
+
+**复现 CHA**
+
+↓
+
+**使用相同设备和场景复现 AEE**
+
+↓
+
+**AEE vs CHA Evidence**
+
+↓
+
+**确认底层 MCS8 / SDK / Protocol 能力**
+
+↓
+
+**Class A / B / C / D**
+
+↓
+
+**选择最小必要修改**
+
+↓
+
+**CHA 实现**
+
+↓
+
+**回归验证**
+
+而不是：
+
+**现象**
+
+↓
+
+**猜测**
+
+↓
+
+**新增基础设施**
+
+↓
+
+**复杂 workaround**
+
+---
+
+# 10. Core Principle
+
+最终原则：
+
+> AEE 用于理解能力，而不是复制系统。
+
+> Evidence before workaround.
+
+> Adapter before coupling.
+
+> Existing capability before new infrastructure.
+
+> Same device, same scenario, AEE vs CHA before architecture changes.

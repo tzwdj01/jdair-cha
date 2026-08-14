@@ -143,7 +143,7 @@ below is completed.
 ### TODO
 
 - Perform the AEE-native versus CHA comparison defined below.
-- Record a capability classification using
+- Record a `Class A / B / C / D` capability classification using
   `docs/codex/AEE_REFERENCE_IMPLEMENTATION.md`.
 - If evidence identifies a CHA gap, implement only the smallest evidence-based
   fix on a dedicated branch and repeat automated lifecycle/release tests.
@@ -170,6 +170,23 @@ The full rules are in:
 
 ### AEE VERIFICATION REQUIRED — WXB358 first-frame discrepancy
 
+- **Question:** Why does `WXB358` reach accepted `openVideo` in CHA but fail to
+  produce a first frame, and does the same device succeed in the AEE reference
+  implementation?
+- **Device:** `WXB358`, with `WXB353` as the latest known-good control.
+- **Scenario:** single-device realtime playback in AEE, followed by the
+  equivalent single-device flow in CHA.
+- **Expected Observation:** identify the first confirmed difference in the
+  login, Gateway, Media, room, SDK, consumer, track or first-frame sequence.
+- **Required Network Evidence:** redacted HTTP request purpose/status/timing,
+  device capability/status and media-server resolution.
+- **Required WebSocket Evidence:** Gateway/Media establishment, message order,
+  room join, `openVideo` request/ack and close/leave/disconnect order.
+- **Required SDK Evidence:** exact method name/casing, argument shape, return
+  value, callbacks and the source of `openvideo is not defined`.
+- **Required Media Evidence:** SDP/ICE/DTLS summaries, RTP parameters,
+  codec/profile/fmtp, stream profile, consumer/track state, resolution and
+  first-frame timing.
 - **What to verify:** whether the AEE native page can open `WXB358`, which SDK
   method and exact parameter/profile it uses, whether a consumer and live track
   are created, and whether first frame succeeds.
@@ -272,7 +289,8 @@ firmware/profile, account and environment without supporting evidence.
 The current active milestone is done only when all of the following are true:
 
 - [ ] The `WXB358` discrepancy has current AEE-versus-CHA evidence.
-- [ ] The result is assigned a documented capability classification.
+- [ ] The result is assigned a documented `Class A / B / C / D`
+      classification.
 - [ ] Any CHA change is minimal, evidence-based and regression-tested, or the
       issue is documented as upstream/device-specific with an approved safe
       device set.

@@ -36,10 +36,20 @@ The mandatory workflow is:
 
 **AEE -> CHA comparison evidence -> capability classification -> CHA design**
 
+After evidence is collected, classify the capability as:
+
+- `Class A` — Backend Read-only Capability;
+- `Class B` — SDK / Protocol Media Capability;
+- `Class C` — CHA Business Aggregation;
+- `Class D` — Reference Only.
+
 Do not skip evidence collection and guess an implementation. If current AEE
 access or suitable devices are unavailable, mark the item
 `AEE VERIFICATION REQUIRED` in `TASK_GOAL.md`, describe the exact verification
 needed and continue only with work that does not depend on the unknown.
+
+AEE is a reference implementation, not a CHA runtime dependency. Do not copy
+AEE Cookie/Token values, private page APIs or UI glue code into CHA.
 
 ## Production and Security
 
