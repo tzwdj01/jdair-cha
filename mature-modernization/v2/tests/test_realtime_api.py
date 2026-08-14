@@ -410,6 +410,79 @@ class RealtimeAPITests(unittest.IsolatedAsyncioTestCase):
             f"/api/v2/realtime/sessions/{session_id}",
         )
 
+    async def test_receive_only_audio_routes_are_feature_gated(self) -> None:
+        created = await self.request(
+            "POST",
+            "/api/v2/realtime/sessions",
+        )
+        session_id = created.json()["data"]["session_id"]
+        first = await self.request(
+            "POST",
+            f"/api/v2/realtime/sessions/{session_id}/streams",
+            {"device_id": "WXB339"},
+        )
+        first_id = first.json()["data"]["stream"]["stream_id"]
+        disabled = await self.request(
+            "POST",
+            (
+                f"/api/v2/realtime/sessions/{session_id}/streams/"
+                f"{first_id}/audio"
+            ),
+            {},
+        )
+        self.assertEqual(disabled.status_code, 404)
+        self.assertEqual(disabled.json()["data"]["code"], "audio_disabled")
+
+        object.__setattr__(
+            self.main.settings,
+            "feature_realtime_audio",
+            True,
+        )
+        try:
+            enabled = await self.request(
+                "POST",
+                (
+                    f"/api/v2/realtime/sessions/{session_id}/streams/"
+                    f"{first_id}/audio"
+                ),
+                {},
+            )
+            self.assertEqual(enabled.status_code, 200)
+            self.assertTrue(enabled.json()["data"]["audio_enabled"])
+            self.assertEqual(
+                enabled.json()["data"]["streams"][0]["audio"]["status"],
+                "OPENING",
+            )
+            second = await self.request(
+                "POST",
+                f"/api/v2/realtime/sessions/{session_id}/streams",
+                {"device_id": "WXB337"},
+            )
+            second_id = second.json()["data"]["stream"]["stream_id"]
+            limited = await self.request(
+                "POST",
+                (
+                    f"/api/v2/realtime/sessions/{session_id}/streams/"
+                    f"{second_id}/audio"
+                ),
+                {},
+            )
+            self.assertEqual(limited.status_code, 409)
+            self.assertEqual(
+                limited.json()["data"]["code"],
+                "audio_stream_limit_reached",
+            )
+        finally:
+            object.__setattr__(
+                self.main.settings,
+                "feature_realtime_audio",
+                False,
+            )
+            await self.request(
+                "DELETE",
+                f"/api/v2/realtime/sessions/{session_id}",
+            )
+
     async def test_offline_and_missing_devices_are_rejected(self) -> None:
         created = await self.request(
             "POST",

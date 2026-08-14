@@ -64,7 +64,7 @@ def assert_playing(page, expected: list[str]) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Run isolated 1->2->4 AEE multi-stream validation."
+        description="Run isolated progressive AEE multi-stream validation."
     )
     parser.add_argument(
         "--devices",
@@ -93,6 +93,11 @@ def main() -> None:
         default=30,
     )
     parser.add_argument(
+        "--audio-device",
+        default="",
+        help="Optionally validate receive-only audio on one selected device.",
+    )
+    parser.add_argument(
         "--python",
         default=os.getenv("CHA_M32A_PYTHON", ""),
         help="Python executable with the locked M3 runtime dependencies.",
@@ -101,8 +106,10 @@ def main() -> None:
     devices = [item.strip() for item in args.devices.split(",") if item.strip()]
     if not devices:
         raise SystemExit("at least one explicitly approved device is required")
-    if len(devices) > 4:
-        devices = devices[:4]
+    if len(devices) > 9:
+        devices = devices[:9]
+    if args.audio_device and args.audio_device not in devices:
+        raise SystemExit("--audio-device must also be present in --devices")
 
     root = Path(__file__).resolve().parents[1]
     v2 = root / "mature-modernization" / "v2"
@@ -190,11 +197,7 @@ def main() -> None:
             stages.append({"stage": "connected", "snapshot": initialized})
 
             active: list[str] = []
-            targets = [1]
-            if len(devices) >= 2:
-                targets.append(2)
-            if len(devices) >= 4:
-                targets.append(4)
+            targets = list(range(1, len(devices) + 1))
 
             for target_count in targets:
                 while len(active) < target_count:
@@ -219,7 +222,10 @@ def main() -> None:
                         }
                     )
 
-                if target_count >= 2:
+                survivor_checkpoints = {
+                    item for item in (4, 6, 9, len(devices)) if item >= 2
+                }
+                if target_count in survivor_checkpoints:
                     close_id = active[0]
                     survivor = active[1:]
                     closed = page.evaluate(
@@ -259,6 +265,25 @@ def main() -> None:
                             ),
                         }
                     )
+
+            if args.audio_device:
+                audio = page.evaluate(
+                    "(device) => window.m32aProbe.probeAudio(device)",
+                    args.audio_device,
+                )
+                assert_playing(page, active)
+                stages.append(
+                    {
+                        "stage": "audio_receive_only",
+                        "audio": audio,
+                        "browser": page.evaluate(
+                            "() => window.m32aProbe.snapshot()"
+                        ),
+                        "server": page.evaluate(
+                            "() => window.m32aProbe.serverMetrics()"
+                        ),
+                    }
+                )
 
             if args.observe_seconds > 0:
                 deadline = time.monotonic() + args.observe_seconds

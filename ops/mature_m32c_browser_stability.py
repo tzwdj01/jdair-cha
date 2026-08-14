@@ -24,7 +24,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="Exercise repeated M3 realtime browser lifecycles."
     )
-    parser.add_argument("--cycles", type=int, default=10)
+    parser.add_argument("--cycles", type=int, default=20)
     parser.add_argument(
         "--result",
         type=Path,
@@ -81,14 +81,32 @@ def main() -> None:
             cdp.send("Performance.enable")
             cdp.send("HeapProfiler.enable")
 
-            devices = ("WXB320", "WXB337", "WXB342", "WXB345")
+            devices = (
+                "WXB320",
+                "WXB337",
+                "WXB342",
+                "WXB345",
+                "WXB353",
+                "WXB367",
+            )
             for cycle in range(1, args.cycles + 1):
                 for device_id in devices:
                     page.evaluate(
                         "id => window.chaRealtimeInspection.addDevice(id)",
                         device_id,
                     )
-                wait_playing(page, 4)
+                six = wait_playing(page, 6)
+                first_id = six["streams"][0]["stream_id"]
+                page.evaluate(
+                    "id => window.chaRealtimeInspection.closeTile(id)",
+                    first_id,
+                )
+                wait_playing(page, 5)
+                page.evaluate(
+                    "id => window.chaRealtimeInspection.addDevice(id)",
+                    devices[0],
+                )
+                wait_playing(page, 6)
                 before_close = page.evaluate(
                     "() => window.chaRealtimeInspection.snapshot()"
                 )
@@ -138,6 +156,7 @@ def main() -> None:
                     {
                         "cycle": cycle,
                         "playing_streams": len(before_close["streams"]),
+                        "layout": before_close["layout"],
                         "heap_used_bytes": int(
                             after.get("JSHeapUsedSize", 0)
                         ),

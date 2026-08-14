@@ -43,7 +43,7 @@ class ConfigTests(unittest.TestCase):
         self.assertTrue(settings.dashboard_state_dir)
         self.assertGreater(settings.realtime_session_ttl_seconds, 0)
         self.assertGreater(settings.realtime_command_timeout_seconds, 0)
-        self.assertEqual(settings.realtime_max_streams_per_session, 4)
+        self.assertEqual(settings.realtime_max_streams_per_session, 6)
         self.assertEqual(settings.aee_username, "")
         self.assertEqual(settings.aee_password, "")
         self.assertFalse(settings.realtime_aee_is_configured())
@@ -56,7 +56,7 @@ class ConfigTests(unittest.TestCase):
         ):
             self.assertEqual(
                 Settings.from_env().realtime_max_streams_per_session,
-                4,
+                6,
             )
 
     def test_realtime_operational_limits_have_safe_defaults(self) -> None:

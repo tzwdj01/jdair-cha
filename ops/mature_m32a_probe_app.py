@@ -124,26 +124,38 @@ class ProbeAEEAdapter(AEEAdapter):
                     "The AEE video request is invalid",
                 )
             device_id = str(data.get("devId") or "")
+            media_kind = str(data.get("kind") or "")
+            expected_stream_type = 2 if media_kind == "video" else 0
             if (
-                data.get("kind") != "video"
-                or data.get("streamType") not in {2, "2"}
+                media_kind not in {"video", "audio"}
+                or data.get("streamType")
+                not in {expected_stream_type, str(expected_stream_type)}
                 or device_id not in self.devices
             ):
                 raise AEEUpstreamError(
                     "AEE_VIDEO_REQUEST_FORBIDDEN",
-                    "Only explicitly selected live video streams are allowed",
+                    "Only explicitly selected receive-only media is allowed",
                 )
+            monitor_key = f"{media_kind}:{device_id}"
             if method == "mediaMonitor":
-                if device_id in self.monitors:
+                if monitor_key in self.monitors:
                     raise AEEUpstreamError(
                         "AEE_DUPLICATE_MONITOR",
-                        "The device already has an active monitor",
+                        "The device already has an active media monitor",
                     )
-                self.monitors.add(device_id)
-                self._event("monitor_open", device_id=device_id)
+                self.monitors.add(monitor_key)
+                self._event(
+                    "monitor_open",
+                    device_id=device_id,
+                    kind=media_kind,
+                )
             else:
-                self.monitors.discard(device_id)
-                self._event("monitor_close", device_id=device_id)
+                self.monitors.discard(monitor_key)
+                self._event(
+                    "monitor_close",
+                    device_id=device_id,
+                    kind=media_kind,
+                )
 
     async def _relay_messages(
         self,
@@ -231,13 +243,28 @@ class ProbeAEEAdapter(AEEAdapter):
             "producer_id": str(data.get("producerId") or ""),
             "transport_id": transport_id,
             "kind": str(data.get("kind") or ""),
+            "codec": self._consumer_codec(data),
         }
         self._event(
             "consumer_created",
             device_id=device_id,
             consumer_id=consumer_id,
             transport_id=transport_id,
+            kind=str(data.get("kind") or ""),
         )
+
+    @staticmethod
+    def _consumer_codec(data: dict[str, Any]) -> str:
+        rtp_parameters = data.get("rtpParameters")
+        if not isinstance(rtp_parameters, dict):
+            return ""
+        codecs = rtp_parameters.get("codecs")
+        if not isinstance(codecs, list) or not codecs:
+            return ""
+        codec = codecs[0]
+        if not isinstance(codec, dict):
+            return ""
+        return str(codec.get("mimeType") or codec.get("name") or "")[:64]
 
     def _event(self, event: str, **data: Any) -> None:
         self.events.append(

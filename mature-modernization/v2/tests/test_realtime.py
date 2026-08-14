@@ -103,11 +103,12 @@ class RealtimeSessionTests(unittest.IsolatedAsyncioTestCase):
         task: asyncio.Task,
         *,
         ok: bool,
+        manager: RealtimeSessionManager | None = None,
     ):
         while not socket.commands:
             await asyncio.sleep(0)
         command = socket.commands.pop(0)
-        await self.manager.handle_control_message(
+        await (manager or self.manager).handle_control_message(
             session_id,
             {
                 "type": "ack",
@@ -778,12 +779,115 @@ class RealtimeSessionTests(unittest.IsolatedAsyncioTestCase):
             1,
         )
 
-    async def test_one_hundred_session_churn_is_bounded(self) -> None:
+    async def test_receive_only_audio_is_single_stream_and_released(self) -> None:
         with patch.dict(
             os.environ,
             {
                 **REALTIME_ENV,
-                "CHA_V2_REALTIME_MAX_STREAMS_PER_SESSION": "4",
+                "CHA_V2_FEATURE_REALTIME_AUDIO": "true",
+            },
+            clear=False,
+        ):
+            manager = RealtimeSessionManager(
+                Settings.from_env(),
+                adapter_factory=FakeAdapter,
+            )
+            session, _ = await manager.create_session(
+                owner_key="audio-owner",
+                owner_name="audio",
+            )
+            first = await manager.add_stream(
+                session.session_id,
+                owner_key="audio-owner",
+                device_id="WXB339",
+            )
+            second = await manager.add_stream(
+                session.session_id,
+                owner_key="audio-owner",
+                device_id="WXB337",
+            )
+            await manager.enable_audio(
+                session.session_id,
+                first.stream_id,
+                owner_key="audio-owner",
+            )
+            self.assertEqual(first.audio_status, "OPENING")
+            with self.assertRaises(RealtimeError) as limit:
+                await manager.enable_audio(
+                    session.session_id,
+                    second.stream_id,
+                    owner_key="audio-owner",
+                )
+            self.assertEqual(
+                limit.exception.code,
+                "audio_stream_limit_reached",
+            )
+            await manager.handle_client_event(
+                session.session_id,
+                event="audio_playing",
+                stream_id=first.stream_id,
+                error_code=None,
+                details={
+                    "track_state": "live",
+                    "codec": "audio/opus",
+                },
+            )
+            self.assertEqual(first.audio_status, "PLAYING")
+            self.assertEqual(first.audio_track_state, "live")
+            self.assertEqual(first.audio_codec, "audio/opus")
+            socket = FakeControlSocket()
+            session.control_socket = socket
+            task = asyncio.create_task(
+                manager.disable_audio(
+                    session.session_id,
+                    first.stream_id,
+                    owner_key="audio-owner",
+                )
+            )
+            await self.ack_next(
+                session.session_id,
+                socket,
+                task,
+                ok=True,
+                manager=manager,
+            )
+            self.assertEqual(first.audio_status, "OFF")
+            snapshot = await manager.telemetry_snapshot()
+            self.assertEqual(
+                snapshot["counters"]["realtime_audio_open_total"],
+                1,
+            )
+            self.assertEqual(
+                snapshot["counters"]["realtime_audio_close_total"],
+                1,
+            )
+            await manager.close_session(
+                session.session_id,
+                owner_key="audio-owner",
+                force=True,
+            )
+
+    async def test_audio_is_rejected_when_feature_flag_is_off(self) -> None:
+        session, _ = await self.create()
+        stream = await self.manager.add_stream(
+            session.session_id,
+            owner_key="owner-a",
+            device_id="WXB339",
+        )
+        with self.assertRaises(RealtimeError) as disabled:
+            await self.manager.enable_audio(
+                session.session_id,
+                stream.stream_id,
+                owner_key="owner-a",
+            )
+        self.assertEqual(disabled.exception.code, "audio_disabled")
+
+    async def test_two_hundred_mixed_session_churn_is_bounded(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                **REALTIME_ENV,
+                "CHA_V2_REALTIME_MAX_STREAMS_PER_SESSION": "6",
                 "CHA_V2_REALTIME_MAX_RETAINED_SESSIONS": "16",
                 "CHA_V2_REALTIME_SESSION_CREATE_LIMIT": "500",
             },
@@ -793,17 +897,23 @@ class RealtimeSessionTests(unittest.IsolatedAsyncioTestCase):
                 Settings.from_env(),
                 adapter_factory=FakeAdapter,
             )
-            for index in range(100):
+            total_streams = 0
+            target_sizes = (1, 4, 6)
+            for index in range(200):
                 session, _ = await manager.create_session(
                     owner_key="churn-owner",
                     owner_name="churn",
                 )
-                for offset in range(4):
+                target_size = target_sizes[index % len(target_sizes)]
+                total_streams += target_size
+                first_stream = None
+                for offset in range(target_size):
                     stream = await manager.add_stream(
                         session.session_id,
                         owner_key="churn-owner",
                         device_id=f"WXB{index:03d}-{offset}",
                     )
+                    first_stream = first_stream or stream
                     await manager.handle_client_event(
                         session.session_id,
                         event="first_frame",
@@ -814,6 +924,33 @@ class RealtimeSessionTests(unittest.IsolatedAsyncioTestCase):
                             "height": 1080,
                             "track_state": "live",
                         },
+                    )
+                if index % 10 == 0 and first_stream is not None:
+                    await manager.handle_client_event(
+                        session.session_id,
+                        event="playback_failed",
+                        stream_id=first_stream.stream_id,
+                        error_code="FIRST_FRAME_TIMEOUT",
+                        details={},
+                    )
+                    await manager.handle_client_event(
+                        session.session_id,
+                        event="first_frame",
+                        stream_id=first_stream.stream_id,
+                        error_code=None,
+                        details={
+                            "width": 1920,
+                            "height": 1080,
+                            "track_state": "live",
+                        },
+                    )
+                if index % 25 == 0:
+                    await manager.handle_client_event(
+                        session.session_id,
+                        event="browser_disconnected",
+                        stream_id=None,
+                        error_code="MEDIA_DISCONNECTED",
+                        details={},
                     )
                 await manager.close_session(
                     session.session_id,
@@ -829,19 +966,23 @@ class RealtimeSessionTests(unittest.IsolatedAsyncioTestCase):
             )
             self.assertEqual(
                 snapshot["counters"]["realtime_session_create_total"],
-                100,
+                200,
             )
             self.assertEqual(
                 snapshot["counters"]["realtime_session_close_total"],
-                100,
+                200,
             )
             self.assertEqual(
                 snapshot["counters"]["realtime_stream_open_total"],
-                400,
+                total_streams,
             )
             self.assertEqual(
                 snapshot["counters"]["realtime_stream_close_total"],
-                400,
+                total_streams,
+            )
+            self.assertEqual(
+                snapshot["counters"]["realtime_first_frame_timeout_total"],
+                20,
             )
 
     async def test_structured_log_contains_correlation_fields(self) -> None:
@@ -997,7 +1138,7 @@ class AEEAdapterTests(unittest.TestCase):
         )
         self.assertEqual(
             adapter._open_monitors,
-            {"WXB339", "WXB337"},
+            {"video:WXB339", "video:WXB337"},
         )
         with self.assertRaisesRegex(RuntimeError, "already open"):
             adapter._validate_client_message(
@@ -1028,7 +1169,7 @@ class AEEAdapterTests(unittest.TestCase):
                 }
             ),
         )
-        self.assertEqual(adapter._open_monitors, {"WXB337"})
+        self.assertEqual(adapter._open_monitors, {"video:WXB337"})
         adapter._validate_client_message(
             "media",
             json.dumps(
@@ -1058,14 +1199,14 @@ class AEEAdapterTests(unittest.TestCase):
         )
         self.assertEqual(
             adapter._open_monitors,
-            {"WXB339", "WXB337"},
+            {"video:WXB339", "video:WXB337"},
         )
         adapter.clear_authorized_device("WXB339")
         self.assertEqual(adapter._authorized_devices, {"WXB337"})
-        self.assertEqual(adapter._open_monitors, {"WXB337"})
+        self.assertEqual(adapter._open_monitors, {"video:WXB337"})
         with self.assertRaisesRegex(
             RuntimeError,
-            "selected live video",
+            "authorized receive-only",
         ):
             adapter._validate_client_message(
                 "media",

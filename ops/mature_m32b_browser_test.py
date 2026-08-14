@@ -45,8 +45,8 @@ class ProductHandler(http.server.BaseHTTPRequestHandler):
             )
             body = (
                 path.read_text(encoding="utf-8")
-                .replace("{{CHA_V2_VERSION}}", "0.6.0-test")
-                .replace("{{CHA_V2_BUILD}}", "m3-four-grid-browser-test")
+                .replace("{{CHA_V2_VERSION}}", "0.8.0-test")
+                .replace("{{CHA_V2_BUILD}}", "m3-final-browser-test")
                 .encode("utf-8")
             )
             content_type = "text/html; charset=utf-8"
@@ -88,7 +88,7 @@ def wait_playing(page, count: int) -> dict[str, Any]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Run the M3.2B four-grid product browser workflow."
+        description="Run the M3 final six-grid product browser workflow."
     )
     parser.add_argument(
         "--result",
@@ -98,7 +98,12 @@ def main() -> None:
     parser.add_argument(
         "--screenshot",
         type=Path,
-        default=Path("m32b-four-grid.png"),
+        default=Path("m3-final-six-grid.png"),
+    )
+    parser.add_argument(
+        "--frame",
+        type=Path,
+        default=Path("m3-final-frame.png"),
     )
     args = parser.parse_args()
 
@@ -124,7 +129,10 @@ def main() -> None:
             if chrome_path.is_file():
                 launch_options["executable_path"] = str(chrome_path)
             browser = playwright.chromium.launch(**launch_options)
-            context = browser.new_context(viewport={"width": 1600, "height": 980})
+            context = browser.new_context(
+                viewport={"width": 1600, "height": 980},
+                accept_downloads=True,
+            )
             context.add_init_script(
                 path=str(root / "ops/mature_m32b_mock_browser.js")
             )
@@ -196,6 +204,18 @@ def main() -> None:
             four = wait_playing(page, 4)
             stages.append({"stage": "four_streams", "snapshot": four})
 
+            for device_id in ("WXB353", "WXB367"):
+                page.evaluate(
+                    "id => window.chaRealtimeInspection.addDevice(id)",
+                    device_id,
+                )
+            six = wait_playing(page, 6)
+            if six["layout"] != "six":
+                raise RuntimeError("five or six streams did not use 3x2 layout")
+            if six["max_streams"] != 6:
+                raise RuntimeError("browser product did not enforce max six")
+            stages.append({"stage": "six_streams", "snapshot": six})
+
             page.locator('[data-action="fullscreen"]').first.click()
             page.wait_for_function("() => Boolean(document.fullscreenElement)")
             fullscreen = page.evaluate(
@@ -211,19 +231,82 @@ def main() -> None:
                 raise RuntimeError("fullscreen interrupted a playing stream")
             stages.append({"stage": "fullscreen", **fullscreen})
 
+            first_stream_id = six["streams"][0]["stream_id"]
+            args.frame.parent.mkdir(parents=True, exist_ok=True)
+            with page.expect_download(timeout=10000) as download_info:
+                page.evaluate(
+                    "id => window.chaRealtimeInspection.captureFrame(id)",
+                    first_stream_id,
+                )
+            download = download_info.value
+            download.save_as(args.frame)
+            if not args.frame.is_file() or args.frame.stat().st_size < 1024:
+                raise RuntimeError("local frame capture did not create a PNG")
+            stages.append(
+                {
+                    "stage": "local_frame_capture",
+                    "suggested_filename": download.suggested_filename,
+                    "bytes": args.frame.stat().st_size,
+                }
+            )
+
+            page.evaluate(
+                "id => window.chaRealtimeInspection.toggleAudio(id)",
+                six["streams"][0]["stream_id"],
+            )
+            page.wait_for_function(
+                "id => window.chaRealtimeInspection.snapshot()"
+                ".active_audio_stream_id === id",
+                arg=six["streams"][0]["stream_id"],
+                timeout=10000,
+            )
+            page.evaluate(
+                "id => window.chaRealtimeInspection.toggleAudio(id)",
+                six["streams"][1]["stream_id"],
+            )
+            page.wait_for_function(
+                """id => {
+                  const snapshot = window.chaRealtimeInspection.snapshot();
+                  return snapshot.active_audio_stream_id === id
+                    && snapshot.streams.filter(
+                      item => item.audio_status === "PLAYING"
+                    ).length === 1;
+                }""",
+                arg=six["streams"][1]["stream_id"],
+                timeout=10000,
+            )
+            audio_switched = page.evaluate(
+                "() => window.chaRealtimeInspection.snapshot()"
+            )
+            page.evaluate(
+                "id => window.chaRealtimeInspection.toggleAudio(id)",
+                six["streams"][1]["stream_id"],
+            )
+            page.wait_for_function(
+                "() => !window.chaRealtimeInspection.snapshot()"
+                ".active_audio_stream_id",
+                timeout=10000,
+            )
+            stages.append(
+                {
+                    "stage": "single_receive_audio_switch",
+                    "snapshot": audio_switched,
+                }
+            )
+
             args.screenshot.parent.mkdir(parents=True, exist_ok=True)
             page.screenshot(path=str(args.screenshot), full_page=True)
 
             first_id = next(
                 item["stream_id"]
-                for item in four["streams"]
+                for item in six["streams"]
                 if item["device_id"] == "WXB320"
             )
             page.evaluate(
                 "streamId => window.chaRealtimeInspection.closeTile(streamId)",
                 first_id,
             )
-            survivors = wait_playing(page, 3)
+            survivors = wait_playing(page, 5)
             stages.append(
                 {"stage": "single_close_survivors", "snapshot": survivors}
             )
@@ -231,22 +314,20 @@ def main() -> None:
             page.evaluate(
                 "() => window.chaRealtimeInspection.addDevice('WXB320')"
             )
-            reopened = wait_playing(page, 4)
-            stages.append({"stage": "reopen_four", "snapshot": reopened})
+            reopened = wait_playing(page, 6)
+            stages.append({"stage": "reopen_six", "snapshot": reopened})
 
+            previous_session_id = reopened["session_id"]
             page.evaluate("() => window.__m32bControlSocket.close()")
             page.wait_for_function(
                 """() => {
                   const snapshot = window.chaRealtimeInspection.snapshot();
-                  return snapshot.streams.length === 4
+                  return snapshot.streams.length === 6
                     && snapshot.streams.every(
                       item => item.status === "DEGRADED"
-                    )
-                    && !document.querySelector(
-                      "#reconnectButton"
-                    ).classList.contains("hidden");
+                    );
                 }""",
-                timeout=15000,
+                timeout=1000,
             )
             degraded = page.evaluate(
                 "() => window.chaRealtimeInspection.snapshot()"
@@ -254,9 +335,8 @@ def main() -> None:
             stages.append(
                 {"stage": "control_disconnect_degraded", "snapshot": degraded}
             )
-            page.locator("#reconnectButton").click()
             try:
-                reconnected = wait_playing(page, 4)
+                reconnected = wait_playing(page, 6)
             except Exception as error:
                 diagnostic = page.evaluate(
                     """() => ({
@@ -269,10 +349,12 @@ def main() -> None:
                     })"""
                 )
                 raise RuntimeError(
-                    f"explicit reconnect failed: {diagnostic}"
+                    f"bounded automatic reconnect failed: {diagnostic}"
                 ) from error
+            if reconnected["session_id"] == previous_session_id:
+                raise RuntimeError("automatic reconnect did not rebuild session")
             stages.append(
-                {"stage": "explicit_reconnect", "snapshot": reconnected}
+                {"stage": "single_automatic_reconnect", "snapshot": reconnected}
             )
 
             page.evaluate(

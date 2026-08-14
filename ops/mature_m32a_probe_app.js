@@ -8,6 +8,7 @@
     connectionError: null,
     devices: [],
     videos: new Map(),
+    audios: new Map(),
     streams: new Map(),
     events: [],
     startedAt: performance.now(),
@@ -43,10 +44,12 @@
     for (const deviceId of devices) {
       const tile = document.createElement("section");
       tile.className = "tile";
-      tile.innerHTML = `<strong>${deviceId}</strong><div data-status>idle</div><video autoplay muted playsinline></video>`;
+      tile.innerHTML = `<strong>${deviceId}</strong><div data-status>idle</div><video autoplay muted playsinline></video><audio autoplay muted></audio>`;
       grid.appendChild(tile);
       const video = tile.querySelector("video");
+      const audio = tile.querySelector("audio");
       state.videos.set(deviceId, video);
+      state.audios.set(deviceId, audio);
       state.streams.set(deviceId, {
         device_id: deviceId,
         status: "IDLE",
@@ -125,6 +128,8 @@
           consumer_id: message?.data?.id || null,
           producer_id: message?.data?.producerId || null,
           transport_id: message?.data?.appData?.transportId || null,
+          kind: message?.data?.kind || null,
+          codec: message?.data?.rtpParameters?.codecs?.[0]?.mimeType || null,
         });
       } else if (code && code !== 200) {
         state.connectionError = new Error(`${method || "AEE"} failed ${code}`);
@@ -158,7 +163,7 @@
     if (result !== 200) throw new Error(`openVideo ${deviceId} returned ${result}`);
     await waitFor(
       () => stream.status === "PLAYING",
-      45000,
+      20000,
       `first frame ${deviceId}`,
     );
     return {...stream};
@@ -178,6 +183,60 @@
     return {...stream};
   }
 
+  async function probeAudio(deviceId) {
+    if (!state.devices.includes(deviceId)) throw new Error("device not approved");
+    const audio = state.audios.get(deviceId);
+    const video = state.videos.get(deviceId);
+    const result = await state.client.openAudio(deviceId, audio, "", "");
+    event("open_audio_result", {device_id: deviceId, result});
+    if (result !== 200) throw new Error(`openAudio ${deviceId} returned ${result}`);
+    await waitFor(
+      () => audio.srcObject?.getAudioTracks?.()[0]?.readyState === "live",
+      20000,
+      `audio track ${deviceId}`,
+    );
+    const track = audio.srcObject.getAudioTracks()[0];
+    audio.muted = true;
+    const muted = audio.muted;
+    audio.muted = false;
+    await audio.play().catch(() => {});
+    const unmuted = !audio.muted;
+    audio.muted = true;
+    const media = state.client?._mediaClientList?.get?.("mcs8_admin");
+    const consumers = media?._consumerList
+      ? Array.from(media._consumerList.values())
+      : [];
+    const consumer = [...consumers].reverse().find(
+      (item) => item?.kind === "audio" || item?.track?.kind === "audio",
+    );
+    const codec = consumer?.rtpParameters?.codecs?.[0]?.mimeType || null;
+    const trackStateBeforeClose = track.readyState;
+    const closeResult = await state.client.closeAudio(deviceId, "", "");
+    for (const item of audio.srcObject?.getTracks?.() || []) item.stop();
+    audio.srcObject = null;
+    assertVideoLive(video, deviceId);
+    event("close_audio_result", {device_id: deviceId, result: closeResult});
+    return {
+      device_id: deviceId,
+      open_result: result,
+      close_result: closeResult,
+      codec,
+      track_state_before_close: trackStateBeforeClose,
+      track_state_after_close: track.readyState,
+      muted,
+      unmuted,
+      video_track_state:
+        video.srcObject?.getVideoTracks?.()[0]?.readyState || null,
+    };
+  }
+
+  function assertVideoLive(video, deviceId) {
+    const track = video?.srcObject?.getVideoTracks?.()[0];
+    if (!track || track.readyState !== "live") {
+      throw new Error(`video track ${deviceId} was not live after audio close`);
+    }
+  }
+
   function internalSdkMetrics() {
     const media = state.client?._mediaClientList?.get?.("mcs8_admin");
     const consumers = media?._consumerList ? Array.from(media._consumerList.values()) : [];
@@ -186,6 +245,10 @@
       consumer_map_size: media?._consumerList?.size ?? null,
       show_video_map_size: media?._showVideoList?.size ?? null,
       consumer_devices: consumers.map((item) => item?.appData?.devId || null),
+      consumer_kinds: consumers.map((item) => item?.kind || item?.track?.kind || null),
+      consumer_codecs: consumers.map(
+        (item) => item?.rtpParameters?.codecs?.[0]?.mimeType || null,
+      ),
       consumer_track_states: consumers.map((item) => item?.track?.readyState || null),
       transport_id: media?._consumerTransport?.id || null,
       transport_state: media?._consumerTransport?.connectionState || null,
@@ -229,6 +292,7 @@
     initialize,
     openDevice,
     closeDevice,
+    probeAudio,
     snapshot,
     serverMetrics,
     closeSession,

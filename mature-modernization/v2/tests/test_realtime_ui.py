@@ -31,18 +31,25 @@ class RealtimeProductUITests(unittest.TestCase):
         self.assertIn('id="closeSessionButton"', self.html)
         self.assertIn("multistream_runtime.js", self.html)
 
-    def test_only_one_and_four_stream_layouts_are_advertised(self) -> None:
-        self.assertIn("1 / 4 路布局", self.html)
+    def test_only_validated_one_four_and_six_layouts_are_advertised(self) -> None:
+        self.assertIn("1 / 4 / 6 路布局", self.html)
         self.assertIn(".video-grid.single", self.css)
         self.assertIn(".video-grid.quad", self.css)
-        self.assertNotIn("6 路", self.html)
+        self.assertIn(".video-grid.six", self.css)
+        self.assertIn("最多 6 路", self.html)
         self.assertNotIn("9 路", self.html)
 
-    def test_video_is_muted_and_fullscreen_is_display_only(self) -> None:
+    def test_video_is_muted_and_audio_remains_receive_only(self) -> None:
         self.assertIn("<video autoplay muted playsinline>", self.html)
+        self.assertIn("<audio autoplay muted>", self.html)
         self.assertIn("requestFullscreen", self.app_js)
-        self.assertNotIn("openAudio", self.app_js)
-        self.assertNotIn("openAudio", self.runtime_js)
+        self.assertIn("captureFrame", self.app_js)
+        self.assertIn("openAudio", self.app_js)
+        self.assertIn("openAudio", self.runtime_js)
+        self.assertNotIn("getUserMedia", self.app_js)
+        self.assertNotIn("getUserMedia", self.runtime_js)
+        self.assertNotIn("startSendAudio", self.app_js)
+        self.assertNotIn("startSendAudio", self.runtime_js)
 
     def test_product_uses_single_multistream_runtime(self) -> None:
         self.assertIn(

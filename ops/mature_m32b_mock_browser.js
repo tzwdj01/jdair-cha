@@ -15,6 +15,28 @@
     streamsClosed: 0,
     tracksActive: 0,
   };
+  HTMLMediaElement.prototype.play = function play() {
+    return Promise.resolve();
+  };
+  CanvasRenderingContext2D.prototype.drawImage = function drawImage() {};
+
+  function fakeTrack(kind) {
+    return {
+      kind,
+      readyState: "live",
+      stop() {
+        this.readyState = "ended";
+      },
+    };
+  }
+
+  function fakeStream(track) {
+    return {
+      getTracks: () => [track],
+      getVideoTracks: () => track.kind === "video" ? [track] : [],
+      getAudioTracks: () => track.kind === "audio" ? [track] : [],
+    };
+  }
 
   function response(data, status = 200) {
     return Promise.resolve(new Response(JSON.stringify({
@@ -40,7 +62,8 @@
     return {
       session_id: session.id,
       status,
-      max_streams: 4,
+      max_streams: 6,
+      audio_enabled: true,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
       last_heartbeat_at: new Date().toISOString(),
@@ -147,21 +170,27 @@
         && attempt === 1
         && !window.__m32bSkipFirstFrameTimeout
       ) return 200;
-      const canvas = document.createElement("canvas");
-      canvas.width = deviceId === "WXB320" ? 1280 : 1920;
-      canvas.height = deviceId === "WXB320" ? 720 : 1080;
-      const context = canvas.getContext("2d");
-      context.fillStyle = "#07121d";
-      context.fillRect(0, 0, canvas.width, canvas.height);
-      context.fillStyle = "#27b7ed";
-      context.font = "56px sans-serif";
-      context.fillText(deviceId, 60, 100);
-      const stream = canvas.captureStream(5);
-      this.streams.set(deviceId, {stream, video, canvas});
+      const width = deviceId === "WXB320" ? 1280 : 1920;
+      const height = deviceId === "WXB320" ? 720 : 1080;
+      const track = fakeTrack("video");
+      const stream = fakeStream(track);
+      Object.defineProperty(video, "srcObject", {
+        configurable: true,
+        writable: true,
+        value: stream,
+      });
+      Object.defineProperty(video, "videoWidth", {
+        configurable: true,
+        value: width,
+      });
+      Object.defineProperty(video, "videoHeight", {
+        configurable: true,
+        value: height,
+      });
+      this.streams.set(deviceId, {stream, video});
       window.__m32bMetrics.streamsOpened += 1;
-      window.__m32bMetrics.tracksActive += stream.getTracks().length;
-      video.srcObject = stream;
-      await video.play().catch(() => {});
+      window.__m32bMetrics.tracksActive += 1;
+      setTimeout(() => video.dispatchEvent(new Event("loadeddata")), 5);
       return 200;
     }
 
@@ -178,8 +207,37 @@
       return 200;
     }
 
+    async openAudio(deviceId, audio) {
+      const record = this.streams.get(deviceId);
+      if (!record) return 404;
+      const track = fakeTrack("audio");
+      const stream = fakeStream(track);
+      record.audio = audio;
+      record.audioStream = stream;
+      Object.defineProperty(audio, "srcObject", {
+        configurable: true,
+        writable: true,
+        value: stream,
+      });
+      window.__m32bMetrics.tracksActive += 1;
+      return 200;
+    }
+
+    async closeAudio(deviceId) {
+      const record = this.streams.get(deviceId);
+      if (!record?.audioStream) return 404;
+      const tracks = record.audioStream.getTracks();
+      for (const track of tracks) track.stop();
+      window.__m32bMetrics.tracksActive -= tracks.length;
+      if (record.audio) record.audio.srcObject = null;
+      record.audio = null;
+      record.audioStream = null;
+      return 200;
+    }
+
     async close() {
       for (const deviceId of [...this.streams.keys()]) {
+        await this.closeAudio(deviceId);
         await this.closeVideo(deviceId);
       }
       if (!this.countedClosed) {
@@ -210,6 +268,8 @@
         {device_id: "WXB337", name: "JDTY02673", group: "维修部", online: true},
         {device_id: "WXB342", name: "JDTY03099", group: "维修部", online: true},
         {device_id: "WXB345", name: "JDTY03101", group: "维修部", online: true},
+        {device_id: "WXB353", name: "JDTY04003", group: "维修部", online: true},
+        {device_id: "WXB367", name: "JDTY05017", group: "维修部", online: true},
         {device_id: "WXB301", name: "JDTY01828", group: "维修部", online: false},
       ]});
     }
@@ -219,13 +279,13 @@
       return response(sessionPublic(sessions.get(id)), 201);
     }
     const match = url.pathname.match(
-      /\/sessions\/([^/]+)(?:\/streams(?:\/([^/]+))?)?(?:\/heartbeat)?$/,
+      /\/sessions\/([^/]+)(?:\/streams(?:\/([^/]+))?)?(?:\/(heartbeat|audio))?$/,
     );
     if (!match) return response({code: "not_found"}, 404);
     const session = sessions.get(match[1]);
     if (!session) return response({code: "session_not_found"}, 404);
 
-    if (url.pathname.endsWith("/heartbeat")) {
+    if (match[3] === "heartbeat") {
       const snapshot = window.chaRealtimeInspection?.snapshot?.();
       for (const item of snapshot?.streams || []) {
         const stream = session.streams.get(item.stream_id);
@@ -249,7 +309,7 @@
       const active = [...session.streams.values()].filter(
         (stream) => stream.status !== "CLOSED",
       );
-      if (active.length >= 4) return response({code: "stream_limit_reached"}, 409);
+      if (active.length >= 6) return response({code: "stream_limit_reached"}, 409);
       const stream = {
         stream_id: `stream-${++streamSequence}`,
         device_id: body.device_id,
@@ -265,6 +325,12 @@
         error_code: null,
         release_mode: null,
         runtime_state: "AUTHORIZED",
+        audio: {
+          status: "OFF",
+          track_state: null,
+          codec: null,
+          error_code: null,
+        },
       };
       session.streams.set(stream.stream_id, stream);
       return response({
@@ -276,9 +342,40 @@
           runtime_path: "/api/v2/realtime/assets/multistream_runtime.js",
           sdk_path: "/api/v2/realtime/assets/mcs8Client.js",
           uid: "cha-realtime",
-          max_streams: 4,
+          max_streams: 6,
         },
       }, 201);
+    }
+
+    if (match[2] && match[3] === "audio" && method === "POST") {
+      const stream = session.streams.get(match[2]);
+      if (!stream) return response({code: "stream_not_found"}, 404);
+      const activeAudio = [...session.streams.values()].find(
+        (item) => item.stream_id !== stream.stream_id
+          && ["OPENING", "PLAYING"].includes(item.audio?.status),
+      );
+      if (activeAudio) {
+        return response({code: "audio_stream_limit_reached"}, 409);
+      }
+      stream.audio.status = "OPENING";
+      return response(sessionPublic(session));
+    }
+
+    if (match[2] && match[3] === "audio" && method === "DELETE") {
+      const stream = session.streams.get(match[2]);
+      if (!stream) return response({code: "stream_not_found"}, 404);
+      if (
+        window.__m32bControlSocket?.readyState
+        === FakeWebSocket.OPEN
+      ) {
+        await window.__m32bControlSocket.issue("close_audio", {
+          stream_id: stream.stream_id,
+          device_id: stream.device_id,
+        });
+      }
+      stream.audio.status = "OFF";
+      stream.audio.track_state = null;
+      return response(sessionPublic(session));
     }
 
     if (match[2] && method === "DELETE") {
