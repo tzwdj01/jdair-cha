@@ -37,6 +37,18 @@ class _LegacyHandler(http.server.BaseHTTPRequestHandler):
                         "groupName": "维修部",
                         "online": False,
                     },
+                    {
+                        "devId": "WXB337",
+                        "name": "JDTY02673",
+                        "groupName": "Maintenance",
+                        "online": True,
+                    },
+                    {
+                        "devId": "WXB342",
+                        "name": "JDTY03099",
+                        "groupName": "Maintenance",
+                        "online": True,
+                    },
                 ]
             ).encode()
             status = 200
@@ -56,9 +68,10 @@ class _LegacyHandler(http.server.BaseHTTPRequestHandler):
 class _APIAdapter:
     instances: list["_APIAdapter"] = []
 
-    def __init__(self, _session_id, _settings) -> None:
+    def __init__(self, _session_id, settings) -> None:
+        self.settings = settings
         self.prepared = False
-        self.authorized_device = None
+        self.authorized_devices: set[str] = set()
         self.disconnect_calls = 0
         self.__class__.instances.append(self)
 
@@ -66,10 +79,13 @@ class _APIAdapter:
         self.prepared = True
 
     def authorize_device(self, device_id: str) -> None:
-        self.authorized_device = device_id
+        self.authorized_devices.add(device_id)
 
-    def clear_authorized_device(self) -> None:
-        self.authorized_device = None
+    def clear_authorized_device(self, device_id: str | None = None) -> None:
+        if device_id is None:
+            self.authorized_devices.clear()
+        else:
+            self.authorized_devices.discard(device_id)
 
     async def disconnect(self) -> None:
         self.disconnect_calls += 1
@@ -189,6 +205,7 @@ class RealtimeAPITests(unittest.IsolatedAsyncioTestCase):
                 "CHA_V2_LEGACY_BASE_URL": f"http://{host}:{port}",
                 "CHA_V2_REALTIME_CLEANUP_INTERVAL_SECONDS": "60",
                 "CHA_V2_REALTIME_COMMAND_TIMEOUT_SECONDS": "0.05",
+                "CHA_V2_REALTIME_MAX_STREAMS_PER_SESSION": "2",
             },
             clear=False,
         )
@@ -226,9 +243,12 @@ class RealtimeAPITests(unittest.IsolatedAsyncioTestCase):
 
         devices = await self.request("GET", "/api/v2/realtime/devices")
         self.assertEqual(devices.status_code, 200)
-        self.assertEqual(
-            devices.json()["data"]["devices"][0]["device_id"],
+        self.assertIn(
             "WXB339",
+            {
+                item["device_id"]
+                for item in devices.json()["data"]["devices"]
+            },
         )
 
         created = await self.request(
@@ -259,6 +279,15 @@ class RealtimeAPITests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(stream.status_code, 201)
         stream_id = stream.json()["data"]["stream"]["stream_id"]
+        self.assertEqual(
+            stream.json()["data"]["connection"]["max_streams"],
+            2,
+        )
+        self.assertTrue(
+            stream.json()["data"]["connection"]["runtime_path"].endswith(
+                "multistream_runtime.js"
+            )
+        )
 
         second = await self.request(
             "POST",
@@ -268,7 +297,7 @@ class RealtimeAPITests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(second.status_code, 409)
         self.assertEqual(
             second.json()["data"]["code"],
-            "stream_limit_reached",
+            "duplicate_device",
         )
 
         deleted = await self.request(
@@ -276,7 +305,10 @@ class RealtimeAPITests(unittest.IsolatedAsyncioTestCase):
             f"/api/v2/realtime/sessions/{session_id}/streams/{stream_id}",
         )
         self.assertEqual(deleted.status_code, 200)
-        self.assertEqual(deleted.json()["data"]["streams"], [])
+        self.assertEqual(
+            deleted.json()["data"]["streams"][0]["status"],
+            "CLOSED",
+        )
 
         closed = await self.request(
             "DELETE",
@@ -288,6 +320,39 @@ class RealtimeAPITests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(closed.json()["data"]["status"], "CLOSED")
         self.assertEqual(repeated.json()["data"]["status"], "CLOSED")
+
+    async def test_api_enforces_configured_active_stream_limit(self) -> None:
+        created = await self.request(
+            "POST",
+            "/api/v2/realtime/sessions",
+        )
+        session_id = created.json()["data"]["session_id"]
+        first = await self.request(
+            "POST",
+            f"/api/v2/realtime/sessions/{session_id}/streams",
+            {"device_id": "WXB339"},
+        )
+        second = await self.request(
+            "POST",
+            f"/api/v2/realtime/sessions/{session_id}/streams",
+            {"device_id": "WXB337"},
+        )
+        limited = await self.request(
+            "POST",
+            f"/api/v2/realtime/sessions/{session_id}/streams",
+            {"device_id": "WXB342"},
+        )
+        self.assertEqual(first.status_code, 201)
+        self.assertEqual(second.status_code, 201)
+        self.assertEqual(limited.status_code, 409)
+        self.assertEqual(
+            limited.json()["data"]["code"],
+            "stream_limit_reached",
+        )
+        await self.request(
+            "DELETE",
+            f"/api/v2/realtime/sessions/{session_id}",
+        )
 
     async def test_offline_and_missing_devices_are_rejected(self) -> None:
         created = await self.request(

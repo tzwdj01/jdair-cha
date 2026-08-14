@@ -20,31 +20,39 @@ REALTIME_ENV = {
     "CHA_V2_REALTIME_CLEANUP_INTERVAL_SECONDS": "60",
     "CHA_V2_REALTIME_CLOSED_RETENTION_SECONDS": "60",
     "CHA_V2_REALTIME_COMMAND_TIMEOUT_SECONDS": "0.05",
+    "CHA_V2_REALTIME_MAX_STREAMS_PER_SESSION": "2",
 }
 
 
 class FakeAdapter:
     instances: list["FakeAdapter"] = []
 
-    def __init__(self, session_id: str, _settings: Settings) -> None:
+    def __init__(self, session_id: str, settings: Settings) -> None:
         self.session_id = session_id
+        self.settings = settings
         self.prepared = False
-        self.authorized_device = None
+        self.authorized_devices: set[str] = set()
         self.disconnect_calls = 0
         self.proxy_calls = 0
+        self.fail_disconnect = False
         self.__class__.instances.append(self)
 
     async def prepare(self) -> None:
         self.prepared = True
 
     def authorize_device(self, device_id: str) -> None:
-        self.authorized_device = device_id
+        self.authorized_devices.add(device_id)
 
-    def clear_authorized_device(self) -> None:
-        self.authorized_device = None
+    def clear_authorized_device(self, device_id: str | None = None) -> None:
+        if device_id is None:
+            self.authorized_devices.clear()
+        else:
+            self.authorized_devices.discard(device_id)
 
     async def disconnect(self) -> None:
         self.disconnect_calls += 1
+        if self.fail_disconnect:
+            raise RuntimeError("upstream close failed")
 
     async def proxy(self, _kind, _socket, *, proxy_host: str) -> None:
         del proxy_host
@@ -84,6 +92,27 @@ class RealtimeSessionTests(unittest.IsolatedAsyncioTestCase):
             owner_name="tester",
         )
 
+    async def ack_next(
+        self,
+        session_id: str,
+        socket: FakeControlSocket,
+        task: asyncio.Task,
+        *,
+        ok: bool,
+    ):
+        while not socket.commands:
+            await asyncio.sleep(0)
+        command = socket.commands.pop(0)
+        await self.manager.handle_control_message(
+            session_id,
+            {
+                "type": "ack",
+                "command_id": command["command_id"],
+                "ok": ok,
+            },
+        )
+        return await task
+
     async def test_create_query_and_heartbeat(self) -> None:
         session, _ = await self.create()
         self.assertEqual(session.status, SessionStatus.READY)
@@ -100,26 +129,39 @@ class RealtimeSessionTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(fetched.session_id, session.session_id)
 
-    async def test_add_stream_and_reject_second_stream(self) -> None:
+    async def test_add_two_streams_reject_duplicate_and_limit(self) -> None:
         session, _ = await self.create()
-        stream = await self.manager.add_stream(
+        first = await self.manager.add_stream(
             session.session_id,
             owner_key="owner-a",
             device_id="WXB339",
         )
         self.assertTrue(FakeAdapter.instances[0].prepared)
-        self.assertEqual(
-            FakeAdapter.instances[0].authorized_device,
-            "WXB339",
-        )
-        self.assertEqual(stream.status, StreamStatus.CONNECTING)
+        self.assertEqual(first.status, StreamStatus.CONNECTING)
         with self.assertRaises(RealtimeError) as context:
             await self.manager.add_stream(
                 session.session_id,
                 owner_key="owner-a",
-                device_id="WXB301",
+                device_id="WXB339",
             )
-        self.assertEqual(context.exception.code, "stream_limit_reached")
+        self.assertEqual(context.exception.code, "duplicate_device")
+        second = await self.manager.add_stream(
+            session.session_id,
+            owner_key="owner-a",
+            device_id="WXB337",
+        )
+        self.assertEqual(second.status, StreamStatus.CONNECTING)
+        self.assertEqual(
+            FakeAdapter.instances[0].authorized_devices,
+            {"WXB339", "WXB337"},
+        )
+        with self.assertRaises(RealtimeError) as limit:
+            await self.manager.add_stream(
+                session.session_id,
+                owner_key="owner-a",
+                device_id="WXB342",
+            )
+        self.assertEqual(limit.exception.code, "stream_limit_reached")
 
     async def test_delete_stream_falls_back_to_media_disconnect(self) -> None:
         session, _ = await self.create()
@@ -135,7 +177,8 @@ class RealtimeSessionTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(result.status, SessionStatus.READY)
         self.assertFalse(result.connection_reusable)
-        self.assertEqual(result.streams, {})
+        self.assertEqual(stream.status, StreamStatus.CLOSED)
+        self.assertIsNotNone(stream.closed_at)
         self.assertEqual(FakeAdapter.instances[0].disconnect_calls, 1)
 
     async def test_delete_stream_uses_browser_release_ack(self) -> None:
@@ -161,26 +204,172 @@ class RealtimeSessionTests(unittest.IsolatedAsyncioTestCase):
                 owner_key="owner-a",
             )
         )
-        while not socket.commands:
-            await asyncio.sleep(0)
-        await self.manager.handle_control_message(
+        await self.ack_next(
             session.session_id,
-            {
-                "type": "ack",
-                "command_id": socket.commands[0]["command_id"],
-                "ok": True,
-            },
+            socket,
+            task,
+            ok=True,
         )
-        await task
-        self.assertIsNone(FakeAdapter.instances[0].authorized_device)
+        self.assertNotIn(
+            "WXB339",
+            FakeAdapter.instances[0].authorized_devices,
+        )
         self.assertTrue(session.connection_reusable)
 
-    async def test_close_is_idempotent(self) -> None:
+    async def test_close_one_stream_does_not_stop_survivor(self) -> None:
         session, _ = await self.create()
-        await self.manager.add_stream(
+        first = await self.manager.add_stream(
             session.session_id,
             owner_key="owner-a",
             device_id="WXB339",
+        )
+        second = await self.manager.add_stream(
+            session.session_id,
+            owner_key="owner-a",
+            device_id="WXB337",
+        )
+        for stream in (first, second):
+            await self.manager.handle_client_event(
+                session.session_id,
+                event="first_frame",
+                stream_id=stream.stream_id,
+                error_code=None,
+                details={"track_state": "live"},
+            )
+        self.assertEqual(session.status, SessionStatus.PLAYING)
+        socket = FakeControlSocket()
+        session.control_socket = socket
+        task = asyncio.create_task(
+            self.manager.delete_stream(
+                session.session_id,
+                first.stream_id,
+                owner_key="owner-a",
+            )
+        )
+        await self.ack_next(
+            session.session_id,
+            socket,
+            task,
+            ok=True,
+        )
+        self.assertEqual(first.status, StreamStatus.CLOSED)
+        self.assertEqual(second.status, StreamStatus.PLAYING)
+        self.assertEqual(session.status, SessionStatus.PLAYING)
+        self.assertEqual(FakeAdapter.instances[0].disconnect_calls, 0)
+
+    async def test_partial_release_failure_degrades_only_target(self) -> None:
+        session, _ = await self.create()
+        first = await self.manager.add_stream(
+            session.session_id,
+            owner_key="owner-a",
+            device_id="WXB339",
+        )
+        second = await self.manager.add_stream(
+            session.session_id,
+            owner_key="owner-a",
+            device_id="WXB337",
+        )
+        for stream in (first, second):
+            await self.manager.handle_client_event(
+                session.session_id,
+                event="first_frame",
+                stream_id=stream.stream_id,
+                error_code=None,
+                details={"track_state": "live"},
+            )
+        socket = FakeControlSocket()
+        session.control_socket = socket
+        task = asyncio.create_task(
+            self.manager.delete_stream(
+                session.session_id,
+                first.stream_id,
+                owner_key="owner-a",
+            )
+        )
+        with self.assertRaises(RealtimeError) as failed:
+            await self.ack_next(
+                session.session_id,
+                socket,
+                task,
+                ok=False,
+            )
+        self.assertEqual(failed.exception.code, "stream_release_failed")
+        self.assertEqual(first.status, StreamStatus.FAILED)
+        self.assertEqual(second.status, StreamStatus.PLAYING)
+        self.assertEqual(session.status, SessionStatus.DEGRADED)
+        self.assertEqual(FakeAdapter.instances[0].disconnect_calls, 0)
+
+        retry = asyncio.create_task(
+            self.manager.delete_stream(
+                session.session_id,
+                first.stream_id,
+                owner_key="owner-a",
+            )
+        )
+        await self.ack_next(
+            session.session_id,
+            socket,
+            retry,
+            ok=True,
+        )
+        self.assertEqual(first.status, StreamStatus.CLOSED)
+        self.assertEqual(second.status, StreamStatus.PLAYING)
+        self.assertEqual(session.status, SessionStatus.PLAYING)
+
+    async def test_failed_stream_can_be_deleted(self) -> None:
+        session, _ = await self.create()
+        stream = await self.manager.add_stream(
+            session.session_id,
+            owner_key="owner-a",
+            device_id="WXB339",
+        )
+        await self.manager.handle_client_event(
+            session.session_id,
+            event="playback_failed",
+            stream_id=stream.stream_id,
+            error_code="OPEN_VIDEO_FAILED",
+            details={},
+        )
+        self.assertEqual(session.status, SessionStatus.DEGRADED)
+        result = await self.manager.delete_stream(
+            session.session_id,
+            stream.stream_id,
+            owner_key="owner-a",
+        )
+        self.assertEqual(result.status, SessionStatus.READY)
+        self.assertEqual(stream.status, StreamStatus.CLOSED)
+
+    async def test_session_close_records_partial_disconnect_failure(self) -> None:
+        session, _ = await self.create()
+        stream = await self.manager.add_stream(
+            session.session_id,
+            owner_key="owner-a",
+            device_id="WXB339",
+        )
+        FakeAdapter.instances[0].fail_disconnect = True
+        closed = await self.manager.close_session(
+            session.session_id,
+            owner_key="owner-a",
+        )
+        self.assertEqual(closed.status, SessionStatus.CLOSED)
+        self.assertEqual(stream.status, StreamStatus.CLOSED)
+        self.assertEqual(stream.error_code, "AEE_DISCONNECT_FAILED")
+        self.assertEqual(
+            stream.release_mode,
+            "session_disconnect_unconfirmed",
+        )
+
+    async def test_close_is_idempotent(self) -> None:
+        session, _ = await self.create()
+        first_stream = await self.manager.add_stream(
+            session.session_id,
+            owner_key="owner-a",
+            device_id="WXB339",
+        )
+        second_stream = await self.manager.add_stream(
+            session.session_id,
+            owner_key="owner-a",
+            device_id="WXB337",
         )
         first = await self.manager.close_session(
             session.session_id,
@@ -192,6 +381,8 @@ class RealtimeSessionTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertIs(first, second)
         self.assertEqual(second.status, SessionStatus.CLOSED)
+        self.assertEqual(first_stream.status, StreamStatus.CLOSED)
+        self.assertEqual(second_stream.status, StreamStatus.CLOSED)
         self.assertEqual(FakeAdapter.instances[0].disconnect_calls, 1)
 
     async def test_illegal_session_and_owner_are_rejected(self) -> None:
@@ -215,6 +406,14 @@ class RealtimeSessionTests(unittest.IsolatedAsyncioTestCase):
         )
         await self.manager.handle_client_event(
             session.session_id,
+            event="room_joined",
+            stream_id=stream.stream_id,
+            error_code=None,
+            details={},
+        )
+        self.assertTrue(session.connection_reusable)
+        await self.manager.handle_client_event(
+            session.session_id,
             event="first_frame",
             stream_id=stream.stream_id,
             error_code=None,
@@ -225,19 +424,9 @@ class RealtimeSessionTests(unittest.IsolatedAsyncioTestCase):
             },
         )
         self.assertEqual(session.status, SessionStatus.PLAYING)
-        self.assertEqual(session.connection_reusable, False)
         self.assertEqual(stream.status, StreamStatus.PLAYING)
         self.assertEqual(stream.width, 1920)
         self.assertEqual(stream.track_state, "live")
-
-        await self.manager.handle_client_event(
-            session.session_id,
-            event="room_joined",
-            stream_id=stream.stream_id,
-            error_code=None,
-            details={},
-        )
-        self.assertTrue(session.connection_reusable)
 
     async def test_expired_session_is_force_closed_without_zombie(self) -> None:
         session, _ = await self.create()
@@ -249,7 +438,12 @@ class RealtimeSessionTests(unittest.IsolatedAsyncioTestCase):
         session.expires_at = session.created_at - dt.timedelta(seconds=1)
         await self.manager.cleanup_expired()
         self.assertEqual(session.status, SessionStatus.CLOSED)
-        self.assertEqual(session.streams, {})
+        self.assertTrue(
+            all(
+                item.status == StreamStatus.CLOSED
+                for item in session.streams.values()
+            )
+        )
         self.assertEqual(FakeAdapter.instances[0].disconnect_calls, 1)
 
     async def test_control_disconnect_forces_upstream_release(self) -> None:
@@ -357,7 +551,7 @@ class AEEAdapterTests(unittest.TestCase):
         )
         self.assertEqual(adapter._media_info["token"], "real-media-token")
 
-    def test_media_allowlist_accepts_only_selected_receive_video(self) -> None:
+    def test_media_allowlist_accepts_multiple_authorized_videos(self) -> None:
         with patch.dict(
             os.environ,
             {
@@ -372,6 +566,7 @@ class AEEAdapterTests(unittest.TestCase):
         ):
             adapter = AEEAdapter("session-1", Settings.from_env())
         adapter.authorize_device("WXB339")
+        adapter.authorize_device("WXB337")
         adapter._validate_client_message(
             "media",
             json.dumps(
@@ -396,7 +591,25 @@ class AEEAdapterTests(unittest.TestCase):
                 }
             ),
         )
-        with self.assertRaisesRegex(RuntimeError, "one live video"):
+        adapter._validate_client_message(
+            "media",
+            json.dumps(
+                {
+                    "request": True,
+                    "method": "mediaMonitor",
+                    "data": {
+                        "kind": "video",
+                        "devId": "WXB337",
+                        "streamType": 2,
+                    },
+                }
+            ),
+        )
+        self.assertEqual(
+            adapter._open_monitors,
+            {"WXB339", "WXB337"},
+        )
+        with self.assertRaisesRegex(RuntimeError, "already open"):
             adapter._validate_client_message(
                 "media",
                 json.dumps(
@@ -425,6 +638,7 @@ class AEEAdapterTests(unittest.TestCase):
                 }
             ),
         )
+        self.assertEqual(adapter._open_monitors, {"WXB337"})
         adapter._validate_client_message(
             "media",
             json.dumps(
@@ -452,6 +666,13 @@ class AEEAdapterTests(unittest.TestCase):
                 }
             ),
         )
+        self.assertEqual(
+            adapter._open_monitors,
+            {"WXB339", "WXB337"},
+        )
+        adapter.clear_authorized_device("WXB339")
+        self.assertEqual(adapter._authorized_devices, {"WXB337"})
+        self.assertEqual(adapter._open_monitors, {"WXB337"})
         with self.assertRaisesRegex(
             RuntimeError,
             "selected live video",

@@ -43,9 +43,21 @@ class ConfigTests(unittest.TestCase):
         self.assertTrue(settings.dashboard_state_dir)
         self.assertGreater(settings.realtime_session_ttl_seconds, 0)
         self.assertGreater(settings.realtime_command_timeout_seconds, 0)
+        self.assertEqual(settings.realtime_max_streams_per_session, 4)
         self.assertEqual(settings.aee_username, "")
         self.assertEqual(settings.aee_password, "")
         self.assertFalse(settings.realtime_aee_is_configured())
+
+    def test_realtime_stream_limit_is_bounded(self) -> None:
+        with patch.dict(
+            os.environ,
+            {"CHA_V2_REALTIME_MAX_STREAMS_PER_SESSION": "99"},
+            clear=False,
+        ):
+            self.assertEqual(
+                Settings.from_env().realtime_max_streams_per_session,
+                16,
+            )
 
     def test_base_url_is_normalized_and_validated(self) -> None:
         self.assertEqual(
