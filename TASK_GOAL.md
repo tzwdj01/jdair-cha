@@ -54,7 +54,8 @@ Last updated: 2026-08-14
 当前事实摘要：
 
 * 当前 Git branch：`codex/m3-release-fix-20260814`。
-* 当前治理基线提交：`e6355f3`，工作树在本文件修改前为 clean。
+* 当前治理基线提交：`a303821`；当前分支相对远端 ahead 4，工作树在本轮
+  证据文档修改前为 clean。
 * 当前生产 V2 release：
   `/opt/jdair-cha/v2/releases/0.8.0-m3-final-rc-release-fix`。
 * 当前生产 Realtime、Audio、Control、AccountPool feature flag 均为
@@ -63,6 +64,14 @@ Last updated: 2026-08-14
 * 最新生产回滚备份：
   `/opt/jdair-cha/backups/jdair-cha-before-m3-realtime-20260814-173601.tar.gz`。
 * 最新 Production Canary 因 `WXB358` 首帧失败中止；生产 Realtime 已关闭。
+* `2026-08-14 19:57 CST` 最新生产只读复核确认：
+  * liveness、readiness、Legacy dependency 均为 healthy；
+  * 生产版本 `0.8.0`、build `m3-final-rc`；
+  * `dashboard_v2=true`；
+  * Realtime、Audio、Control、AccountPool 均为 `false`；
+  * AEE Secret 和 Canary allowlist 均显示 configured；
+  * health 未主动探测或登录 AEE。
+* 当前 HEAD 加本轮工作树修改的全量 V2 自动化回归：`73 tests PASS`。
 
 ---
 
@@ -146,6 +155,9 @@ Last updated: 2026-08-14
 * `COMPLETED / VERIFIED`：发布脚本 production venv、test fail-fast 和单次回滚路径。
 * `COMPLETED / VERIFIED`：isolated final-release rehearsal。
 * `COMPLETED / VERIFIED`：release-fix 生产部署、备份和关闭状态健康检查。
+* `COMPLETED / VERIFIED`：AEE Media `devices is offline` 已归一化为 CHA
+  `DEVICE_MEDIA_OFFLINE`；`openVideo` rejection 会执行补偿性 `closeVideo`，
+  JavaScript runtime test 和全量 V2 回归通过。
 
 已实现但当前生产未完成验收：
 
@@ -166,8 +178,11 @@ AccountPool 和生产 Audio 开放排除在当前首发范围之外。重新进�
 当前 blocker：
 
 * `BLOCKED`：生产 Canary 设备 `WXB358` 两次无法产生首帧。
-* `AEE VERIFICATION REQUIRED`：需要确认同设备、同场景在 AEE Reference
-  Implementation 中的实际表现，以及 `openvideo is not defined` 的来源。
+* `BLOCKED`：授权 AEE 对照中，`WXB358` 虽在 DevTree 中为 online，但 AEE
+  Media 服务拒绝 `mediaMonitor` 并返回 `devices is offline`，当前无法取得
+  device-specific codec/RTP 证据。
+* `AEE VERIFICATION REQUIRED`：需要在 AEE Media 再次接受 `WXB358` 时确认
+  实际 codec/profile，以及是否进入已确认的 H.265 fallback。
 
 主要证据：
 
@@ -246,7 +261,8 @@ AccountPool 和生产 Audio 开放排除在当前首发范围之外。重新进�
 
 `ACTIVE MILESTONE: M3`
 
-当前状态：`BLOCKED / AEE VERIFICATION REQUIRED`
+当前状态：
+`IN PROGRESS (evidence) / BLOCKED (WXB358 AEE Media offline) / AEE VERIFICATION REQUIRED`
 
 当前只执行 M3 Production Canary 的证据恢复、最小必要修复、回归和受控验收。
 
@@ -465,12 +481,91 @@ Production Canary 中 `WXB358` 无法产生首帧；首次测试中 `WXB353` 成
 
 ## AEE Evidence
 
-`AEE VERIFICATION REQUIRED`
+状态：
+`PARTIAL DEVICE EVIDENCE / WXB358 MEDIA-OFFLINE / AEE VERIFICATION REQUIRED`
 
-必须使用合法授权的 AEE 用户，在相同设备和尽可能相同的浏览器、网络、时间窗口中
-验证：
+已完成的合法、脱敏 AEE 对照证据见：
 
-* AEE 是否可以打开 `WXB358`；
+`docs/codex/AEE_VS_CHA_WXB358_20260814.md`
+
+当前已确认：
+
+* AEE 页面将 `WXB353` 映射为 `JDTY04295`，将 `WXB358` 映射为
+  `JDTY04296`。
+* 当前观察窗口内两台设备均为 online，device-level `enableVideo=true`。
+* 首个合法测试登录没有有效 `VIDEOMONITOR` 权限；后续已切换到具备
+  `VIDEOMONITOR` 权限的合法测试登录。授权账号的 permission list 包含
+  `VIDEOMONITOR`，两个目标节点均为 `draggable=true`。
+* 所有播放均通过 AEE Monitor 正常 drag/drop UI 发起；只增加脱敏的被动观察，
+  没有绕过权限或直接伪造私有媒体请求。
+* AEE 页面提供 lowercase `openvideo`、WASM decoder 和 Canvas 渲染运行时。
+* 当前 live AEE SDK 与 vendored MCS8 SDK 中 lowercase `openvideo(...)`
+  均只有一个调用点：`newConsumer` 的 H.265 codec 分支。该分支不会创建正常
+  WebRTC consumer。
+* CHA 页面没有 AEE 的 page-global H.265/WASM glue，因此当 SDK 进入该分支时会
+  产生 `openvideo is not defined`。
+* `2026-08-14` 当前 live AEE `mcs8Client.js` 与 CHA vendored SDK 已完成逐字节
+  对照。两者唯一差异是 live SDK 仅在 `mediaHttpProxy` 非空且 `ssl == true`
+  时采用 media proxy；去除该 27 字符条件后两份 bundle 完全一致。
+* 上述 SDK drift 不太可能解释本次首帧失败，因为失败 Canary 已完成
+  Gateway/Media 连接、room join 和 `openVideo`，之后才在浏览器触发
+  `openvideo is not defined`。该判断是基于现有时序的推断，不代表可忽略未来
+  SDK 版本漂移。
+* AEE H.265 页面 runtime 由 `videoClient.js`、Emscripten
+  `libstream_process.js/.wasm` 和 `webgl.js` 组成；它通过 same-origin
+  `/mediaStream` WebSocket、WASM decoder 和 Canvas/WebGL 渲染工作。
+* AEE page glue 会把媒体 token 带入 `/mediaStream` URL，并将完整
+  `videoParam` 输出到浏览器 console。因此该实现只能作为 Class D 参考，
+  不得直接复制到 CHA 或突破现有凭据/日志安全边界。
+* 当前 AEE Monitor/SDK 的视频请求使用固定 `mediaMonitor streamType=2`；当前
+  页面未发现 stream profile 选择器，但其它受支持 profile API 是否存在仍未确认。
+* 当前 live/vendored SDK 的 public
+  `openVideo(devId, showObject, channelId, serverId)` 没有 codec/profile 参数，
+  并固定发送 video `streamType=2`。lower-level media client 虽会透传
+  `streamType`，但 SDK 中没有发现受支持的其它 live-video 值或设备级
+  codec/profile selector。
+* SDK 中可静态确认的 literal 仅为 live video `2`、audio `0`、playback
+  `-1`。浏览器/Router RTP capability API 不能证明具体设备会产生何种
+  codec/profile；不得通过猜测其它 `streamType` 值来绕过证据阶段。
+* `2026-08-14 20:25–20:35 CST` 授权 AEE 对照中，控制设备 `WXB353`：
+  * `mediaMonitor streamType=2` 在约 `53 ms` 后返回 `status=opened`；
+  * `newConsumer` 为 `video/H264`；
+  * `profile-level-id=42e01f`、`packetization-mode=1`；
+  * 正常 WebRTC `MediaStream`，没有调用 lowercase `openvideo`；
+  * 约 `1.825 s` 进入 `playing`；
+  * 分辨率 `1920 × 1080`，video track 为 `live`；
+  * close/reopen 再次成功。
+* `WXB353` tile close 的 `closeMediaMonitor` 均在约 `56–57 ms` 成功返回；
+  track 变为 `ended`、tile 清除、show-video map 回到 0。
+* 当前 AEE SDK 在 tile close 后仍将 ended consumer 对象保留在内部
+  `_consumerList` 且 `closed=false`，导航回 GIS 后仍存在。该结果是 AEE
+  page/SDK bookkeeping 行为，不证明上游 producer 仍开放；CHA 不应复制该
+  生命周期细节，继续保留现有显式资源释放要求。
+* 同一授权会话中的目标设备 `WXB358`：
+  * DevTree 报告 `online=1`、`status=1`、device-level `enableVideo=true`；
+  * 当前 `alarm=205`，AEE 语言表将其标记为 Low battery；但尚无证据证明该
+    alarm 导致媒体失败；
+  * AEE 正常发送 `mediaMonitor streamType=2`；
+  * Media 服务在约 `51–67 ms` 拒绝并返回
+    `devices is offline request.method "mediaMonitor"`；
+  * AEE UI 约每 3 秒重试并显示 `Unable to play`；
+  * 没有 `newConsumer`、没有 device-specific RTP/codec、没有 lowercase
+    `openvideo`、没有 `/mediaStream`、没有 track/Canvas first frame。
+* 关闭失败 tile 后，`closeMediaMonitor` 成功、show-video map 回到 0、tile
+  清除，且 `WXB358` 从未创建 consumer。
+
+尚未确认：
+
+* AEE Media 服务再次接受 `WXB358` 时的实际 codec/profile；
+* AEE 是否能在该设备媒体可用时产生 WebRTC track 或 Canvas 首帧；
+* 实际 `/mediaStream` WebSocket 生命周期和关闭释放；
+* 是否存在有文档或服务端支持的 MCS8 原生 H.264 stream/profile 选择，可避免
+  H.265 fallback；当前 public SDK 静态表面未发现该 selector。
+
+必须在当前合法授权 AEE 会话或同等授权环境中，等 AEE Media 再次接受
+`WXB358` 后验证：
+
+* AEE Media 是否接受并打开 `WXB358`；
 * AEE 实际 SDK 方法名称、大小写、参数和返回值；
 * Gateway/Media/room/openVideo/consumer/track/first-frame 顺序；
 * RTP、codec、fmtp/profile-level-id、stream profile 和 capability；
@@ -481,23 +576,35 @@ Production Canary 中 `WXB358` 无法产生首帧；首次测试中 `WXB353` 成
 
 ## Classification
 
-当前：`AEE VERIFICATION REQUIRED`
+当前分类：
 
-完成 AEE vs CHA Evidence 后必须分类为：
+* Class A：当前 `WXB358` 失败首先落在设备状态/Media 可用性层；DevTree online
+  与 Media `devices is offline` 不一致。
+* Class B：`newConsumer`、RTP、codec/profile、正常 WebRTC consumer 和受支持的
+  H.265 媒体协议。
+* Class C：CHA session、Canary、布局、状态、telemetry 和资源释放编排。
+* Class D：AEE 页面状态、drag/drop UI、page-global glue 和页面私有集成。
 
-* Class A
-* Class B
-* Class C
-* Class D
-
-从现有现象推测媒体问题可能落入 Class B，但在 AEE 证据完成前不得将该推测当作结论。
+当前 AEE 设备级结果没有复现 H.265 fallback，而是在 `mediaMonitor` 阶段提前
+失败。因此当前时段不是 CHA-only 播放故障。历史 Canary 的
+`openvideo is not defined` 仍表明当时可能收到 H.265 consumer，但在获得设备
+媒体可用时的实际 `rtpParameters` 前，不得把 `WXB358 codec=H.265` 标记为
+VERIFIED。
 
 ## Decision
 
 * 保持生产 Realtime 关闭。
-* 在 AEE 证据形成前不修改 CHA 媒体协议或 SDK Adapter。
-* 先完成相同设备、相同场景的 AEE vs CHA 对照。
-* 只有确认 CHA 与 AEE 的最小差异后，才允许提出最小修复。
+* 当前不修改 CHA 媒体协议或 SDK Adapter；授权 AEE 当前也无法打开
+  `WXB358`，没有证据支持 CHA-only 修复。
+* 不增加 blind `openvideo` shim，不复制 AEE token-bearing page glue。
+* 已实施最小 Class C 异常处理修正：
+  * 将已实证的 `devices is offline` 映射为 CHA
+    `DEVICE_MEDIA_OFFLINE`，不向用户暴露原始 AEE 错误；
+  * `openVideo` rejection 后执行补偿性 `closeVideo`，对称清理 monitor 状态；
+  * 不改变 `streamType`、codec、AEE Adapter 协议或生产开关。
+* 先恢复或等待 `WXB358` 被 AEE Media 服务识别为可用，再重复同设备对照。
+* 只有成功取得 `newConsumer` 并确认 CHA 与 AEE 的最小 Class B 差异后，才允许
+  提出最小修复。
 * 修复后必须重新执行自动化回归和受控 1 → 4 → 6 Production Canary。
 
 ## Rejected Alternatives
@@ -564,36 +671,61 @@ M3 当前额外 Done Criteria：
 * Release-fix、生产备份、独立 release 部署和关闭状态 health 已完成。
 * 两次失败 Canary 的 Session/Gateway/Media 资源均已释放。
 * 项目治理文件和 AEE Reference 原则已接入。
+* 已使用具备有效 `VIDEOMONITOR` 权限的合法 AEE 登录完成 `WXB353` 控制播放：
+  H.264 `42e01f`、1920 × 1080、约 1.825 秒首帧、close/reopen 成功。
+* 已完成当前时段 `WXB358` AEE 目标测试：DevTree online，但 Media
+  `mediaMonitor` 返回 `devices is offline`，失败 tile 可正常关闭并清理。
+* 已完成最小 Class C 修复：`DEVICE_MEDIA_OFFLINE` 错误归一化和
+  open-rejection 补偿性 close；Node runtime test 与全量 `73 tests` 通过。
 
 ## In Progress
 
-* 当前没有正在编写的业务代码。
-* Active Milestone 保持 M3，等待 AEE 对照证据。
+* 当前最小 Class C 业务修复已实现并测试，尚未发布到生产。
+* Active Milestone 保持 M3。
+* AEE 静态 SDK/runtime 对照、live-vs-vendored bundle 差异和设备状态证据已完成。
+* AEE 授权和控制设备媒体取证已完成；等待 `WXB358` 被 AEE Media 服务识别为
+  可用，以取得 device-specific codec/RTP 证据。
 
 ## Next
 
-1. 在合法授权环境中对 `WXB358` 和 `WXB353` 执行 AEE vs CHA 对照。
-2. 形成 Test Context、AEE Behaviour、CHA Behaviour、Difference、Conclusion。
-3. 完成 Class A/B/C/D 分类。
-4. 如确认 CHA gap，创建最小修复并运行现有 M3 测试。
+1. 确认或恢复 `WXB358` 的 AEE Media 可用性；DevTree online 不能替代
+   `mediaMonitor` 成功。
+2. 当 `mediaMonitor` 成功后，捕获 device-specific
+   `newConsumer.rtpParameters`、codec/profile、stream profile、lowercase
+   `openvideo` 调用、`/mediaStream` 生命周期、首帧和关闭。
+3. 完成 `WXB358` 最终 Class A/B/C/D 根因分类，并判断历史 Canary 与当前
+   upstream 状态的关系。
+4. 从成功的 AEE 会话或上游协议文档验证 MCS8 是否存在原生 H.264
+   stream/profile 选择；不得猜测其它 `streamType`。如确认 CHA gap，才创建
+   最小修复并运行现有 M3 测试。
 5. 申请新的受控 Production Canary 窗口并执行完整验收。
 
 ## Blocked
 
-* `WXB358` 首帧失败原因未确认。
+* `openvideo is not defined` 的 SDK 调用来源已确认；当前 AEE 播放结果已确认在
+  `mediaMonitor` 阶段因 Media 判定 offline 而失败，但 `WXB358` 实际 codec/
+  profile 仍未确认。
+* 合法授权问题已解除；当前 blocker 改为 `WXB358` 的 AEE Media 服务状态。
+  AEE DevTree 报 online，但 `mediaMonitor` 稳定返回 `devices is offline`。
 * 当前 Production Canary 未完成 1 → 4 → 6。
 * 在 blocker 解决前，生产 Realtime 保持关闭。
 
 ## AEE Verification Required
 
-* Question：AEE 原生页面是否能在相同条件下播放 `WXB358`，其调用与 CHA
-  的第一个差异是什么？
+* Question：当 AEE Media 服务再次接受 `WXB358` 时，其实际 codec/profile
+  是否进入已确认的 H.265 fallback？
 * Device：`WXB358`，控制设备 `WXB353`。
-* Scenario：AEE 单路播放后执行 CHA 单路播放。
-* Expected Observation：定位 Gateway、Media、room、SDK、consumer、track 或
-  first-frame 流程中的首个已确认差异。
-* Required Network Evidence：HTTP 状态、时序、设备 capability 和媒体服务解析。
-* Required WebSocket Evidence：Gateway/Media 生命周期、消息和关闭顺序。
-* Required SDK Evidence：方法名/大小写、参数、返回值、callback 和错误来源。
+* Required User / Permission：已具备合法 `VIDEOMONITOR` 权限。
+* Current Observation：`WXB353` H.264 控制通过；`WXB358` 在
+  `mediaMonitor` 阶段被 Media 服务判定 offline。
+* Scenario：设备媒体可用后，AEE 单路播放 `WXB358`，关闭并确认释放；以已完成
+  的 `WXB353` H.264 控制证据对照。
+* Expected Observation：取得 `WXB358` 的首个 `newConsumer`，确认 codec 和
+  track/Canvas 路径。
+* Required Network Evidence：Media 可用状态、请求结果、时序、设备 capability。
+* Required WebSocket Evidence：Gateway/Media 生命周期；如进入 H.265 fallback，
+  记录脱敏后的 `/mediaStream` 建立、消息和关闭顺序。
+* Required SDK Evidence：`newConsumer.rtpParameters`、方法名/大小写、安全参数、
+  返回值、callback 和错误来源。
 * Required Media Evidence：SDP/ICE/DTLS、RTP、codec/profile、stream profile、
-  resolution、track 和 first-frame。
+  resolution、track 或 Canvas、first-frame 和资源释放。
