@@ -570,6 +570,12 @@ Production Canary 中 `WXB358` 无法产生首帧；首次测试中 `WXB353` 成
     拒绝原因；
   * 这进一步证明 DevTree online/status 可以与陈旧遥测及 Media offline
     并存，但仍不足以确定上游根因。
+* `21:08:49 CST` 第三次被动可用性检查：
+  * `WXB353 gpsTime` 已继续更新到 `21:08:00`；
+  * `WXB358` 仍为 `online=1/status=1/alarm=205`，其 `gpsTime` 仍停留在
+    `20:22:14`；
+  * 因目标遥测没有恢复，本次没有再次触发已实证的三秒 `mediaMonitor` 失败循环，
+    避免无新增证据的上游请求负载。
 
 尚未确认：
 
@@ -729,7 +735,8 @@ M3 当前额外 Done Criteria：
   profile 仍未确认。
 * 合法授权问题已解除；当前 blocker 改为 `WXB358` 的 AEE Media 服务状态。
   AEE DevTree 报 online，但两个授权观察窗口内 `mediaMonitor` 均稳定返回
-  `devices is offline`。
+  `devices is offline`；随后两次被动检查中目标 `gpsTime` 也持续停留在
+  `20:22:14`。
 * 当前 Production Canary 未完成 1 → 4 → 6。
 * 在 blocker 解决前，生产 Realtime 保持关闭。
 
