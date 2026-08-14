@@ -488,6 +488,50 @@ def create_realtime_router(
         except RealtimeError as exc:
             return failure(request, exc)
 
+    @router.post(
+        "/api/v2/realtime/sessions/{session_id}/streams/{stream_id}/audio"
+    )
+    async def enable_audio(
+        request: Request,
+        session_id: str,
+        stream_id: str,
+    ) -> JSONResponse:
+        if not settings.feature_realtime_readonly:
+            return disabled(request)
+        try:
+            require_same_origin(request)
+            owner_key, _ = await identity(request)
+            session = await manager.enable_audio(
+                session_id,
+                stream_id,
+                owner_key=owner_key,
+            )
+            return envelope(request, session.public())
+        except RealtimeError as exc:
+            return failure(request, exc)
+
+    @router.delete(
+        "/api/v2/realtime/sessions/{session_id}/streams/{stream_id}/audio"
+    )
+    async def disable_audio(
+        request: Request,
+        session_id: str,
+        stream_id: str,
+    ) -> JSONResponse:
+        if not settings.feature_realtime_readonly:
+            return disabled(request)
+        try:
+            require_same_origin(request)
+            owner_key, _ = await identity(request)
+            session = await manager.disable_audio(
+                session_id,
+                stream_id,
+                owner_key=owner_key,
+            )
+            return envelope(request, session.public())
+        except RealtimeError as exc:
+            return failure(request, exc)
+
     @router.delete("/api/v2/realtime/sessions/{session_id}")
     async def close_session(
         request: Request,

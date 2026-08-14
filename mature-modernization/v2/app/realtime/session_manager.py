@@ -289,7 +289,9 @@ class RealtimeSessionManager:
                 )
             if stream.status == StreamStatus.CLOSED:
                 return session
+            audio_was_active = stream.audio_status != "OFF"
             stream.status = StreamStatus.CLOSING
+            stream.audio_status = "CLOSING" if audio_was_active else "OFF"
             stream.runtime_state = "RELEASING"
             stream.updated_at = utc_now()
             started = time.perf_counter()
@@ -323,6 +325,9 @@ class RealtimeSessionManager:
                 ]
                 if survivors:
                     stream.status = StreamStatus.FAILED
+                    stream.audio_status = (
+                        "FAILED" if audio_was_active else "OFF"
+                    )
                     stream.error_code = "STREAM_RELEASE_UNCONFIRMED"
                     stream.runtime_state = "RELEASE_FAILED"
                     stream.updated_at = utc_now()
@@ -354,6 +359,9 @@ class RealtimeSessionManager:
                 session.connection_reusable = False
                 if not disconnect_ok:
                     stream.status = StreamStatus.FAILED
+                    stream.audio_status = (
+                        "FAILED" if audio_was_active else "OFF"
+                    )
                     stream.error_code = "AEE_DISCONNECT_FAILED"
                     stream.runtime_state = "RELEASE_FAILED"
                     stream.updated_at = utc_now()
@@ -367,6 +375,10 @@ class RealtimeSessionManager:
                     )
                 release_mode = "forced_aee_disconnect"
             stream.status = StreamStatus.CLOSED
+            stream.audio_status = "OFF"
+            stream.audio_track_state = None
+            stream.audio_codec = None
+            stream.audio_error_code = None
             stream.release_mode = release_mode
             stream.runtime_state = "RELEASED"
             stream.error_code = None
@@ -377,12 +389,119 @@ class RealtimeSessionManager:
             session.updated_at = now
             duration_ms = (time.perf_counter() - started) * 1000
             self.telemetry.increment("realtime_stream_close_total")
+            if audio_was_active:
+                self.telemetry.increment("realtime_audio_close_total")
             self.telemetry.observe("close_video_duration_ms", duration_ms)
             self._log(
                 session,
                 stream=stream,
                 event="stream_released",
                 duration_ms=duration_ms,
+            )
+            return session
+
+    async def enable_audio(
+        self,
+        session_id: str,
+        stream_id: str,
+        *,
+        owner_key: str,
+    ) -> RealtimeSession:
+        if not self.settings.feature_realtime_audio:
+            raise RealtimeError(
+                "audio_disabled",
+                "Receive-only realtime audio is not enabled.",
+                status_code=404,
+            )
+        session = await self.get_session(session_id, owner_key=owner_key)
+        async with session.operation_lock:
+            stream = session.streams.get(stream_id)
+            if stream is None or stream.status == StreamStatus.CLOSED:
+                raise RealtimeError(
+                    "stream_not_found",
+                    "The realtime video stream does not exist.",
+                    status_code=404,
+                )
+            active_audio = [
+                item
+                for item in self._active_streams(session)
+                if item.stream_id != stream_id
+                and item.audio_status in {"OPENING", "PLAYING"}
+            ]
+            if active_audio:
+                raise RealtimeError(
+                    "audio_stream_limit_reached",
+                    "Only one realtime audio stream can be enabled at a time.",
+                    status_code=409,
+                )
+            if stream.audio_status in {"OPENING", "PLAYING"}:
+                return session
+            stream.audio_status = "OPENING"
+            stream.audio_track_state = None
+            stream.audio_codec = None
+            stream.audio_error_code = None
+            stream.updated_at = utc_now()
+            self._log(
+                session,
+                stream=stream,
+                event="audio_open_requested",
+            )
+            return session
+
+    async def disable_audio(
+        self,
+        session_id: str,
+        stream_id: str,
+        *,
+        owner_key: str,
+    ) -> RealtimeSession:
+        session = await self.get_session(session_id, owner_key=owner_key)
+        async with session.operation_lock:
+            stream = session.streams.get(stream_id)
+            if stream is None:
+                raise RealtimeError(
+                    "stream_not_found",
+                    "The realtime video stream does not exist.",
+                    status_code=404,
+                )
+            if stream.audio_status == "OFF":
+                return session
+            stream.audio_status = "CLOSING"
+            stream.updated_at = utc_now()
+            acknowledged = await self._send_control_command(
+                session,
+                "close_audio",
+                {
+                    "stream_id": stream.stream_id,
+                    "device_id": stream.device_id,
+                },
+            )
+            if not acknowledged:
+                stream.audio_status = "FAILED"
+                stream.audio_error_code = "AUDIO_RELEASE_FAILED"
+                stream.updated_at = utc_now()
+                self.telemetry.increment("realtime_audio_failure_total")
+                self._log(
+                    session,
+                    stream=stream,
+                    event="audio_release_failed",
+                    error_code=stream.audio_error_code,
+                )
+                raise RealtimeError(
+                    "audio_release_failed",
+                    "The realtime audio resource release was not confirmed.",
+                    status_code=502,
+                )
+            stream.audio_status = "OFF"
+            stream.audio_track_state = None
+            stream.audio_codec = None
+            stream.audio_error_code = None
+            stream.updated_at = utc_now()
+            self.telemetry.increment("realtime_audio_close_total")
+            self._log(
+                session,
+                stream=stream,
+                event="audio_closed",
             )
             return session
 
@@ -426,8 +545,16 @@ class RealtimeSessionManager:
                 stream.status != StreamStatus.CLOSED
                 for stream in session.streams.values()
             )
+            active_audio_before_close = sum(
+                stream.audio_status != "OFF"
+                for stream in session.streams.values()
+            )
             for stream in session.streams.values():
                 stream.status = StreamStatus.CLOSED
+                stream.audio_status = "OFF"
+                stream.audio_track_state = None
+                stream.audio_codec = None
+                stream.audio_error_code = None
                 stream.release_mode = (
                     stream.release_mode
                     or (
@@ -456,6 +583,10 @@ class RealtimeSessionManager:
             self.telemetry.increment(
                 "realtime_stream_close_total",
                 active_before_close,
+            )
+            self.telemetry.increment(
+                "realtime_audio_close_total",
+                active_audio_before_close,
             )
             self.telemetry.observe("session_shutdown_duration_ms", duration_ms)
             self._log(
@@ -655,6 +786,30 @@ class RealtimeSessionManager:
                 target.status = StreamStatus.DEGRADED
                 target.runtime_state = "CONNECTION_LOST"
                 target.updated_at = now
+        elif event == "screenshot_succeeded":
+            self.telemetry.increment("realtime_screenshot_total")
+        elif event == "screenshot_failed":
+            self.telemetry.increment("realtime_screenshot_failure_total")
+        elif event == "audio_playing":
+            if stream is not None:
+                stream.audio_status = "PLAYING"
+                stream.audio_track_state = str(
+                    details.get("track_state") or "live"
+                )[:32]
+                stream.audio_codec = str(
+                    details.get("codec") or ""
+                )[:64] or None
+                stream.audio_error_code = None
+                stream.updated_at = now
+                self.telemetry.increment("realtime_audio_open_total")
+        elif event == "audio_failed":
+            if stream is not None:
+                stream.audio_status = "FAILED"
+                stream.audio_error_code = str(
+                    error_code or "AUDIO_OPEN_FAILED"
+                )[:64]
+                stream.updated_at = now
+                self.telemetry.increment("realtime_audio_failure_total")
         if event != "browser_disconnected":
             self._recompute_session_status(session)
         session.updated_at = now

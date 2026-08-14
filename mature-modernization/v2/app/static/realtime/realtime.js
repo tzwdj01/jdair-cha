@@ -3,6 +3,8 @@
 
   const FIRST_FRAME_TIMEOUT_MS = 20000;
   const HEARTBEAT_INTERVAL_MS = 15000;
+  const AUTO_RECONNECT_DELAY_MS = 1500;
+  const MAX_AUTO_RECONNECT_ATTEMPTS = 1;
   const STATUS_TEXT = {
     CONNECTING: "正在连接",
     WAITING_FIRST_FRAME: "等待首帧",
@@ -15,7 +17,7 @@
   const ERROR_TEXT = {
     device_offline: "设备当前离线，暂时无法加入实时监控。",
     device_not_found: "没有找到该设备，请刷新设备列表。",
-    stream_limit_reached: "当前最多支持 4 路实时视频。",
+    stream_limit_reached: "当前最多支持 6 路实时视频。",
     duplicate_device: "该设备已在监控中。",
     first_frame_timeout: "视频连接超时，请重试。",
     FIRST_FRAME_TIMEOUT: "视频连接超时，请重试。",
@@ -23,6 +25,12 @@
     AEE_CONNECT_FAILED: "实时视频服务连接失败。",
     OPEN_VIDEO_REJECTED: "设备未能建立实时视频，请重试。",
     stream_release_failed: "视频资源关闭未确认，其他画面不受影响。",
+    screenshot_failed: "当前画面截图失败，请确认视频正在播放后重试。",
+    audio_disabled: "实时接收音频当前未启用。",
+    audio_stream_limit_reached: "同一时间只能开启一路设备声音。",
+    audio_open_failed: "设备声音接收失败，请重试。",
+    AUDIO_OPEN_FAILED: "设备声音接收失败，请重试。",
+    audio_release_failed: "设备声音关闭未确认，请结束当前会话。",
     authentication_required: "登录状态已失效，请重新登录。",
     request_failed: "操作失败，请稍后重试。",
   };
@@ -48,6 +56,7 @@
     grid: document.querySelector("#videoGrid"),
     empty: document.querySelector("#emptyState"),
     footer: document.querySelector("#footerMessage"),
+    audioMode: document.querySelector("#audioModeStatus"),
     tileTemplate: document.querySelector("#videoTileTemplate"),
   };
 
@@ -57,17 +66,22 @@
     filter: "online",
     sessionId: "",
     sessionStatus: "READY",
-    maxStreams: 4,
+    maxStreams: 6,
+    audioSupported: false,
+    activeAudioStreamId: "",
     controlSocket: null,
     controlReady: null,
     runtime: null,
     runtimeGatewayPath: "",
     openingStreamId: "",
     tiles: new Map(),
+    tilePool: [],
     deviceToStream: new Map(),
     heartbeatTimer: null,
     closingSession: false,
     reconnecting: false,
+    autoReconnectAttempts: 0,
+    autoReconnectTimer: null,
     pageLeaving: false,
   };
 
@@ -162,14 +176,22 @@
       || !remaining
       || state.closingSession
     );
-    els.layout.textContent = activeTileCount() <= 1
+    const activeCount = activeTileCount();
+    els.layout.textContent = activeCount <= 1
       ? "单画面"
-      : "2 × 2 四画面";
+      : activeCount <= 4
+        ? "2 × 2 四画面"
+        : "3 × 2 六画面";
     els.footer.textContent = (
       activeTileCount()
         ? `${playingCount()} 路播放中 · ${activeTileCount()} 路已加入`
         : "等待选择设备"
     );
+    els.audioMode.innerHTML = state.activeAudioStreamId
+      ? '<i class="status-dot ok"></i> 单路接收音频已开启'
+      : `<i class="status-dot"></i> ${
+        state.audioSupported ? "音频默认关闭" : "音频功能关闭"
+      }`;
     if (state.sessionId && !state.closingSession) {
       setSessionStatus(aggregateSessionStatus());
     } else if (!state.sessionId) {
@@ -182,7 +204,8 @@
     const count = activeTileCount();
     els.grid.classList.toggle("empty", count === 0);
     els.grid.classList.toggle("single", count === 1);
-    els.grid.classList.toggle("quad", count >= 2);
+    els.grid.classList.toggle("quad", count >= 2 && count <= 4);
+    els.grid.classList.toggle("six", count >= 5);
     els.empty.classList.toggle("hidden", count > 0);
   }
 
@@ -303,14 +326,16 @@
 
   async function createSession() {
     if (state.sessionId) return;
+    if (!state.reconnecting) state.autoReconnectAttempts = 0;
     setSessionStatus("CREATING");
     els.connection.textContent = "正在创建 CHA 实时会话";
     const session = await api("sessions", {
       method: "POST",
-      body: JSON.stringify({client_label: "four-grid-inspection"}),
+      body: JSON.stringify({client_label: "six-grid-inspection"}),
     });
     state.sessionId = session.session_id;
-    state.maxStreams = Math.min(Number(session.max_streams || 4), 4);
+    state.maxStreams = Math.min(Number(session.max_streams || 6), 6);
+    state.audioSupported = Boolean(session.audio_enabled);
     setSessionStatus(session.status);
     startHeartbeat();
     updateSummary();
@@ -452,19 +477,41 @@
         track_state: record.trackState,
       });
       showNotice(`${record.deviceId} 已开始实时播放。`, "success");
+    } else if (event.event === "audio_playing") {
+      record.audioStatus = "PLAYING";
+      state.activeAudioStreamId = record.streamId;
+      updateTile(record, record.status);
+      sendEvent("audio_playing", record.streamId, {
+        track_state: event.track_state || "live",
+        codec: event.codec || null,
+      });
+    } else if (event.event === "audio_closed") {
+      record.audioStatus = "OFF";
+      if (state.activeAudioStreamId === record.streamId) {
+        state.activeAudioStreamId = "";
+      }
+      updateTile(record, record.status);
     }
   }
 
   function createTile(stream, device) {
-    const fragment = els.tileTemplate.content.cloneNode(true);
-    const element = fragment.querySelector(".video-tile");
+    let element = state.tilePool.pop();
+    if (!element) {
+      const fragment = els.tileTemplate.content.cloneNode(true);
+      element = fragment.querySelector(".video-tile");
+    }
     const video = element.querySelector("video");
+    const audio = element.querySelector("audio");
+    const audioButton = element.querySelector('[data-action="audio"]');
     const record = {
       streamId: stream.stream_id,
       deviceId: stream.device_id,
       deviceName: device?.name || stream.device_id,
       element,
       video,
+      audio,
+      audioButton,
+      audioStatus: "OFF",
       status: "CONNECTING",
       errorCode: null,
       firstFrameAt: null,
@@ -473,26 +520,37 @@
       trackState: "—",
     };
     element.dataset.streamId = record.streamId;
+    element.classList.remove("hidden");
     element.querySelector("[data-device-id]").textContent = record.deviceId;
     element.querySelector("[data-device-name]").textContent = record.deviceName;
-    element.querySelector('[data-action="close"]').addEventListener("click", () => {
-      closeTile(record.streamId);
-    });
-    element.querySelector('[data-action="retry"]').addEventListener("click", () => {
-      retryTile(record.streamId);
-    });
-    element.querySelector('[data-action="fullscreen"]').addEventListener("click", () => {
-      if (document.fullscreenElement === element) {
-        document.exitFullscreen().catch(() => {});
-      } else {
-        element.requestFullscreen().catch(() => {
-          showNotice("浏览器未允许进入全屏。", "error");
-        });
-      }
-    });
+    if (!element.dataset.actionsBound) {
+      element.querySelector('[data-action="close"]').addEventListener("click", () => {
+        closeTile(element.dataset.streamId);
+      });
+      element.querySelector('[data-action="retry"]').addEventListener("click", () => {
+        retryTile(element.dataset.streamId);
+      });
+      element.querySelector('[data-action="screenshot"]').addEventListener("click", () => {
+        captureFrame(element.dataset.streamId);
+      });
+      audioButton.addEventListener("click", () => {
+        toggleAudio(element.dataset.streamId);
+      });
+      element.querySelector('[data-action="fullscreen"]').addEventListener("click", () => {
+        if (document.fullscreenElement === element) {
+          document.exitFullscreen().catch(() => {});
+        } else {
+          element.requestFullscreen().catch(() => {
+            showNotice("浏览器未允许进入全屏。", "error");
+          });
+        }
+      });
+      element.dataset.actionsBound = "true";
+    }
+    audioButton.classList.toggle("hidden", !state.audioSupported);
     state.tiles.set(record.streamId, record);
     state.deviceToStream.set(record.deviceId, record.streamId);
-    els.grid.appendChild(fragment);
+    els.grid.appendChild(element);
     updateTile(record, "CONNECTING");
     updateSummary();
     renderDevices();
@@ -513,6 +571,13 @@
         ? new Date(record.firstFrameAt).toLocaleTimeString()
         : status === "FAILED" ? "失败" : "等待中"
     );
+    record.audioButton.disabled = status !== "PLAYING";
+    record.audioButton.classList.toggle(
+      "active",
+      record.audioStatus === "PLAYING",
+    );
+    record.audioButton.textContent =
+      record.audioStatus === "PLAYING" ? "🔊" : "🔇";
     const overlay = record.element.querySelector(".tile-overlay");
     const retry = record.element.querySelector('[data-action="retry"]');
     const playing = status === "PLAYING";
@@ -551,12 +616,30 @@
     const record = state.tiles.get(streamId);
     if (!record) return;
     clearTimeout(record.firstFrameTimer);
-    record.element.remove();
     state.tiles.delete(streamId);
     state.deviceToStream.delete(record.deviceId);
     state.selected.delete(record.deviceId);
+    if (state.activeAudioStreamId === streamId) {
+      state.activeAudioStreamId = "";
+    }
+    recycleTile(record);
     updateSummary();
     renderDevices();
+  }
+
+  function recycleTile(record) {
+    record.video.pause?.();
+    record.audio.pause?.();
+    record.video.srcObject = null;
+    record.audio.srcObject = null;
+    record.element.dataset.streamId = "";
+    record.element.dataset.status = "CLOSED";
+    record.element.classList.add("hidden");
+    record.audioButton.classList.remove("active");
+    record.audioButton.textContent = "🔇";
+    if (!state.tilePool.includes(record.element)) {
+      state.tilePool.push(record.element);
+    }
   }
 
   async function addDevice(deviceId) {
@@ -583,7 +666,7 @@
         method: "POST",
         body: JSON.stringify({device_id: deviceId}),
       });
-      state.maxStreams = Math.min(Number(data.connection.max_streams || 4), 4);
+      state.maxStreams = Math.min(Number(data.connection.max_streams || 6), 6);
       const record = createTile(data.stream, device);
       state.selected.delete(deviceId);
       await ensureControl(data.connection.control_path);
@@ -609,6 +692,7 @@
         streamId: record.streamId,
         deviceId: record.deviceId,
         videoElement: record.video,
+        audioElement: record.audio,
       });
       if (record.status !== "PLAYING") {
         updateTile(record, "WAITING_FIRST_FRAME");
@@ -683,10 +767,81 @@
     if (closed) await addDevice(deviceId);
   }
 
+  async function toggleAudio(streamId, forceOff = false) {
+    const record = state.tiles.get(streamId);
+    if (!record || !state.audioSupported || record.status !== "PLAYING") {
+      showNotice(ERROR_TEXT.audio_disabled, "error");
+      return false;
+    }
+    const shouldClose = forceOff || record.audioStatus === "PLAYING";
+    if (shouldClose) {
+      try {
+        record.audioStatus = "CLOSING";
+        updateTile(record, record.status);
+        const session = await api(
+          `sessions/${state.sessionId}/streams/${streamId}/audio`,
+          {method: "DELETE"},
+        );
+        record.audioStatus = "OFF";
+        if (state.activeAudioStreamId === streamId) {
+          state.activeAudioStreamId = "";
+        }
+        reconcileSession(session);
+        updateTile(record, record.status);
+        showNotice(`${record.deviceId} 设备声音已关闭。`, "success");
+        return true;
+      } catch (error) {
+        record.audioStatus = "FAILED";
+        updateTile(record, record.status);
+        showNotice(friendlyError(error), "error");
+        return false;
+      }
+    }
+    if (
+      state.activeAudioStreamId
+      && state.activeAudioStreamId !== streamId
+    ) {
+      const previousClosed = await toggleAudio(
+        state.activeAudioStreamId,
+        true,
+      );
+      if (!previousClosed) return false;
+    }
+    try {
+      await api(
+        `sessions/${state.sessionId}/streams/${streamId}/audio`,
+        {method: "POST", body: "{}"},
+      );
+      record.audioStatus = "OPENING";
+      updateTile(record, record.status);
+      await state.runtime.openAudio(streamId);
+      record.audioStatus = "PLAYING";
+      state.activeAudioStreamId = streamId;
+      updateTile(record, record.status);
+      showNotice(`${record.deviceId} 设备声音已开启。`, "success");
+      return true;
+    } catch (error) {
+      record.audioStatus = "FAILED";
+      sendEvent(
+        "audio_failed",
+        streamId,
+        {},
+        error.code || "AUDIO_OPEN_FAILED",
+      );
+      await api(
+        `sessions/${state.sessionId}/streams/${streamId}/audio`,
+        {method: "DELETE"},
+      ).catch(() => {});
+      updateTile(record, record.status);
+      showNotice(friendlyError(error), "error");
+      return false;
+    }
+  }
+
   function reconcileSession(session) {
     if (!session) return;
     setSessionStatus(session.status);
-    state.maxStreams = Math.min(Number(session.max_streams || state.maxStreams), 4);
+    state.maxStreams = Math.min(Number(session.max_streams || state.maxStreams), 6);
     for (const stream of session.streams || []) {
       const record = state.tiles.get(stream.stream_id);
       if (!record || stream.status === "CLOSED") continue;
@@ -696,6 +851,15 @@
       ) {
         record.errorCode = stream.error_code || stream.status.toLowerCase();
         updateTile(record, stream.status);
+      }
+      if (stream.audio) {
+        record.audioStatus = stream.audio.status || "OFF";
+        if (record.audioStatus === "PLAYING") {
+          state.activeAudioStreamId = record.streamId;
+        } else if (state.activeAudioStreamId === record.streamId) {
+          state.activeAudioStreamId = "";
+        }
+        updateTile(record, record.status);
       }
     }
     const active = (session.streams || []).filter(
@@ -725,6 +889,21 @@
     state.runtime = null;
     state.runtimeGatewayPath = "";
     setSessionStatus("DEGRADED");
+    if (
+      state.autoReconnectAttempts < MAX_AUTO_RECONNECT_ATTEMPTS
+      && !state.autoReconnectTimer
+      && !state.reconnecting
+    ) {
+      state.autoReconnectAttempts += 1;
+      showNotice(
+        `${message} 系统将在 ${AUTO_RECONNECT_DELAY_MS / 1000} 秒后尝试一次自动恢复。`,
+        "error",
+      );
+      state.autoReconnectTimer = setTimeout(() => {
+        state.autoReconnectTimer = null;
+        reconnectSession({automatic: true});
+      }, AUTO_RECONNECT_DELAY_MS);
+    }
   }
 
   async function closeSession({quiet = false} = {}) {
@@ -757,6 +936,8 @@
 
   function resetPage() {
     stopHeartbeat();
+    if (state.autoReconnectTimer) clearTimeout(state.autoReconnectTimer);
+    state.autoReconnectTimer = null;
     try {
       state.controlSocket?.close();
     } catch {}
@@ -766,7 +947,7 @@
     state.runtimeGatewayPath = "";
     for (const record of state.tiles.values()) {
       clearTimeout(record.firstFrameTimer);
-      record.element.remove();
+      recycleTile(record);
     }
     state.tiles.clear();
     state.deviceToStream.clear();
@@ -774,6 +955,8 @@
     state.sessionId = "";
     state.sessionStatus = "READY";
     state.openingStreamId = "";
+    state.activeAudioStreamId = "";
+    state.audioSupported = false;
     els.connection.textContent = "尚未建立实时连接";
     els.reconnect.classList.add("hidden");
     els.heartbeat.textContent = "未启动";
@@ -781,21 +964,98 @@
     renderDevices();
   }
 
-  async function reconnectSession() {
-    if (state.reconnecting) return;
+  async function reconnectSession({automatic = false} = {}) {
+    if (state.reconnecting) return false;
     state.reconnecting = true;
     els.reconnect.disabled = true;
     const devices = [...state.tiles.values()].map((record) => record.deviceId);
     try {
-      await closeSession({quiet: true});
+      const closed = await closeSession({quiet: true});
+      if (!closed) throw new Error("The previous realtime session did not close.");
       for (const deviceId of devices.slice(0, state.maxStreams)) {
         await addDevice(deviceId);
       }
+      const deadline = Date.now() + FIRST_FRAME_TIMEOUT_MS;
+      while (playingCount() !== devices.length && Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 200));
+      }
+      if (playingCount() !== devices.length) {
+        throw new Error("Not all realtime streams recovered.");
+      }
+      state.autoReconnectAttempts = 0;
       showNotice("实时监控连接已重新建立。", "success");
       els.reconnect.classList.add("hidden");
+      return true;
+    } catch (error) {
+      els.reconnect.classList.remove("hidden");
+      showNotice(
+        automatic
+          ? "自动恢复未成功，请点击“重新建立监控”手动重试。"
+          : friendlyError(error),
+        "error",
+      );
+      return false;
     } finally {
       state.reconnecting = false;
       els.reconnect.disabled = false;
+    }
+  }
+
+  function safeFilename(value) {
+    return String(value || "device").replace(/[^A-Za-z0-9_.-]+/g, "_");
+  }
+
+  async function captureFrame(streamId) {
+    const record = state.tiles.get(streamId);
+    if (
+      !record
+      || record.status !== "PLAYING"
+      || !record.video.videoWidth
+      || !record.video.videoHeight
+    ) {
+      showNotice(ERROR_TEXT.screenshot_failed, "error");
+      sendEvent("screenshot_failed", streamId, {}, "SCREENSHOT_NOT_READY");
+      return false;
+    }
+    try {
+      const canvas = document.createElement("canvas");
+      canvas.width = record.video.videoWidth;
+      canvas.height = record.video.videoHeight;
+      const context = canvas.getContext("2d", {alpha: false});
+      if (!context) throw new Error("Canvas is unavailable.");
+      context.drawImage(record.video, 0, 0, canvas.width, canvas.height);
+      const capturedAt = new Date();
+      const label = `${record.deviceId}  ${capturedAt.toLocaleString()}`;
+      const fontSize = Math.max(18, Math.round(canvas.width / 64));
+      context.font = `${fontSize}px "Microsoft YaHei UI", sans-serif`;
+      const padding = Math.round(fontSize * 0.7);
+      const barHeight = fontSize + padding * 2;
+      context.fillStyle = "rgba(0, 0, 0, 0.58)";
+      context.fillRect(0, canvas.height - barHeight, canvas.width, barHeight);
+      context.fillStyle = "#ffffff";
+      context.fillText(label, padding, canvas.height - padding);
+      const blob = await new Promise((resolve, reject) => {
+        canvas.toBlob(
+          (value) => value ? resolve(value) : reject(new Error("PNG encoding failed.")),
+          "image/png",
+        );
+      });
+      const link = document.createElement("a");
+      const stamp = capturedAt.toISOString().replace(/[:.]/g, "-");
+      link.download = `${safeFilename(record.deviceId)}_${stamp}.png`;
+      link.href = URL.createObjectURL(blob);
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+      sendEvent("screenshot_succeeded", streamId, {
+        width: canvas.width,
+        height: canvas.height,
+      });
+      showNotice(`${record.deviceId} 当前画面已保存到本地。`, "success");
+      return true;
+    } catch {
+      sendEvent("screenshot_failed", streamId, {}, "SCREENSHOT_FAILED");
+      showNotice(ERROR_TEXT.screenshot_failed, "error");
+      return false;
     }
   }
 
@@ -867,7 +1127,7 @@
   });
   els.startSelected.addEventListener("click", startSelected);
   els.closeSession.addEventListener("click", () => closeSession());
-  els.reconnect.addEventListener("click", reconnectSession);
+  els.reconnect.addEventListener("click", () => reconnectSession());
   window.addEventListener("pagehide", cleanupOnExit);
 
   window.chaRealtimeInspection = {
@@ -875,7 +1135,11 @@
       session_id: state.sessionId,
       session_status: state.sessionStatus,
       max_streams: state.maxStreams,
-      layout: activeTileCount() <= 1 ? "single" : "quad",
+      audio_supported: state.audioSupported,
+      active_audio_stream_id: state.activeAudioStreamId,
+      layout: activeTileCount() <= 1
+        ? "single"
+        : activeTileCount() <= 4 ? "quad" : "six",
       connection: els.connection.textContent,
       streams: [...state.tiles.values()].map((record) => ({
         stream_id: record.streamId,
@@ -884,12 +1148,15 @@
         resolution: record.resolution,
         track_state: record.trackState,
         first_frame_at: record.firstFrameAt,
+        audio_status: record.audioStatus,
       })),
       runtime: state.runtime?.snapshot?.() || [],
     }),
     addDevice,
     closeTile,
     retryTile,
+    toggleAudio,
+    captureFrame,
     closeSession,
     loadDevices,
   };

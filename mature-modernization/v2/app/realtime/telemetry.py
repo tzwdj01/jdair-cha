@@ -21,6 +21,11 @@ COUNTER_NAMES = (
     "realtime_session_timeout_cleanup_total",
     "realtime_abnormal_disconnect_total",
     "realtime_release_failure_total",
+    "realtime_screenshot_total",
+    "realtime_screenshot_failure_total",
+    "realtime_audio_open_total",
+    "realtime_audio_close_total",
+    "realtime_audio_failure_total",
 )
 
 

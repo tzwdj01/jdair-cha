@@ -54,6 +54,10 @@ class RealtimeStream:
     error_code: str | None = None
     release_mode: str | None = None
     runtime_state: str = "AUTHORIZED"
+    audio_status: str = "OFF"
+    audio_track_state: str | None = None
+    audio_codec: str | None = None
+    audio_error_code: str | None = None
     closed_at: dt.datetime | None = None
 
     def public(self) -> dict[str, Any]:
@@ -71,6 +75,12 @@ class RealtimeStream:
             "error_code": self.error_code,
             "release_mode": self.release_mode,
             "runtime_state": self.runtime_state,
+            "audio": {
+                "status": self.audio_status,
+                "track_state": self.audio_track_state,
+                "codec": self.audio_codec,
+                "error_code": self.audio_error_code,
+            },
             "closed_at": iso_datetime(self.closed_at),
         }
 
@@ -106,6 +116,13 @@ class RealtimeSession:
             "expires_at": iso_datetime(self.expires_at),
             "closed_at": iso_datetime(self.closed_at),
             "connection_reusable": self.connection_reusable,
+            "audio_enabled": bool(
+                getattr(
+                    getattr(self.adapter, "settings", None),
+                    "feature_realtime_audio",
+                    False,
+                )
+            ),
             "max_streams": getattr(
                 getattr(self.adapter, "settings", None),
                 "realtime_max_streams_per_session",

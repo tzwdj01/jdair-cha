@@ -207,9 +207,9 @@ class Settings:
             realtime_max_streams_per_session=min(
                 env_int(
                     "CHA_V2_REALTIME_MAX_STREAMS_PER_SESSION",
-                    4,
+                    6,
                 ),
-                4,
+                6,
             ),
             realtime_max_sessions_per_owner=max(
                 1,

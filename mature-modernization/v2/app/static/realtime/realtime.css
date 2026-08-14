@@ -274,6 +274,7 @@ button:disabled { cursor: not-allowed; opacity: .48; }
 }
 .video-grid.single { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
 .video-grid.quad { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: repeat(2, minmax(0, 1fr)); }
+.video-grid.six { grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-rows: repeat(2, minmax(0, 1fr)); }
 .video-grid.empty { place-items: center; }
 .empty-state { max-width: 420px; padding: 30px; text-align: center; color: var(--muted); }
 .empty-state h3 { margin: 10px 0 5px; color: var(--text); font-size: 16px; }
@@ -334,9 +335,11 @@ button:disabled { cursor: not-allowed; opacity: .48; }
   background: transparent;
 }
 .tile-button:hover { color: var(--text); border-color: var(--line-strong); }
+.tile-button.audio.active { color: var(--green); border-color: rgba(41, 211, 162, .5); background: var(--green-soft); }
 .tile-button.close:hover { color: var(--red); border-color: rgba(255, 101, 119, .5); }
 .tile-stage { position: relative; min-height: 0; overflow: hidden; background: #000; }
 .tile-stage video { width: 100%; height: 100%; display: block; object-fit: contain; background: #000; }
+.tile-stage audio { display: none; }
 .tile-overlay {
   position: absolute;
   inset: 0;

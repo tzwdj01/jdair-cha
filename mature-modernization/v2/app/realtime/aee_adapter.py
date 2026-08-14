@@ -366,7 +366,8 @@ class AEEAdapter:
             self._open_monitors.clear()
             return
         self._authorized_devices.discard(device_id)
-        self._open_monitors.discard(device_id)
+        self._open_monitors.discard(f"video:{device_id}")
+        self._open_monitors.discard(f"audio:{device_id}")
 
     def _validate_client_message(self, kind: str, message: str) -> None:
         try:
@@ -428,24 +429,32 @@ class AEEAdapter:
                     "The AEE video request is invalid",
                 )
             device_id = str(data.get("devId") or "")
+            media_kind = str(data.get("kind") or "")
+            expected_stream_type = 2 if media_kind == "video" else 0
             if (
-                data.get("kind") != "video"
-                or data.get("streamType") not in {2, "2"}
+                media_kind not in {"video", "audio"}
+                or (
+                    media_kind == "audio"
+                    and not self.settings.feature_realtime_audio
+                )
+                or data.get("streamType")
+                not in {expected_stream_type, str(expected_stream_type)}
                 or device_id not in self._authorized_devices
             ):
                 raise AEEUpstreamError(
                     "AEE_VIDEO_REQUEST_FORBIDDEN",
-                    "Only the selected live video stream is allowed",
+                    "Only authorized receive-only realtime media is allowed",
                 )
+            monitor_key = f"{media_kind}:{device_id}"
             if method == "mediaMonitor":
-                if device_id in self._open_monitors:
+                if monitor_key in self._open_monitors:
                     raise AEEUpstreamError(
                         "AEE_STREAM_ALREADY_OPEN",
-                        "The selected live video monitor is already open",
+                        "The selected realtime monitor is already open",
                     )
-                self._open_monitors.add(device_id)
+                self._open_monitors.add(monitor_key)
             else:
-                self._open_monitors.discard(device_id)
+                self._open_monitors.discard(monitor_key)
 
     def _capture_and_rewrite_gateway(
         self,

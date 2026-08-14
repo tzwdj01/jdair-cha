@@ -36,7 +36,7 @@
         <span class="live-dot"></span>
         <div>
           <h1>实时监控工作台</h1>
-          <p>单账号已验证最多 4 路；音频和设备控制保持关闭</p>
+          <p>单账号已验证最多 6 路；音频默认关闭，设备控制保持关闭</p>
         </div>
       </div>
       <dl class="summary-metrics">
@@ -50,7 +50,7 @@
         </div>
         <div>
           <dt>实时视频</dt>
-          <dd><b id="streamCount">0</b> / <b id="streamLimit">4</b></dd>
+          <dd><b id="streamCount">0</b> / <b id="streamLimit">6</b></dd>
         </div>
         <div>
           <dt>心跳</dt>
@@ -101,7 +101,7 @@
           </div>
           <div class="layout-indicator">
             <span>自动布局</span>
-            <strong id="layoutStatus">1 路 / 4 路</strong>
+            <strong id="layoutStatus">1 路 / 4 路 / 6 路</strong>
           </div>
         </div>
 
@@ -109,13 +109,13 @@
           <div id="emptyState" class="empty-state">
             <span class="empty-icon" aria-hidden="true">▦</span>
             <h3>尚未开始实时监控</h3>
-            <p>从左侧选择在线设备，可同时监控最多 4 路实时视频。</p>
+            <p>从左侧选择在线设备，可同时监控最多 6 路实时视频。</p>
           </div>
         </div>
 
         <footer class="monitor-footer">
-          <span><i class="status-dot ok"></i> 1 / 4 路布局</span>
-          <span><i class="status-dot"></i> 音频关闭</span>
+          <span><i class="status-dot ok"></i> 1 / 4 / 6 路布局</span>
+          <span id="audioModeStatus"><i class="status-dot"></i> 音频默认关闭</span>
           <span id="footerMessage">等待选择设备</span>
         </footer>
       </section>
@@ -131,12 +131,15 @@
         </div>
         <div class="tile-actions">
           <span class="status-badge" data-status-label>正在连接</span>
+          <button class="tile-button audio hidden" type="button" data-action="audio" title="开启接收音频">🔇</button>
+          <button class="tile-button" type="button" data-action="screenshot" title="保存当前画面截图">▣</button>
           <button class="tile-button" type="button" data-action="fullscreen" title="全屏">⛶</button>
           <button class="tile-button close" type="button" data-action="close" title="关闭视频">×</button>
         </div>
       </header>
       <div class="tile-stage">
         <video autoplay muted playsinline></video>
+        <audio autoplay muted></audio>
         <div class="tile-overlay">
           <span class="spinner"></span>
           <strong data-overlay-title>正在建立实时连接</strong>

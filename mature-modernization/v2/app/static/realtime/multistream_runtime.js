@@ -72,9 +72,9 @@
       return this.connectPromise;
     }
 
-    async openStream({streamId, deviceId, videoElement}) {
-      if (!streamId || !deviceId || !videoElement) {
-        throw new Error("streamId, deviceId and videoElement are required.");
+    async openStream({streamId, deviceId, videoElement, audioElement}) {
+      if (!streamId || !deviceId || !videoElement || !audioElement) {
+        throw new Error("streamId, deviceId and media elements are required.");
       }
       if (this.streams.has(streamId)) {
         throw new Error("The stream is already registered.");
@@ -84,7 +84,9 @@
         streamId,
         deviceId,
         videoElement,
+        audioElement,
         status: "WAITING_FIRST_FRAME",
+        audioStatus: "OFF",
         onLoaded: null,
       };
       record.onLoaded = () => {
@@ -145,6 +147,14 @@
     async closeStream(streamId) {
       const record = this.streams.get(streamId);
       if (!record) return {closed: false, reason: "not_found"};
+      if (record.audioStatus !== "OFF") {
+        try {
+          await this.closeAudio(streamId);
+        } catch {
+          this.stopElement(record.audioElement);
+          record.audioStatus = "OFF";
+        }
+      }
       const result = await this.client.closeVideo(
         record.deviceId,
         "",
@@ -170,9 +180,89 @@
       return {closed: true, result};
     }
 
+    async openAudio(streamId, timeoutMs = 15000) {
+      const record = this.streams.get(streamId);
+      if (!record) throw new Error("The video stream is not registered.");
+      if (record.audioStatus === "PLAYING") return record;
+      record.audioStatus = "OPENING";
+      record.audioElement.muted = true;
+      const result = await this.client.openAudio(
+        record.deviceId,
+        record.audioElement,
+        "",
+        "",
+      );
+      if (result !== 200) {
+        record.audioStatus = "FAILED";
+        const error = new Error(`openAudio returned ${result}`);
+        error.code = "AUDIO_OPEN_FAILED";
+        throw error;
+      }
+      const started = Date.now();
+      while (Date.now() - started < timeoutMs) {
+        const track = record.audioElement.srcObject?.getAudioTracks?.()[0];
+        if (track?.readyState === "live") {
+          record.audioElement.muted = false;
+          await record.audioElement.play();
+          record.audioStatus = "PLAYING";
+          const media = this.client?._mediaClientList?.get?.("mcs8_admin");
+          const consumers = media?._consumerList
+            ? Array.from(media._consumerList.values())
+            : [];
+          const consumer = [...consumers].reverse().find(
+            (item) => item?.kind === "audio" || item?.track?.kind === "audio",
+          );
+          const codec =
+            consumer?.rtpParameters?.codecs?.[0]?.mimeType || null;
+          this.onEvent({
+            event: "audio_playing",
+            stream_id: streamId,
+            device_id: record.deviceId,
+            track_state: track.readyState,
+            codec,
+          });
+          return record;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+      record.audioStatus = "FAILED";
+      const error = new Error("Realtime audio track timed out.");
+      error.code = "AUDIO_OPEN_FAILED";
+      throw error;
+    }
+
+    async closeAudio(streamId) {
+      const record = this.streams.get(streamId);
+      if (!record || record.audioStatus === "OFF") {
+        return {closed: false, reason: "not_open"};
+      }
+      const result = await this.client.closeAudio(
+        record.deviceId,
+        "",
+        "",
+      );
+      if (![200, 404].includes(result)) {
+        const error = new Error(`closeAudio returned ${result}`);
+        error.code = "AUDIO_RELEASE_FAILED";
+        throw error;
+      }
+      record.audioElement.muted = true;
+      this.stopElement(record.audioElement);
+      record.audioStatus = "OFF";
+      this.onEvent({
+        event: "audio_closed",
+        stream_id: streamId,
+        device_id: record.deviceId,
+      });
+      return {closed: true, result};
+    }
+
     async handleControlCommand(message) {
       if (message?.action === "close_stream") {
         return this.closeStream(message.payload?.stream_id || "");
+      }
+      if (message?.action === "close_audio") {
+        return this.closeAudio(message.payload?.stream_id || "");
       }
       if (message?.action === "close_session") {
         await this.close();
@@ -208,18 +298,23 @@
         stream_id: record.streamId,
         device_id: record.deviceId,
         status: record.status,
+        audio_status: record.audioStatus,
         track_state:
           record.videoElement.srcObject?.getVideoTracks?.()[0]?.readyState
           || null,
       }));
     }
 
-    stopElement(videoElement) {
-      const mediaStream = videoElement?.srcObject;
+    stopElement(mediaElement) {
+      const mediaStream = mediaElement?.srcObject;
       if (mediaStream) {
         for (const track of mediaStream.getTracks()) track.stop();
       }
-      if (videoElement) videoElement.srcObject = null;
+      if (!mediaElement) return;
+      mediaElement.pause?.();
+      mediaElement.srcObject = null;
+      mediaElement.removeAttribute?.("src");
+      mediaElement.load?.();
     }
   }
 
