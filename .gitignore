@@ -29,3 +29,8 @@ venv
 **/m32a-*.png
 **/m32b-*-result.json
 **/m32b-*.png
+**/m32c-*-result.json
+**/m32c-*.png
+**/m3-rc-manifest.json
+**/m3-rc-rollback-result.json
+**/m3-rc-package-test-result.json
