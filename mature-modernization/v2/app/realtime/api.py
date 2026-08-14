@@ -170,9 +170,9 @@ def create_realtime_router(
                 status_code=404,
                 content=(
                     "<!doctype html><meta charset='utf-8'>"
-                    "<title>M3.1 未启用</title>"
+                    "<title>实时视频监察未启用</title>"
                     "<body style='font-family:sans-serif;padding:32px'>"
-                    "<h1>M3.1 实时视频尚未启用</h1>"
+                    "<h1>实时视频监察尚未启用</h1>"
                     "<p>realtime_readonly 功能开关当前为关闭状态。</p>"
                     "<p><a href='/'>返回现有系统</a></p></body>"
                 ),
@@ -182,7 +182,7 @@ def create_realtime_router(
         except OSError:
             return HTMLResponse(
                 status_code=500,
-                content="M3.1 realtime template is unavailable.",
+                content="Realtime inspection template is unavailable.",
             )
         return HTMLResponse(
             html.replace("{{CHA_V2_VERSION}}", settings.version).replace(

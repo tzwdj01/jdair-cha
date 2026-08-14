@@ -1,1 +1,1 @@
-m3-multistream-model-a
+m3-four-grid-realtime

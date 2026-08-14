@@ -12,6 +12,10 @@
       this.connectPromise = null;
     }
 
+    configure({gatewayPath}) {
+      if (gatewayPath && !this.client) this.gatewayPath = gatewayPath;
+    }
+
     websocketSettings() {
       return {
         host: location.host,
@@ -41,7 +45,9 @@
         this.client = client;
         this.connectionError = null;
         const timer = setTimeout(() => {
-          reject(new Error("AEE media room connection timed out."));
+          const error = new Error("AEE media room connection timed out.");
+          error.code = "UPSTREAM_CONNECTION_FAILED";
+          reject(error);
         }, timeoutMs);
         client.on("OnManage", (event) => {
           const method = event?.method || "";
@@ -97,13 +103,23 @@
       };
       videoElement.addEventListener("loadeddata", record.onLoaded);
       this.streams.set(streamId, record);
-      const result = await this.client.openVideo(
-        deviceId,
-        videoElement,
-        "",
-        "",
-      );
+      let result;
+      try {
+        result = await this.client.openVideo(
+          deviceId,
+          videoElement,
+          "",
+          "",
+        );
+      } catch (error) {
+        videoElement.removeEventListener("loadeddata", record.onLoaded);
+        this.stopElement(videoElement);
+        this.streams.delete(streamId);
+        throw error;
+      }
       if (result !== 200) {
+        videoElement.removeEventListener("loadeddata", record.onLoaded);
+        this.stopElement(videoElement);
         this.streams.delete(streamId);
         const error = new Error(`openVideo returned ${result}`);
         error.code = "OPEN_VIDEO_REJECTED";
@@ -115,6 +131,15 @@
         device_id: deviceId,
       });
       return record;
+    }
+
+    hasStream(streamId) {
+      return this.streams.has(streamId);
+    }
+
+    markFailed(streamId) {
+      const record = this.streams.get(streamId);
+      if (record) record.status = "FAILED";
     }
 
     async closeStream(streamId) {
