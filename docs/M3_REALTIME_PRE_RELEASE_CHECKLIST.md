@@ -25,6 +25,10 @@
 ## 安全
 
 - [ ] 未登录 API 被拒绝
+- [ ] `CHA_V2_REALTIME_CANARY_USERS` 已配置为获批测试用户
+- [ ] allowlist 为空时所有已登录用户仍被拒绝
+- [ ] 非 Canary 用户的 Realtime 页面/API 被拒绝
+- [ ] 非 Canary 用户的 Control/Gateway/Media WebSocket 全部被拒绝
 - [ ] session owner 隔离 PASS
 - [ ] Control/Gateway/Media Origin 校验 PASS
 - [ ] lease expiry 和 CLOSED replay PASS
@@ -44,11 +48,19 @@
 ## 配置、备份与回滚
 
 - [ ] `.env.example` 已更新且无真实凭据
+- [ ] AEE Secret 仅存在于生产 env/Secret 管理，不在 Git、RC 或日志中
+- [ ] env 文件权限为 `0600`
+- [ ] health 可区分 enabled、AEE configured、Canary configured
+- [ ] health 检查不主动登录 AEE
 - [ ] 生产 env 已另行备份（真正发布时）
 - [ ] 生产数据/当前 release 已备份（真正发布时）
 - [ ] rollback target 已记录
 - [ ] rollback dry-run PASS
 - [ ] isolated rollback rehearsal PASS
+- [ ] isolated final release rehearsal PASS
+- [ ] release 使用 production V2 venv Python
+- [ ] candidate test failure 在切换 current 前 fail-fast
+- [ ] health failure 只执行一次回切和一次恢复重启
 - [ ] 未在生产 current 上执行演练
 
 ## 健康与真实验证

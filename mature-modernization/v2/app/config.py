@@ -101,6 +101,7 @@ class Settings:
     realtime_max_retained_sessions: int
     realtime_allowed_origins: tuple[str, ...]
     realtime_allow_missing_ws_origin: bool
+    realtime_canary_users: tuple[str, ...]
     aee_api_base_url: str
     aee_origin: str
     aee_gateway_host: str
@@ -126,6 +127,25 @@ class Settings:
             and self.aee_gateway_port > 0
             and self.aee_username
             and self.aee_password
+        )
+
+    def realtime_canary_is_configured(self) -> bool:
+        return bool(self.realtime_canary_users)
+
+    def realtime_canary_user_allowed(self, username: str) -> bool:
+        normalized = username.strip().casefold()
+        if not normalized:
+            return False
+        return normalized in {
+            item.strip().casefold()
+            for item in self.realtime_canary_users
+            if item.strip()
+        }
+
+    def realtime_is_configured(self) -> bool:
+        return (
+            self.realtime_aee_is_configured()
+            and self.realtime_canary_is_configured()
         )
 
     @classmethod
@@ -249,6 +269,10 @@ class Settings:
             realtime_allow_missing_ws_origin=env_bool(
                 "CHA_V2_REALTIME_ALLOW_MISSING_WS_ORIGIN",
                 False,
+            ),
+            realtime_canary_users=env_csv(
+                "CHA_V2_REALTIME_CANARY_USERS",
+                (),
             ),
             aee_api_base_url=env_url("CHA_V2_AEE_API_BASE_URL"),
             aee_origin=env_url(

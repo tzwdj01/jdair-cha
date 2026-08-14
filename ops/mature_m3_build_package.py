@@ -53,6 +53,9 @@ def main() -> None:
         root / "ops" / "mature_m3_final_release.sh": (
             "ops/mature_m3_final_release.sh"
         ),
+        root / "ops" / "mature_m3_final_release_rehearsal.sh": (
+            "ops/mature_m3_final_release_rehearsal.sh"
+        ),
     }
     for relative in required:
         if not (source / relative).is_file():

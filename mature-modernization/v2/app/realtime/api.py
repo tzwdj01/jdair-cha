@@ -57,9 +57,9 @@ def create_realtime_router(
             status_code=exc.status_code,
         )
 
-    async def identity(request: Request) -> tuple[str, str]:
-        cookie_header = request.headers.get("cookie", "")
-        session_cookie = request.cookies.get("jdair_mcs8_session", "")
+    async def identity(connection: Any) -> tuple[str, str]:
+        cookie_header = connection.headers.get("cookie", "")
+        session_cookie = connection.cookies.get("jdair_mcs8_session", "")
         if not cookie_header or not session_cookie:
             raise RealtimeError(
                 "authentication_required",
@@ -89,6 +89,16 @@ def create_realtime_router(
             session_cookie.encode("utf-8")
         ).hexdigest()
         owner_name = str(payload.get("username") or "authenticated-user")[:64]
+        return owner_key, owner_name
+
+    async def canary_identity(connection: Any) -> tuple[str, str]:
+        owner_key, owner_name = await identity(connection)
+        if not settings.realtime_canary_user_allowed(owner_name):
+            raise RealtimeError(
+                "canary_forbidden",
+                "This login is not authorized for the realtime Canary.",
+                status_code=403,
+            )
         return owner_key, owner_name
 
     async def require_online_device(
@@ -181,7 +191,7 @@ def create_realtime_router(
         return origin == expected or origin in configured
 
     @router.get("/api/v2/realtime", response_class=HTMLResponse)
-    async def realtime_page() -> HTMLResponse:
+    async def realtime_page(request: Request) -> HTMLResponse:
         if not settings.feature_realtime_readonly:
             return HTMLResponse(
                 status_code=404,
@@ -191,6 +201,20 @@ def create_realtime_router(
                     "<body style='font-family:sans-serif;padding:32px'>"
                     "<h1>实时视频监察尚未启用</h1>"
                     "<p>realtime_readonly 功能开关当前为关闭状态。</p>"
+                    "<p><a href='/'>返回现有系统</a></p></body>"
+                ),
+            )
+        try:
+            await canary_identity(request)
+        except RealtimeError as exc:
+            return HTMLResponse(
+                status_code=exc.status_code,
+                content=(
+                    "<!doctype html><meta charset='utf-8'>"
+                    "<title>实时视频监察访问受限</title>"
+                    "<body style='font-family:sans-serif;padding:32px'>"
+                    "<h1>实时视频监察访问受限</h1>"
+                    "<p>当前登录用户不在受控 Canary 范围内。</p>"
                     "<p><a href='/'>返回现有系统</a></p></body>"
                 ),
             )
@@ -250,7 +274,7 @@ def create_realtime_router(
         if not settings.feature_realtime_readonly:
             return disabled(request)
         try:
-            await identity(request)
+            await canary_identity(request)
             source = await legacy_client.devices(
                 request.headers.get("cookie", "")
             )
@@ -299,7 +323,9 @@ def create_realtime_router(
     @router.get("/api/v2/realtime/health", include_in_schema=False)
     async def realtime_health(request: Request) -> JSONResponse:
         snapshot = await manager.telemetry_snapshot()
-        configured = settings.realtime_aee_is_configured()
+        aee_configured = settings.realtime_aee_is_configured()
+        canary_configured = settings.realtime_canary_is_configured()
+        configured = settings.realtime_is_configured()
         enabled = settings.feature_realtime_readonly
         manager_ready = bool(snapshot["cleanup_task_running"])
         ready = manager_ready and (not enabled or configured)
@@ -309,6 +335,8 @@ def create_realtime_router(
                 "status": "ready" if ready else "not_ready",
                 "enabled": enabled,
                 "configured": configured,
+                "aee_configured": aee_configured,
+                "canary_configured": canary_configured,
                 "session_manager": (
                     "running" if manager_ready else "not_running"
                 ),
@@ -323,7 +351,7 @@ def create_realtime_router(
         if not settings.feature_realtime_readonly:
             return disabled(request)
         try:
-            await identity(request)
+            await canary_identity(request)
             snapshot = await manager.telemetry_snapshot()
             return envelope(
                 request,
@@ -356,7 +384,7 @@ def create_realtime_router(
             return disabled(request)
         try:
             require_same_origin(request)
-            owner_key, owner_name = await identity(request)
+            owner_key, owner_name = await canary_identity(request)
             session, lease = await manager.create_session(
                 owner_key=owner_key,
                 owner_name=owner_name,
@@ -385,7 +413,7 @@ def create_realtime_router(
             return disabled(request)
         try:
             require_same_origin(request)
-            owner_key, _ = await identity(request)
+            owner_key, _ = await canary_identity(request)
             session = await manager.get_session(
                 session_id,
                 owner_key=owner_key,
@@ -403,7 +431,7 @@ def create_realtime_router(
             return disabled(request)
         try:
             require_same_origin(request)
-            owner_key, _ = await identity(request)
+            owner_key, _ = await canary_identity(request)
             session = await manager.heartbeat(
                 session_id,
                 owner_key=owner_key,
@@ -425,7 +453,7 @@ def create_realtime_router(
             return disabled(request)
         try:
             require_same_origin(request)
-            owner_key, _ = await identity(request)
+            owner_key, _ = await canary_identity(request)
             await require_online_device(request, body.device_id)
             stream = await manager.add_stream(
                 session_id,
@@ -478,7 +506,7 @@ def create_realtime_router(
             return disabled(request)
         try:
             require_same_origin(request)
-            owner_key, _ = await identity(request)
+            owner_key, _ = await canary_identity(request)
             session = await manager.delete_stream(
                 session_id,
                 stream_id,
@@ -500,7 +528,7 @@ def create_realtime_router(
             return disabled(request)
         try:
             require_same_origin(request)
-            owner_key, _ = await identity(request)
+            owner_key, _ = await canary_identity(request)
             session = await manager.enable_audio(
                 session_id,
                 stream_id,
@@ -522,7 +550,7 @@ def create_realtime_router(
             return disabled(request)
         try:
             require_same_origin(request)
-            owner_key, _ = await identity(request)
+            owner_key, _ = await canary_identity(request)
             session = await manager.disable_audio(
                 session_id,
                 stream_id,
@@ -541,7 +569,7 @@ def create_realtime_router(
             return disabled(request)
         try:
             require_same_origin(request)
-            owner_key, _ = await identity(request)
+            owner_key, _ = await canary_identity(request)
             session = await manager.close_session(
                 session_id,
                 owner_key=owner_key,
@@ -560,6 +588,10 @@ def create_realtime_router(
 
     async def lease_allowed(websocket: WebSocket, session_id: str) -> bool:
         if not websocket_origin_allowed(websocket):
+            return False
+        try:
+            await canary_identity(websocket)
+        except RealtimeError:
             return False
         return await manager.validate_lease(
             session_id,

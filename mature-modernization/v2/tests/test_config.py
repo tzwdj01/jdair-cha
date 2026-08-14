@@ -47,6 +47,51 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(settings.aee_username, "")
         self.assertEqual(settings.aee_password, "")
         self.assertFalse(settings.realtime_aee_is_configured())
+        self.assertFalse(settings.realtime_canary_is_configured())
+        self.assertFalse(
+            settings.realtime_canary_user_allowed("realtime-tester")
+        )
+        self.assertFalse(settings.realtime_is_configured())
+
+    def test_realtime_canary_allowlist_is_explicit_and_casefolded(
+        self,
+    ) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "CHA_V2_REALTIME_CANARY_USERS": (
+                    "realtime-tester, Internal.User "
+                ),
+            },
+            clear=False,
+        ):
+            settings = Settings.from_env()
+        self.assertTrue(settings.realtime_canary_is_configured())
+        self.assertTrue(
+            settings.realtime_canary_user_allowed("REALTIME-TESTER")
+        )
+        self.assertTrue(
+            settings.realtime_canary_user_allowed("internal.user")
+        )
+        self.assertFalse(settings.realtime_canary_user_allowed("other-user"))
+
+    def test_realtime_requires_both_aee_secrets_and_canary_users(
+        self,
+    ) -> None:
+        complete = {
+            "CHA_V2_REALTIME_CANARY_USERS": "realtime-tester",
+            "CHA_V2_AEE_API_BASE_URL": "https://aee.example.test",
+            "CHA_V2_AEE_ORIGIN": "https://aee.example.test",
+            "CHA_V2_AEE_GATEWAY_HOST": "gateway.example.test",
+            "CHA_V2_AEE_GATEWAY_PORT": "7711",
+            "CHA_V2_AEE_USERNAME": "server-side-user",
+            "CHA_V2_AEE_PASSWORD": "server-side-secret",
+        }
+        with patch.dict(os.environ, complete, clear=False):
+            settings = Settings.from_env()
+        self.assertTrue(settings.realtime_aee_is_configured())
+        self.assertTrue(settings.realtime_canary_is_configured())
+        self.assertTrue(settings.realtime_is_configured())
 
     def test_realtime_stream_limit_is_bounded(self) -> None:
         with patch.dict(

@@ -71,6 +71,19 @@ error and release mode. Control, Gateway and Media WebSockets require an
 allowed Origin and a valid unexpired session lease. CLOSED leases cannot be
 replayed.
 
+Production activation additionally requires an explicit comma-separated
+`CHA_V2_REALTIME_CANARY_USERS` allowlist. Usernames are taken from the existing
+CHA login session. An empty or missing allowlist denies every authenticated
+user; it never means "all users". The realtime page, product APIs and all three
+Control/Gateway/Media WebSocket endpoints enforce the same Canary decision.
+Health reports only boolean `enabled`, `aee_configured`, `canary_configured`
+and combined `configured` states and never exposes users or credentials.
+
+All AEE connection settings and credentials are read only from
+`CHA_V2_AEE_*` environment variables. Health checks validate configuration
+presence without logging in to AEE. AEE login starts only when an authorized
+Canary user creates a realtime session.
+
 Default abuse guards allow at most three active realtime sessions per login
 session and ten session creations per 60 seconds. These values are configurable
 but do not change the four-stream product limit.
@@ -87,6 +100,12 @@ local-only and never uploads media to the service.
 python -m unittest discover -s tests -v
 uvicorn app.main:app --host 127.0.0.1 --port 8791
 ```
+
+The guarded final-release helper uses
+`/opt/jdair-cha/v2/venv/bin/python` by default. Run
+`ops/mature_m3_final_release_rehearsal.sh` before a production retry; its
+success, pre-switch test-failure and post-switch health-failure scenarios use
+only an isolated temporary release tree.
 
 The real-device baseline additionally reads the existing CHA URL and login
 from `CHA_M3_LEGACY_URL`, `CHA_LOGIN_USER` and `CHA_LOGIN_PASS`. AEE settings

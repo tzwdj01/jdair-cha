@@ -18,8 +18,14 @@ class _LegacyHandler(http.server.BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:
         if self.path == "/api/auth/session":
+            cookie = self.headers.get("Cookie", "")
+            username = (
+                "regular-user"
+                if "blocked-session" in cookie
+                else "realtime-tester"
+            )
             body = json.dumps(
-                {"authenticated": True, "username": "realtime-tester"}
+                {"authenticated": True, "username": username}
             ).encode()
             status = 200
         elif self.path == "/api/devices":
@@ -196,9 +202,12 @@ async def _websocket_exchange(
     cookie: str,
     origin: str | None,
 ) -> list[dict[str, Any]]:
+    cookie_header = cookie
+    if "jdair_mcs8_session=" not in cookie_header:
+        cookie_header += "; jdair_mcs8_session=test-session"
     headers = [
         (b"host", b"testserver"),
-        (b"cookie", cookie.encode("latin-1")),
+        (b"cookie", cookie_header.encode("latin-1")),
     ]
     if origin is not None:
         headers.append((b"origin", origin.encode("latin-1")))
@@ -260,6 +269,7 @@ class RealtimeAPITests(unittest.IsolatedAsyncioTestCase):
                 "CHA_V2_REALTIME_MAX_SESSIONS_PER_OWNER": "10",
                 "CHA_V2_REALTIME_SESSION_CREATE_LIMIT": "100",
                 "CHA_V2_REALTIME_MAX_RETAINED_SESSIONS": "32",
+                "CHA_V2_REALTIME_CANARY_USERS": "realtime-tester",
             },
             clear=False,
         )
@@ -573,6 +583,44 @@ class RealtimeAPITests(unittest.IsolatedAsyncioTestCase):
             "authentication_required",
         )
 
+    async def test_non_canary_user_is_rejected_by_realtime_api(
+        self,
+    ) -> None:
+        blocked_headers = {
+            "cookie": "jdair_mcs8_session=blocked-session",
+        }
+        page = await _request(
+            self.main.app,
+            "GET",
+            "/api/v2/realtime",
+            headers=blocked_headers,
+        )
+        devices = await _request(
+            self.main.app,
+            "GET",
+            "/api/v2/realtime/devices",
+            headers=blocked_headers,
+        )
+        diagnostics = await _request(
+            self.main.app,
+            "GET",
+            "/api/v2/realtime/diagnostics",
+            headers=blocked_headers,
+        )
+        created = await _request(
+            self.main.app,
+            "POST",
+            "/api/v2/realtime/sessions",
+            headers=blocked_headers,
+        )
+        self.assertEqual(page.status_code, 403)
+        for response in (devices, diagnostics, created):
+            self.assertEqual(response.status_code, 403)
+            self.assertEqual(
+                response.json()["data"]["code"],
+                "canary_forbidden",
+            )
+
     async def test_realtime_health_does_not_probe_aee(self) -> None:
         await self.main.realtime_manager.start()
         try:
@@ -586,8 +634,48 @@ class RealtimeAPITests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(data["upstream_probe"], "not_performed")
             self.assertEqual(data["session_manager"], "running")
             self.assertFalse(data["configured"])
+            self.assertFalse(data["aee_configured"])
+            self.assertTrue(data["canary_configured"])
         finally:
             await self.main.realtime_manager.shutdown()
+
+    async def test_realtime_health_reports_combined_configuration_without_login(
+        self,
+    ) -> None:
+        fields = {
+            "aee_api_base_url": "https://aee.example.test",
+            "aee_origin": "https://aee.example.test",
+            "aee_gateway_host": "gateway.example.test",
+            "aee_gateway_port": 7711,
+            "aee_username": "unit-test-user",
+            "aee_password": "unit-test-value",
+        }
+        original = {
+            name: getattr(self.main.settings, name)
+            for name in fields
+        }
+        before_adapters = len(_APIAdapter.instances)
+        for name, value in fields.items():
+            object.__setattr__(self.main.settings, name, value)
+        await self.main.realtime_manager.start()
+        try:
+            response = await _request(
+                self.main.app,
+                "GET",
+                "/api/v2/realtime/health",
+            )
+            self.assertEqual(response.status_code, 200)
+            data = response.json()["data"]
+            self.assertTrue(data["enabled"])
+            self.assertTrue(data["configured"])
+            self.assertTrue(data["aee_configured"])
+            self.assertTrue(data["canary_configured"])
+            self.assertEqual(data["upstream_probe"], "not_performed")
+            self.assertEqual(len(_APIAdapter.instances), before_adapters)
+        finally:
+            await self.main.realtime_manager.shutdown()
+            for name, value in original.items():
+                object.__setattr__(self.main.settings, name, value)
 
     async def test_session_owner_cannot_be_replayed_by_other_login(
         self,
@@ -740,6 +828,38 @@ class RealtimeAPITests(unittest.IsolatedAsyncioTestCase):
             f"/api/v2/realtime/sessions/{other_id}",
             headers={"cookie": "jdair_mcs8_session=other-login"},
         )
+
+    async def test_non_canary_user_is_rejected_by_all_websockets(
+        self,
+    ) -> None:
+        for endpoint in ("control", "gateway", "media"):
+            created = await self.request(
+                "POST",
+                "/api/v2/realtime/sessions",
+            )
+            session_id = created.json()["data"]["session_id"]
+            lease_cookie = created.headers["set-cookie"].split(";", 1)[0]
+            rejected = await _websocket_exchange(
+                self.main.app,
+                f"/ws/v2/realtime/{session_id}/{endpoint}",
+                cookie=(
+                    f"{lease_cookie}; "
+                    "jdair_mcs8_session=blocked-session"
+                ),
+                origin="http://testserver",
+            )
+            self.assertTrue(
+                any(
+                    item["type"] == "websocket.close"
+                    and item.get("code") == 4403
+                    for item in rejected
+                ),
+                endpoint,
+            )
+            await self.request(
+                "DELETE",
+                f"/api/v2/realtime/sessions/{session_id}",
+            )
 
 
 if __name__ == "__main__":

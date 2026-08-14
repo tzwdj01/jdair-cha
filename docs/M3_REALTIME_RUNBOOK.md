@@ -10,7 +10,15 @@
 4. 登录 CHA 后访问 `GET /api/v2/realtime/diagnostics`，查看 gauges、counters
    和 durations。
 
-Realtime health 不主动登录 AEE，避免健康探针造成频繁 AEE 登录。
+Realtime health 不主动登录 AEE，避免健康探针造成频繁 AEE 登录。返回值中的：
+
+- `enabled` 表示全局 realtime 功能开关；
+- `aee_configured` 只表示所需 AEE 环境变量均存在；
+- `canary_configured` 表示至少配置了一个受控 CHA 登录用户；
+- `configured` 只有在 AEE 和 Canary 用户配置都完整时才为 true。
+
+这些字段只返回布尔状态，不返回用户名、密码、Token、内部地址或 allowlist
+内容。
 
 ## 2. 关键运行指标
 
@@ -80,7 +88,52 @@ session 进入 `FAILED` 或 `DEGRADED`。不要通过高频刷新 health 主动�
 Audio 即使已验证也保持 `CHA_V2_FEATURE_REALTIME_AUDIO=false`，只有在独立
 发布审批后才允许对 Canary 用户开启。
 
-## 7. 确认资源释放
+## 7. Canary 用户隔离
+
+Realtime 开启前必须在生产 Secret/env 中设置：
+
+```text
+CHA_V2_REALTIME_CANARY_USERS=user.one,user.two
+```
+
+用户名直接复用现有 CHA `/api/auth/session` 返回的登录用户名，比较时忽略大小写
+并去除首尾空格。默认未配置或配置为空时，没有任何已登录用户可以访问 realtime。
+
+非 Canary 用户会被以下入口拒绝：
+
+- Realtime 页面和所有产品 API；
+- Control WebSocket；
+- Gateway WebSocket；
+- Media WebSocket。
+
+健康接口仍可用于运维检查，但不会返回 allowlist 内容。不要使用全局开关替代
+Canary allowlist，也不要为本阶段引入新的 RBAC。
+
+## 8. AEE Secret 配置
+
+AEE 长期凭据只允许通过生产环境变量注入：
+
+```text
+CHA_V2_AEE_API_BASE_URL
+CHA_V2_AEE_ORIGIN
+CHA_V2_AEE_GATEWAY_HOST
+CHA_V2_AEE_GATEWAY_PORT
+CHA_V2_AEE_GATEWAY_SSL
+CHA_V2_AEE_GATEWAY_HTTP_PROXY
+CHA_V2_AEE_USERNAME
+CHA_V2_AEE_PASSWORD
+```
+
+要求：
+
+- 真实值不得写入 Git、RC、命令输出、Runbook、截图或日志；
+- 生产 env 权限保持 `0600`，并纳入发布前备份；
+- 变更后先保持 `CHA_V2_FEATURE_REALTIME_READONLY=false` 启动并检查 health；
+- health 只做配置完整性判断，不主动登录 AEE；
+- 只有受控 Canary 开始创建 session 时才允许执行 AEE login；
+- 不通过浏览器、API、diagnostics 或 support bundle 返回 Secret。
+
+## 9. 确认资源释放
 
 结束会话后确认：
 
@@ -91,7 +144,7 @@ Audio 即使已验证也保持 `CHA_V2_FEATURE_REALTIME_AUDIO=false`，只有在
 - stream 日志最终出现 `stream_released` 或 session 出现 `session_closed`
 - `runtime_state=RELEASED`
 
-## 8. 回滚 M3
+## 10. 回滚 M3
 
 发布前必须记录上一版本 release 路径并备份环境文件。使用
 `ops/rollback-v2.sh` 时必须提供：
@@ -105,7 +158,7 @@ Audio 即使已验证也保持 `CHA_V2_FEATURE_REALTIME_AUDIO=false`，只有在
 先设置 `CHA_V2_ROLLBACK_DRY_RUN=true` 检查目标，再按变更审批执行。脚本拒绝
 回滚到 release root 之外的路径。
 
-## 9. 禁止发送给普通用户的日志
+## 11. 禁止发送给普通用户的日志
 
 不得发送：
 
@@ -118,16 +171,42 @@ Audio 即使已验证也保持 `CHA_V2_FEATURE_REALTIME_AUDIO=false`，只有在
 
 对外只提供 CHA `request_id`、内部 `error_code` 和脱敏后的处理结论。
 
-## 10. Canary 方案
+## 12. Canary 方案
 
-1. 只选择极少量内部测试用户，保留旧系统入口。
+1. 只选择极少量内部测试用户，将其现有 CHA 用户名写入
+   `CHA_V2_REALTIME_CANARY_USERS`，保留旧系统入口。
 2. 先部署候选 release，但保持 realtime/audio 开关关闭。
-3. 验证 liveness、readiness、realtime health 和 diagnostics。
-4. 经审批后只开启 realtime；最大路数保持 6，不测试 9 路。
-5. 视频稳定后再单独审批 audio Canary。
-6. 观察 session/stream、Gateway/Media、first-frame、release、login latency。
+3. 确认 health 中 `aee_configured=true`、`canary_configured=true`、
+   `configured=true`，此检查不得主动登录 AEE。
+4. 使用非 Canary 登录验证页面、API 和三个 WebSocket 均被拒绝。
+5. 验证 liveness、readiness、realtime health 和 diagnostics。
+6. 经审批后只开启 realtime；最大路数保持 6，不测试 9 路。
+7. 视频稳定后再单独审批 audio Canary。
+8. 观察 session/stream、Gateway/Media、first-frame、release、login latency。
 
 以下任一情况立即中止：资源不能释放；Gateway/Media 持续增长；首帧超时或
 AEE 登录异常明显增长；页面持续错误；明确内存泄漏；owner 隔离失败；Token
 泄漏；旧系统受影响；业务设备异常。中止时先关闭 feature flag，再执行既定
 回滚。
+
+## 13. 发布脚本
+
+`ops/mature_m3_final_release.sh` 必须使用
+`CHA_V2_VENV_PYTHON`，默认值为：
+
+```text
+/opt/jdair-cha/v2/venv/bin/python
+```
+
+候选包测试在切换 `current` 前执行。测试失败必须直接退出且不得重启服务。只有
+切换完成后的启动或 health 失败才执行一次回切和一次恢复重启。每次正式发布前
+必须运行：
+
+```text
+ops/mature_m3_final_release_rehearsal.sh
+```
+
+该演练只能使用临时隔离目录和 fake systemctl/curl，不得访问生产 current。
+生产重试必须使用新的独立 release 目录；本 release-fix 脚本默认目录名为
+`0.8.0-m3-final-rc-release-fix`，不得覆盖当前
+`0.8.0-m3-final-rc`。

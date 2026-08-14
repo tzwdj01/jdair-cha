@@ -10,14 +10,17 @@ expected_sha="${CHA_M3_PACKAGE_SHA256:-}"
 root="${CHA_V2_ROOT:-/opt/jdair-cha/v2}"
 current="${CHA_V2_CURRENT:-${root}/current}"
 service="${CHA_V2_SERVICE:-jdair-cha-v2.service}"
-release_name="${CHA_M3_RELEASE_NAME:-0.8.0-m3-final-rc}"
+release_name="${CHA_M3_RELEASE_NAME:-0.8.0-m3-final-rc-release-fix}"
 release_dir="${root}/releases/${release_name}"
 backup_proof="${CHA_M3_BACKUP_PROOF:-}"
 dry_run="${CHA_M3_RELEASE_DRY_RUN:-true}"
 approved="${CHA_M3_RELEASE_APPROVED:-false}"
 health_base="${CHA_M3_HEALTH_BASE:-http://127.0.0.1:8791}"
+venv_python="${CHA_V2_VENV_PYTHON:-${root}/venv/bin/python}"
+startup_wait_seconds="${CHA_M3_STARTUP_WAIT_SECONDS:-3}"
 
 test -s "$package"
+test -x "$venv_python"
 tar -tzf "$package" >/dev/null
 actual_sha="$(sha256sum "$package" | cut -d' ' -f1)"
 if [ -n "$expected_sha" ] && [ "$actual_sha" != "$expected_sha" ]; then
@@ -36,7 +39,7 @@ grep -q '^CHA_V2_FEATURE_REALTIME_READONLY=false$' "$work_root/FEATURES.env"
 grep -q '^CHA_V2_FEATURE_REALTIME_AUDIO=false$' "$work_root/FEATURES.env"
 grep -q '^CHA_V2_FEATURE_REALTIME_CONTROL=false$' "$work_root/FEATURES.env"
 grep -q '^CHA_V2_FEATURE_ACCOUNT_POOL_V2=false$' "$work_root/FEATURES.env"
-python3 -m compileall -q "$work_root/app"
+"$venv_python" -m compileall -q "$work_root/app"
 
 root_resolved="$(readlink -m "$root")"
 release_resolved="$(readlink -m "$release_dir")"
@@ -58,6 +61,7 @@ printf 'CURRENT=%s\n' "$current"
 printf 'RELEASE_DIR=%s\n' "$release_dir"
 printf 'SERVICE=%s\n' "$service"
 printf 'HEALTH_BASE=%s\n' "$health_base"
+printf 'VENV_PYTHON=%s\n' "$venv_python"
 printf 'FEATURES_DEFAULT_CLOSED=true\n'
 
 if [ "$dry_run" = "true" ]; then
@@ -77,31 +81,48 @@ previous_target=""
 if [ -L "$current" ] || [ -e "$current" ]; then
   previous_target="$(readlink -f "$current" || true)"
 fi
+test -n "$previous_target"
+test -d "$previous_target"
 
-restore_previous() {
+switched_current=false
+rollback_attempted=false
+
+rollback_on_error() {
+  rc=$?
+  trap - ERR
   set +e
-  if [ -n "$previous_target" ] && [ -d "$previous_target" ]; then
+  if [ "$switched_current" = "true" ] \
+    && [ "$rollback_attempted" = "false" ] \
+    && [ -d "$previous_target" ]; then
+    rollback_attempted=true
     ln -sfn "$previous_target" "$current"
     systemctl restart "$service"
   fi
+  exit "$rc"
 }
-trap 'restore_previous' ERR
+trap 'rollback_on_error' ERR
+
+# Validate the extracted candidate with the exact interpreter used by the
+# production service. A test failure occurs before current is switched and
+# therefore must not restart the service.
+(cd "$work_root" && "$venv_python" -m unittest discover -s tests -v)
 
 test ! -e "$release_dir"
 install -d -m 0755 "$(dirname "$release_dir")"
 mkdir "$release_dir"
 tar -xzf "$package" -C "$release_dir"
-python3 -m compileall -q "$release_dir/app"
-(cd "$release_dir" && python3 -m unittest discover -s tests -v)
+"$venv_python" -m compileall -q "$release_dir/app"
 
 ln -sfn "$release_dir" "$current"
+switched_current=true
 systemctl restart "$service"
-sleep 3
+sleep "$startup_wait_seconds"
 test "$(systemctl is-active "$service")" = "active"
 test "$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 \
   "${health_base}/api/v2/health/live")" = "200"
 test "$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 \
   "${health_base}/api/v2/health/ready")" = "200"
 
+trap - ERR
 printf 'M3_FINAL_RELEASE=passed\n'
 printf 'CURRENT_TARGET=%s\n' "$(readlink -f "$current")"

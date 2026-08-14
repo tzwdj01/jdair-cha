@@ -165,7 +165,11 @@ async def readiness(request: Request):
         legacy_latency_ms = None
 
     required = settings.legacy_is_required()
-    realtime_configured = settings.realtime_aee_is_configured()
+    realtime_aee_configured = settings.realtime_aee_is_configured()
+    realtime_canary_configured = (
+        settings.realtime_canary_is_configured()
+    )
+    realtime_configured = settings.realtime_is_configured()
     realtime_required = settings.feature_realtime_readonly
     realtime_snapshot = await realtime_manager.telemetry_snapshot()
     realtime_manager_running = bool(
@@ -201,6 +205,8 @@ async def readiness(request: Request):
                         )
                     ),
                     "required": realtime_required,
+                    "aee_configured": realtime_aee_configured,
+                    "canary_configured": realtime_canary_configured,
                     "session_manager": (
                         "running"
                         if realtime_manager_running
@@ -231,7 +237,7 @@ async def upstream_health(request: Request):
                 "mcs8": {
                     "status": (
                         "configured"
-                        if settings.realtime_aee_is_configured()
+                        if settings.realtime_is_configured()
                         else (
                             "misconfigured"
                             if settings.feature_realtime_readonly
@@ -254,7 +260,7 @@ async def upstream_health(request: Request):
                 "mcs8": {
                     "status": (
                         "configured"
-                        if settings.realtime_aee_is_configured()
+                        if settings.realtime_is_configured()
                         else (
                             "misconfigured"
                             if settings.feature_realtime_readonly
