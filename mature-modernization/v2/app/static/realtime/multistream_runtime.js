@@ -1,6 +1,20 @@
 (() => {
   "use strict";
 
+  function normalizeAeeMediaError(error) {
+    const message = String(error?.message || "");
+    if (/devices?\s+is\s+offline/i.test(message)) {
+      const normalized = new Error(
+        "The AEE media service reports that the device media channel is offline.",
+      );
+      normalized.code = "DEVICE_MEDIA_OFFLINE";
+      return normalized;
+    }
+    return error instanceof Error
+      ? error
+      : new Error("The AEE media request failed.");
+  }
+
   class ChaRealtimeMultiStreamRuntime {
     constructor({gatewayPath, onEvent = () => {}}) {
       this.gatewayPath = gatewayPath;
@@ -114,10 +128,14 @@
           "",
         );
       } catch (error) {
+        const normalizedError = normalizeAeeMediaError(error);
+        try {
+          await this.client.closeVideo(deviceId, "", "");
+        } catch {}
         videoElement.removeEventListener("loadeddata", record.onLoaded);
         this.stopElement(videoElement);
         this.streams.delete(streamId);
-        throw error;
+        throw normalizedError;
       }
       if (result !== 200) {
         videoElement.removeEventListener("loadeddata", record.onLoaded);

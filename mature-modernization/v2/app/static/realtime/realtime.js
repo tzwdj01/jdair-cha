@@ -23,6 +23,7 @@
     FIRST_FRAME_TIMEOUT: "视频连接超时，请重试。",
     upstream_connection_failed: "实时视频服务连接失败。",
     AEE_CONNECT_FAILED: "实时视频服务连接失败。",
+    DEVICE_MEDIA_OFFLINE: "设备管理状态在线，但媒体通道当前离线，请检查设备后重试。",
     OPEN_VIDEO_REJECTED: "设备未能建立实时视频，请重试。",
     stream_release_failed: "视频资源关闭未确认，其他画面不受影响。",
     screenshot_failed: "当前画面截图失败，请确认视频正在播放后重试。",
