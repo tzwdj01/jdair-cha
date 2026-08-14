@@ -30,7 +30,7 @@ AdapterFactory = Callable[[str, Settings], AEEAdapter]
 
 
 class RealtimeSessionManager:
-    """Process-local M3.1 session coordinator with deterministic cleanup."""
+    """Process-local realtime coordinator with isolated stream cleanup."""
 
     def __init__(
         self,
@@ -136,15 +136,20 @@ class RealtimeSessionManager:
                     "The realtime session is already closing or closed.",
                     status_code=409,
                 )
-            active = [
-                stream
-                for stream in session.streams.values()
-                if stream.status != StreamStatus.CLOSED
-            ]
-            if active:
+            active = self._active_streams(session)
+            if any(item.device_id == device_id for item in active):
+                raise RealtimeError(
+                    "duplicate_device",
+                    "The selected device already has an active video stream.",
+                    status_code=409,
+                )
+            if (
+                len(active)
+                >= self.settings.realtime_max_streams_per_session
+            ):
                 raise RealtimeError(
                     "stream_limit_reached",
-                    "M3.1 allows only one video stream per session.",
+                    "The realtime session has reached its video stream limit.",
                     status_code=409,
                 )
             session.status = SessionStatus.CREATING
@@ -153,7 +158,11 @@ class RealtimeSessionManager:
             try:
                 await session.adapter.prepare()
             except AEEUpstreamError as exc:
-                session.status = SessionStatus.FAILED
+                session.status = (
+                    SessionStatus.DEGRADED
+                    if active
+                    else SessionStatus.FAILED
+                )
                 session.updated_at = utc_now()
                 self._log(
                     session,
@@ -182,8 +191,10 @@ class RealtimeSessionManager:
                 status=StreamStatus.CONNECTING,
                 created_at=now,
                 updated_at=now,
+                runtime_state="AUTHORIZED",
             )
             session.streams[stream.stream_id] = stream
+            self._prune_closed_streams(session)
             session.status = SessionStatus.CREATING
             session.updated_at = now
             self._log(
@@ -214,9 +225,9 @@ class RealtimeSessionManager:
                     status_code=404,
                 )
             if stream.status == StreamStatus.CLOSED:
-                session.streams.pop(stream_id, None)
                 return session
             stream.status = StreamStatus.CLOSING
+            stream.runtime_state = "RELEASING"
             stream.updated_at = utc_now()
             started = time.perf_counter()
             acknowledged = await self._send_control_command(
@@ -235,17 +246,66 @@ class RealtimeSessionManager:
                     None,
                 )
                 if callable(clear_authorized_device):
-                    clear_authorized_device()
+                    clear_authorized_device(stream.device_id)
             else:
-                await session.adapter.disconnect()
+                survivors = [
+                    item
+                    for item in self._active_streams(session)
+                    if item.stream_id != stream.stream_id
+                ]
+                if survivors:
+                    stream.status = StreamStatus.FAILED
+                    stream.error_code = "STREAM_RELEASE_UNCONFIRMED"
+                    stream.runtime_state = "RELEASE_FAILED"
+                    stream.updated_at = utc_now()
+                    session.status = SessionStatus.DEGRADED
+                    session.updated_at = utc_now()
+                    self._log(
+                        session,
+                        stream=stream,
+                        event="stream_release_failed",
+                        status=stream.status.value,
+                        error_code=stream.error_code,
+                        duration_ms=(
+                            time.perf_counter() - started
+                        )
+                        * 1000,
+                    )
+                    raise RealtimeError(
+                        "stream_release_failed",
+                        (
+                            "The selected video stream could not be "
+                            "released without affecting other streams."
+                        ),
+                        status_code=502,
+                    )
+                disconnect_ok = await self._disconnect_adapter(
+                    session,
+                    event="stream_forced_disconnect_failed",
+                )
                 session.connection_reusable = False
+                if not disconnect_ok:
+                    stream.status = StreamStatus.FAILED
+                    stream.error_code = "AEE_DISCONNECT_FAILED"
+                    stream.runtime_state = "RELEASE_FAILED"
+                    stream.updated_at = utc_now()
+                    session.status = SessionStatus.DEGRADED
+                    session.updated_at = utc_now()
+                    raise RealtimeError(
+                        "stream_release_failed",
+                        "The video stream release could not be confirmed.",
+                        status_code=502,
+                    )
                 release_mode = "forced_aee_disconnect"
             stream.status = StreamStatus.CLOSED
             stream.release_mode = release_mode
-            stream.updated_at = utc_now()
-            session.streams.pop(stream_id, None)
-            session.status = SessionStatus.READY
-            session.updated_at = utc_now()
+            stream.runtime_state = "RELEASED"
+            stream.error_code = None
+            now = utc_now()
+            stream.closed_at = now
+            stream.updated_at = now
+            self._recompute_session_status(session)
+            session.updated_at = now
             self._log(
                 session,
                 stream=stream,
@@ -281,19 +341,30 @@ class RealtimeSessionManager:
                                 "stream_id": item.stream_id,
                                 "device_id": item.device_id,
                             }
-                            for item in session.streams.values()
+                            for item in self._active_streams(session)
                         ]
                     },
                 )
-            await session.adapter.disconnect()
+            disconnect_ok = await self._disconnect_adapter(
+                session,
+                event="session_disconnect_failed",
+            )
             session.connection_reusable = False
             for stream in session.streams.values():
                 stream.status = StreamStatus.CLOSED
                 stream.release_mode = (
-                    stream.release_mode or "session_disconnect"
+                    stream.release_mode
+                    or (
+                        "session_disconnect"
+                        if disconnect_ok
+                        else "session_disconnect_unconfirmed"
+                    )
                 )
+                stream.runtime_state = "RELEASED"
+                if not disconnect_ok and stream.error_code is None:
+                    stream.error_code = "AEE_DISCONNECT_FAILED"
+                stream.closed_at = stream.closed_at or utc_now()
                 stream.updated_at = utc_now()
-            session.streams.clear()
             control_socket = session.control_socket
             session.control_socket = None
             self._fail_pending_commands(session, "session_closed")
@@ -375,6 +446,7 @@ class RealtimeSessionManager:
                         StreamStatus.CLOSED,
                     }:
                         stream.status = StreamStatus.DEGRADED
+                        stream.runtime_state = "CONNECTION_LOST"
                         stream.updated_at = utc_now()
                 session.updated_at = utc_now()
             self._log(
@@ -383,7 +455,10 @@ class RealtimeSessionManager:
                 status=session.status.value,
             )
         if release_required:
-            await session.adapter.disconnect()
+            await self._disconnect_adapter(
+                session,
+                event="control_disconnect_release_failed",
+            )
             self._log(
                 session,
                 event="control_disconnect_release",
@@ -429,14 +504,15 @@ class RealtimeSessionManager:
         stream = session.streams.get(stream_id or "")
         now = utc_now()
         if event in {"gateway_connected", "media_resolved", "room_joined"}:
-            session.status = SessionStatus.READY
             if stream is not None and event == "room_joined":
                 session.connection_reusable = True
                 stream.status = StreamStatus.WAITING_FIRST_FRAME
+                stream.runtime_state = "MONITORING"
                 stream.updated_at = now
         elif event in {"open_video_accepted", "waiting_first_frame"}:
             if stream is not None:
                 stream.status = StreamStatus.WAITING_FIRST_FRAME
+                stream.runtime_state = "MONITORING"
                 stream.updated_at = now
         elif event == "first_frame":
             if stream is not None:
@@ -448,23 +524,29 @@ class RealtimeSessionManager:
                     details.get("track_state") or "live"
                 )[:32]
                 stream.error_code = None
+                stream.runtime_state = "PLAYING"
                 stream.updated_at = now
-                session.status = SessionStatus.PLAYING
         elif event == "playback_failed":
             if stream is not None:
                 stream.status = StreamStatus.FAILED
                 stream.error_code = str(
                     error_code or "PLAYBACK_FAILED"
                 )[:64]
+                stream.runtime_state = "FAILED"
                 stream.updated_at = now
-            session.status = SessionStatus.FAILED
-            session.connection_reusable = False
+            session.status = SessionStatus.DEGRADED
         elif event == "browser_disconnected":
             session.status = SessionStatus.DEGRADED
             session.connection_reusable = False
-            if stream is not None:
-                stream.status = StreamStatus.DEGRADED
-                stream.updated_at = now
+            targets = [stream] if stream is not None else self._active_streams(
+                session
+            )
+            for target in targets:
+                target.status = StreamStatus.DEGRADED
+                target.runtime_state = "CONNECTION_LOST"
+                target.updated_at = now
+        if event != "browser_disconnected":
+            self._recompute_session_status(session)
         session.updated_at = now
         self._log(
             session,
@@ -544,9 +626,13 @@ class RealtimeSessionManager:
                         StreamStatus.CLOSED,
                     }:
                         stream.status = StreamStatus.DEGRADED
+                        stream.runtime_state = "CONNECTION_LOST"
                         stream.updated_at = utc_now()
                 session.updated_at = utc_now()
-                await session.adapter.disconnect()
+                await self._disconnect_adapter(
+                    session,
+                    event=f"{kind}_proxy_release_failed",
+                )
             self._log(
                 session,
                 event=f"{kind}_proxy_disconnected",
@@ -559,6 +645,74 @@ class RealtimeSessionManager:
                 session.status != SessionStatus.CLOSED
                 for session in self._sessions.values()
             )
+
+    @staticmethod
+    def _active_streams(
+        session: RealtimeSession,
+    ) -> list[RealtimeStream]:
+        return [
+            stream
+            for stream in session.streams.values()
+            if stream.status != StreamStatus.CLOSED
+        ]
+
+    def _recompute_session_status(self, session: RealtimeSession) -> None:
+        if session.status in {
+            SessionStatus.CLOSING,
+            SessionStatus.CLOSED,
+        }:
+            return
+        active = self._active_streams(session)
+        if not active:
+            session.status = SessionStatus.READY
+        elif any(
+            stream.status in {StreamStatus.FAILED, StreamStatus.DEGRADED}
+            for stream in active
+        ):
+            session.status = SessionStatus.DEGRADED
+        elif all(stream.status == StreamStatus.PLAYING for stream in active):
+            session.status = SessionStatus.PLAYING
+        else:
+            session.status = SessionStatus.CREATING
+
+    def _prune_closed_streams(self, session: RealtimeSession) -> None:
+        history_limit = max(
+            8,
+            self.settings.realtime_max_streams_per_session * 2,
+        )
+        closed = sorted(
+            (
+                stream
+                for stream in session.streams.values()
+                if stream.status == StreamStatus.CLOSED
+            ),
+            key=lambda item: item.closed_at or item.updated_at,
+        )
+        for stream in closed[:-history_limit]:
+            session.streams.pop(stream.stream_id, None)
+
+    async def _disconnect_adapter(
+        self,
+        session: RealtimeSession,
+        *,
+        event: str,
+    ) -> bool:
+        try:
+            await session.adapter.disconnect()
+            return True
+        except Exception as exc:
+            logger.warning(
+                "realtime_adapter_disconnect_failed session_id=%s error=%s",
+                session.session_id,
+                redact_upstream_error(exc),
+            )
+            self._log(
+                session,
+                event=event,
+                status=session.status.value,
+                error_code="AEE_DISCONNECT_FAILED",
+            )
+            return False
 
     async def _send_control_command(
         self,

@@ -209,6 +209,16 @@ def create_realtime_router(
         )
 
     @router.get(
+        "/api/v2/realtime/assets/multistream_runtime.js",
+        include_in_schema=False,
+    )
+    async def multistream_runtime_js() -> FileResponse:
+        return FileResponse(
+            ASSET_ROOT / "multistream_runtime.js",
+            media_type="application/javascript",
+        )
+
+    @router.get(
         "/api/v2/realtime/assets/mcs8Client.js",
         include_in_schema=False,
     )
@@ -372,7 +382,14 @@ def create_realtime_router(
                         "sdk_path": (
                             "/api/v2/realtime/assets/mcs8Client.js"
                         ),
+                        "runtime_path": (
+                            "/api/v2/realtime/assets/"
+                            "multistream_runtime.js"
+                        ),
                         "uid": "cha-realtime",
+                        "max_streams": (
+                            settings.realtime_max_streams_per_session
+                        ),
                     },
                 },
                 status_code=201,

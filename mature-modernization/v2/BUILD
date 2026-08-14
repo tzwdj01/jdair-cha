@@ -1,1 +1,1 @@
-m3-single-realtime-session
+m3-multistream-model-a

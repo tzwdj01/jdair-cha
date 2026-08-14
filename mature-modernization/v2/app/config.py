@@ -94,6 +94,7 @@ class Settings:
     realtime_cleanup_interval_seconds: int
     realtime_closed_retention_seconds: int
     realtime_command_timeout_seconds: float
+    realtime_max_streams_per_session: int
     aee_api_base_url: str
     aee_origin: str
     aee_gateway_host: str
@@ -196,6 +197,13 @@ class Settings:
             realtime_command_timeout_seconds=env_float(
                 "CHA_V2_REALTIME_COMMAND_TIMEOUT_SECONDS",
                 5.0,
+            ),
+            realtime_max_streams_per_session=min(
+                env_int(
+                    "CHA_V2_REALTIME_MAX_STREAMS_PER_SESSION",
+                    4,
+                ),
+                16,
             ),
             aee_api_base_url=env_url("CHA_V2_AEE_API_BASE_URL"),
             aee_origin=env_url(

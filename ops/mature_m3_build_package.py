@@ -9,7 +9,7 @@ from pathlib import Path
 def main() -> None:
     root = Path(__file__).resolve().parents[1]
     source = root / "mature-modernization" / "v2"
-    output = root / "mature-modernization" / "jdair-cha-v2-m3.1.tar.gz"
+    output = root / "mature-modernization" / "jdair-cha-v2-m3.2a.tar.gz"
     required = [
         "VERSION",
         "BUILD",
@@ -21,6 +21,7 @@ def main() -> None:
         "app/realtime/session_manager.py",
         "app/templates/m3_realtime.html",
         "app/static/realtime/realtime.js",
+        "app/static/realtime/multistream_runtime.js",
         "app/static/vendor/mcs8Client.js",
         "tests/test_realtime.py",
         "tests/test_realtime_api.py",

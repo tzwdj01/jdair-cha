@@ -3,7 +3,7 @@
 This service is deployed beside the existing CHA application. It owns only
 the `/api/v2/` namespace and does not replace existing `/api/*` routes.
 
-## M2 dashboard and M3.1 realtime session
+## M2 dashboard and M3.2A realtime session model
 
 - `GET /api/v2/health`
 - `GET /api/v2/health/live`
@@ -19,7 +19,7 @@ the `/api/v2/` namespace and does not replace existing `/api/*` routes.
 - `GET /api/v2/dashboard/coverage`
 - `GET /api/v2/dashboard/exceptions`
 - `GET /api/v2/dashboard/freshness`
-- `GET /api/v2/realtime` (single-stream page; feature-gated)
+- `GET /api/v2/realtime` (M3.1 single-stream verification page; feature-gated)
 - `GET /api/v2/realtime/devices`
 - `POST /api/v2/realtime/sessions`
 - `GET /api/v2/realtime/sessions/{session_id}`
@@ -47,8 +47,15 @@ environment variables. The browser receives only a CHA session cookie and
 same-origin WebSocket paths. The V2 service logs in to AEE server-side, keeps
 gateway and media tokens in process memory, rewrites `ConnecteInfo`, and
 relays the SDK WebSockets without returning either token to browser code.
-M3.1 limits each CHA session to one video stream. Audio and device control
-remain disabled.
+M3.2A keeps one native AEE login, Gateway relay, media-room connection and
+receive transport per CHA session, while allowing independently tracked video
+streams up to `CHA_V2_REALTIME_MAX_STREAMS_PER_SESSION` (default `4`, based on
+the completed real-device validation). Closing one stream must receive a
+targeted browser `closeVideo` acknowledgement; an unconfirmed partial close
+degrades only that stream and preserves the other streams. The existing page
+is intentionally still single-stream. The reusable
+`multistream_runtime.js` is infrastructure for M3.2B, not a polished
+multi-picture UI. Audio and device control remain disabled.
 
 ## Local test
 

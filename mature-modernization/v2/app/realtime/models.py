@@ -53,6 +53,8 @@ class RealtimeStream:
     track_state: str | None = None
     error_code: str | None = None
     release_mode: str | None = None
+    runtime_state: str = "AUTHORIZED"
+    closed_at: dt.datetime | None = None
 
     def public(self) -> dict[str, Any]:
         return {
@@ -68,6 +70,8 @@ class RealtimeStream:
             "track_state": self.track_state,
             "error_code": self.error_code,
             "release_mode": self.release_mode,
+            "runtime_state": self.runtime_state,
+            "closed_at": iso_datetime(self.closed_at),
         }
 
 
@@ -102,6 +106,11 @@ class RealtimeSession:
             "expires_at": iso_datetime(self.expires_at),
             "closed_at": iso_datetime(self.closed_at),
             "connection_reusable": self.connection_reusable,
+            "max_streams": getattr(
+                getattr(self.adapter, "settings", None),
+                "realtime_max_streams_per_session",
+                1,
+            ),
             "streams": [
                 stream.public()
                 for stream in sorted(

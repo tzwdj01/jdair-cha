@@ -55,8 +55,8 @@ class AEEAdapter:
         self._prepare_lock = asyncio.Lock()
         self._relay_lock = asyncio.Lock()
         self._upstreams: dict[str, Any] = {}
-        self._authorized_device: str | None = None
-        self._monitor_open = False
+        self._authorized_devices: set[str] = set()
+        self._open_monitors: set[str] = set()
         self._closed = False
 
     async def prepare(self) -> None:
@@ -292,11 +292,15 @@ class AEEAdapter:
                 raise exception
 
     def authorize_device(self, device_id: str) -> None:
-        self._authorized_device = device_id
+        self._authorized_devices.add(device_id)
 
-    def clear_authorized_device(self) -> None:
-        self._authorized_device = None
-        self._monitor_open = False
+    def clear_authorized_device(self, device_id: str | None = None) -> None:
+        if device_id is None:
+            self._authorized_devices.clear()
+            self._open_monitors.clear()
+            return
+        self._authorized_devices.discard(device_id)
+        self._open_monitors.discard(device_id)
 
     def _validate_client_message(self, kind: str, message: str) -> None:
         try:
@@ -361,22 +365,21 @@ class AEEAdapter:
             if (
                 data.get("kind") != "video"
                 or data.get("streamType") not in {2, "2"}
-                or not self._authorized_device
-                or device_id != self._authorized_device
+                or device_id not in self._authorized_devices
             ):
                 raise AEEUpstreamError(
                     "AEE_VIDEO_REQUEST_FORBIDDEN",
                     "Only the selected live video stream is allowed",
                 )
             if method == "mediaMonitor":
-                if self._monitor_open:
+                if device_id in self._open_monitors:
                     raise AEEUpstreamError(
-                        "AEE_STREAM_LIMIT_REACHED",
-                        "Only one live video monitor is allowed",
+                        "AEE_STREAM_ALREADY_OPEN",
+                        "The selected live video monitor is already open",
                     )
-                self._monitor_open = True
+                self._open_monitors.add(device_id)
             else:
-                self._monitor_open = False
+                self._open_monitors.discard(device_id)
 
     def _capture_and_rewrite_gateway(
         self,
