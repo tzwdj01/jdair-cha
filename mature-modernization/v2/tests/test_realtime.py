@@ -479,6 +479,24 @@ class RealtimeSessionTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(session.connection_reusable)
         self.assertEqual(FakeAdapter.instances[0].disconnect_calls, 1)
 
+    async def test_unexpected_gateway_proxy_close_releases_session(self) -> None:
+        session, _ = await self.create()
+        stream = await self.manager.add_stream(
+            session.session_id,
+            owner_key="owner-a",
+            device_id="WXB339",
+        )
+        await self.manager.proxy_websocket(
+            session.session_id,
+            kind="gateway",
+            socket=object(),
+            proxy_host="cha.example",
+        )
+        self.assertEqual(session.status, SessionStatus.DEGRADED)
+        self.assertEqual(stream.status, StreamStatus.DEGRADED)
+        self.assertFalse(session.connection_reusable)
+        self.assertEqual(FakeAdapter.instances[0].disconnect_calls, 1)
+
     async def test_proxy_runtime_error_is_wrapped_and_released(self) -> None:
         session, _ = await self.create()
         stream = await self.manager.add_stream(

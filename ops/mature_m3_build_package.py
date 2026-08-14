@@ -9,7 +9,7 @@ from pathlib import Path
 def main() -> None:
     root = Path(__file__).resolve().parents[1]
     source = root / "mature-modernization" / "v2"
-    output = root / "mature-modernization" / "jdair-cha-v2-m3.2a.tar.gz"
+    output = root / "mature-modernization" / "jdair-cha-v2-m3.2b.tar.gz"
     required = [
         "VERSION",
         "BUILD",
@@ -25,6 +25,7 @@ def main() -> None:
         "app/static/vendor/mcs8Client.js",
         "tests/test_realtime.py",
         "tests/test_realtime_api.py",
+        "tests/test_realtime_ui.py",
     ]
     for relative in required:
         if not (source / relative).is_file():

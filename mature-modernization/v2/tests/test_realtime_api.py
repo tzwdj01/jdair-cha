@@ -239,7 +239,9 @@ class RealtimeAPITests(unittest.IsolatedAsyncioTestCase):
     async def test_api_lifecycle_and_feature_page(self) -> None:
         page = await self.request("GET", "/api/v2/realtime")
         self.assertEqual(page.status_code, 200)
-        self.assertIn("单设备实时视频", page.text)
+        self.assertIn("实时视频监察", page.text)
+        self.assertIn('id="videoGrid"', page.text)
+        self.assertIn("multistream_runtime.js", page.text)
 
         devices = await self.request("GET", "/api/v2/realtime/devices")
         self.assertEqual(devices.status_code, 200)

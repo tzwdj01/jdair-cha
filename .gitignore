@@ -27,3 +27,5 @@ venv
 **/m3-*.png
 **/m32a-*-result.json
 **/m32a-*.png
+**/m32b-*-result.json
+**/m32b-*.png
