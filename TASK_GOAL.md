@@ -553,6 +553,15 @@ Production Canary 中 `WXB358` 无法产生首帧；首次测试中 `WXB353` 成
     `openvideo`、没有 `/mediaStream`、没有 track/Canvas first frame。
 * 关闭失败 tile 后，`closeMediaMonitor` 成功、show-video map 回到 0、tile
   清除，且 `WXB358` 从未创建 consumer。
+* `2026-08-14 20:59–21:00 CST` 在同一合法授权 AEE 会话中再次通过正常
+  drag/drop UI 重试 `WXB358`：
+  * 约 58 秒观察窗口内所有 `mediaMonitor streamType=2` 请求仍返回
+    `devices is offline`，一般在 `55–75 ms` 内失败；
+  * AEE UI 继续约每 3 秒重试并显示 `Unable to play`；
+  * 仍没有 `newConsumer`、codec/RTP、lowercase `openvideo`、
+    `/mediaStream`、track/Canvas 或首帧；
+  * 使用正常 `Close all` 后，audio/video `closeMediaMonitor` 分别在约
+    `52–62 ms` 成功，重试停止、video 元素清除、监看网格恢复为空。
 
 尚未确认：
 
@@ -675,6 +684,8 @@ M3 当前额外 Done Criteria：
   H.264 `42e01f`、1920 × 1080、约 1.825 秒首帧、close/reopen 成功。
 * 已完成当前时段 `WXB358` AEE 目标测试：DevTree online，但 Media
   `mediaMonitor` 返回 `devices is offline`，失败 tile 可正常关闭并清理。
+* 已完成 `20:59–21:00 CST` 第二次授权可用性复测：同一错误持续约 58 秒，
+  正常 Close all 后上下游监看请求和页面元素均完成清理。
 * 已完成最小 Class C 修复：`DEVICE_MEDIA_OFFLINE` 错误归一化和
   open-rejection 补偿性 close；Node runtime test 与全量 `73 tests` 通过。
 
@@ -706,7 +717,8 @@ M3 当前额外 Done Criteria：
   `mediaMonitor` 阶段因 Media 判定 offline 而失败，但 `WXB358` 实际 codec/
   profile 仍未确认。
 * 合法授权问题已解除；当前 blocker 改为 `WXB358` 的 AEE Media 服务状态。
-  AEE DevTree 报 online，但 `mediaMonitor` 稳定返回 `devices is offline`。
+  AEE DevTree 报 online，但两个授权观察窗口内 `mediaMonitor` 均稳定返回
+  `devices is offline`。
 * 当前 Production Canary 未完成 1 → 4 → 6。
 * 在 blocker 解决前，生产 Realtime 保持关闭。
 
@@ -717,6 +729,7 @@ M3 当前额外 Done Criteria：
 * Device：`WXB358`，控制设备 `WXB353`。
 * Required User / Permission：已具备合法 `VIDEOMONITOR` 权限。
 * Current Observation：`WXB353` H.264 控制通过；`WXB358` 在
+  `20:25–20:35` 和 `20:59–21:00 CST` 两个授权观察窗口内均在
   `mediaMonitor` 阶段被 Media 服务判定 offline。
 * Scenario：设备媒体可用后，AEE 单路播放 `WXB358`，关闭并确认释放；以已完成
   的 `WXB353` H.264 控制证据对照。
