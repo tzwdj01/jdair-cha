@@ -562,6 +562,14 @@ Production Canary 中 `WXB358` 无法产生首帧；首次测试中 `WXB353` 成
     `/mediaStream`、track/Canvas 或首帧；
   * 使用正常 `Close all` 后，audio/video `closeMediaMonitor` 分别在约
     `52–62 ms` 成功，重试停止、video 元素清除、监看网格恢复为空。
+* `21:05 CST` 被动读取 AEE 可见设备树实际使用的 React dataRef：
+  * `WXB353` 为 `online=1/status=1/alarm=0`，`gpsTime=21:04:42`；
+  * `WXB358` 为 `online=1/status=1/alarm=205`，但最后可见
+    `gpsTime=20:22:14`；
+  * 两者 `battery` 字段均为 0，因此该字段不能证明 alarm 205 或低电量是媒体
+    拒绝原因；
+  * 这进一步证明 DevTree online/status 可以与陈旧遥测及 Media offline
+    并存，但仍不足以确定上游根因。
 
 尚未确认：
 
@@ -686,6 +694,9 @@ M3 当前额外 Done Criteria：
   `mediaMonitor` 返回 `devices is offline`，失败 tile 可正常关闭并清理。
 * 已完成 `20:59–21:00 CST` 第二次授权可用性复测：同一错误持续约 58 秒，
   正常 Close all 后上下游监看请求和页面元素均完成清理。
+* 已完成 Class A 设备树时效对照：`WXB353` GPS 时间持续更新，而
+  `WXB358` 的可见 GPS 时间停留在 `20:22:14`，与 Media offline 一致但不构成
+  因果证明。
 * 已完成最小 Class C 修复：`DEVICE_MEDIA_OFFLINE` 错误归一化和
   open-rejection 补偿性 close；Node runtime test 与全量 `73 tests` 通过。
 
