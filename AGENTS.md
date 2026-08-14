@@ -15,41 +15,25 @@ These instructions apply to the entire repository.
 - Historical reports remain historical evidence; do not rewrite them to make
   the current state look cleaner.
 
-## AEE Reference Implementation Rule
+## AEE Reference Implementation
 
-When a task involves any of the following, first read:
+For any task involving AEE, MCS8, realtime video, WebRTC,
+WebSocket media sessions, RTP, codecs, stream profiles,
+device capabilities, SDK behavior, or device compatibility:
+
+MUST read and follow:
 
 `docs/codex/AEE_REFERENCE_IMPLEMENTATION.md`
 
-- a capability present in AEE but not yet implemented in CHA;
-- unclear MCS8/AEE SDK behavior;
-- unclear protocol fields or parameters;
-- unclear WebSocket lifecycle;
-- unclear RTP, codec, capability or stream-profile behavior;
-- different behavior for the same device in AEE and CHA;
-- device compatibility;
-- a media-chain failure;
-- a proposed FFmpeg, self-hosted media server, SFU, custom decoder or complex
-  workaround.
+In particular:
 
-The mandatory workflow is:
-
-**AEE -> CHA comparison evidence -> capability classification -> CHA design**
-
-After evidence is collected, classify the capability as:
-
-- `Class A` — Backend Read-only Capability;
-- `Class B` — SDK / Protocol Media Capability;
-- `Class C` — CHA Business Aggregation;
-- `Class D` — Reference Only.
-
-Do not skip evidence collection and guess an implementation. If current AEE
-access or suitable devices are unavailable, mark the item
-`AEE VERIFICATION REQUIRED` in `TASK_GOAL.md`, describe the exact verification
-needed and continue only with work that does not depend on the unknown.
-
-AEE is a reference implementation, not a CHA runtime dependency. Do not copy
-AEE Cookie/Token values, private page APIs or UI glue code into CHA.
+- Evidence before workaround.
+- Compare AEE vs CHA on the same device/scenario when behavior differs.
+- Classify observed capabilities as Class A/B/C/D before implementation.
+- Do not introduce FFmpeg, custom media servers, SFU, custom decoders,
+  or major media infrastructure without Architecture Escalation Evidence.
+- If AEE cannot be accessed legally from the current environment,
+  mark the issue `AEE VERIFICATION REQUIRED`; do not invent AEE behavior.
 
 ## Production and Security
 
