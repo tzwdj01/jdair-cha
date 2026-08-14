@@ -6,6 +6,15 @@
   const openAttempts = new Map();
   let sessionSequence = 0;
   let streamSequence = 0;
+  window.__m32bMetrics = {
+    socketsCreated: 0,
+    socketsActive: 0,
+    clientsCreated: 0,
+    clientsActive: 0,
+    streamsOpened: 0,
+    streamsClosed: 0,
+    tracksActive: 0,
+  };
 
   function response(data, status = 200) {
     return Promise.resolve(new Response(JSON.stringify({
@@ -53,6 +62,9 @@
       this.url = url;
       this.readyState = FakeWebSocket.CONNECTING;
       this.pending = new Map();
+      this.countedClosed = false;
+      window.__m32bMetrics.socketsCreated += 1;
+      window.__m32bMetrics.socketsActive += 1;
       window.__m32bControlSocket = this;
       setTimeout(() => {
         this.readyState = FakeWebSocket.OPEN;
@@ -89,6 +101,10 @@
     close() {
       if (this.readyState === FakeWebSocket.CLOSED) return;
       this.readyState = FakeWebSocket.CLOSED;
+      if (!this.countedClosed) {
+        this.countedClosed = true;
+        window.__m32bMetrics.socketsActive -= 1;
+      }
       this.dispatchEvent(new CloseEvent("close"));
     }
   }
@@ -99,6 +115,9 @@
     constructor() {
       this.handlers = new Map();
       this.streams = new Map();
+      this.countedClosed = false;
+      window.__m32bMetrics.clientsCreated += 1;
+      window.__m32bMetrics.clientsActive += 1;
       window.__m32bClient = this;
     }
 
@@ -123,7 +142,11 @@
       // The first WXB342 attempt is deliberately accepted without delivering
       // media. This exercises the product's real 20-second first-frame timeout
       // rather than only an immediate SDK rejection.
-      if (deviceId === "WXB342" && attempt === 1) return 200;
+      if (
+        deviceId === "WXB342"
+        && attempt === 1
+        && !window.__m32bSkipFirstFrameTimeout
+      ) return 200;
       const canvas = document.createElement("canvas");
       canvas.width = deviceId === "WXB320" ? 1280 : 1920;
       canvas.height = deviceId === "WXB320" ? 720 : 1080;
@@ -135,6 +158,8 @@
       context.fillText(deviceId, 60, 100);
       const stream = canvas.captureStream(5);
       this.streams.set(deviceId, {stream, video, canvas});
+      window.__m32bMetrics.streamsOpened += 1;
+      window.__m32bMetrics.tracksActive += stream.getTracks().length;
       video.srcObject = stream;
       await video.play().catch(() => {});
       return 200;
@@ -142,7 +167,12 @@
 
     async closeVideo(deviceId) {
       const record = this.streams.get(deviceId);
-      for (const track of record?.stream?.getTracks?.() || []) track.stop();
+      const tracks = record?.stream?.getTracks?.() || [];
+      for (const track of tracks) track.stop();
+      if (record) {
+        window.__m32bMetrics.streamsClosed += 1;
+        window.__m32bMetrics.tracksActive -= tracks.length;
+      }
       if (record?.video) record.video.srcObject = null;
       this.streams.delete(deviceId);
       return 200;
@@ -151,6 +181,10 @@
     async close() {
       for (const deviceId of [...this.streams.keys()]) {
         await this.closeVideo(deviceId);
+      }
+      if (!this.countedClosed) {
+        this.countedClosed = true;
+        window.__m32bMetrics.clientsActive -= 1;
       }
     }
 

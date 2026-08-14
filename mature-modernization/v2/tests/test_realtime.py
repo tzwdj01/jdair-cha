@@ -10,7 +10,7 @@ from unittest.mock import patch
 from app.config import Settings
 from app.realtime.aee_adapter import AEEAdapter, redact_upstream_error
 from app.realtime.errors import RealtimeError
-from app.realtime.models import SessionStatus, StreamStatus
+from app.realtime.models import SessionStatus, StreamStatus, utc_now
 from app.realtime.session_manager import RealtimeSessionManager
 
 
@@ -21,6 +21,10 @@ REALTIME_ENV = {
     "CHA_V2_REALTIME_CLOSED_RETENTION_SECONDS": "60",
     "CHA_V2_REALTIME_COMMAND_TIMEOUT_SECONDS": "0.05",
     "CHA_V2_REALTIME_MAX_STREAMS_PER_SESSION": "2",
+    "CHA_V2_REALTIME_MAX_SESSIONS_PER_OWNER": "10",
+    "CHA_V2_REALTIME_SESSION_CREATE_LIMIT": "500",
+    "CHA_V2_REALTIME_SESSION_CREATE_WINDOW_SECONDS": "60",
+    "CHA_V2_REALTIME_MAX_RETAINED_SESSIONS": "16",
 }
 
 
@@ -298,6 +302,11 @@ class RealtimeSessionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(second.status, StreamStatus.PLAYING)
         self.assertEqual(session.status, SessionStatus.DEGRADED)
         self.assertEqual(FakeAdapter.instances[0].disconnect_calls, 0)
+        snapshot = await self.manager.telemetry_snapshot()
+        self.assertEqual(
+            snapshot["counters"]["realtime_release_failure_total"],
+            1,
+        )
 
         retry = asyncio.create_task(
             self.manager.delete_stream(
@@ -445,6 +454,13 @@ class RealtimeSessionTests(unittest.IsolatedAsyncioTestCase):
             )
         )
         self.assertEqual(FakeAdapter.instances[0].disconnect_calls, 1)
+        snapshot = await self.manager.telemetry_snapshot()
+        self.assertEqual(
+            snapshot["counters"][
+                "realtime_session_timeout_cleanup_total"
+            ],
+            1,
+        )
 
     async def test_control_disconnect_forces_upstream_release(self) -> None:
         session, _ = await self.create()
@@ -509,22 +525,378 @@ class RealtimeSessionTests(unittest.IsolatedAsyncioTestCase):
             raise RuntimeError("token=must-not-leak")
 
         session.adapter.proxy = fail_proxy
-        with self.assertRaisesRegex(
-            RuntimeError,
-            "AEE media relay failed",
-        ):
-            await self.manager.proxy_websocket(
-                session.session_id,
-                kind="media",
-                socket=object(),
-                proxy_host="cha.example",
-            )
+        with self.assertLogs(
+            "uvicorn.error.cha.realtime.session",
+            level="WARNING",
+        ) as captured:
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "AEE media relay failed",
+            ):
+                await self.manager.proxy_websocket(
+                    session.session_id,
+                    kind="media",
+                    socket=object(),
+                    proxy_host="cha.example",
+                )
+        logs = "\n".join(captured.output)
+        self.assertNotIn("must-not-leak", logs)
+        self.assertIn("<redacted>", logs)
         self.assertEqual(session.status, SessionStatus.DEGRADED)
         self.assertEqual(stream.status, StreamStatus.DEGRADED)
         self.assertEqual(FakeAdapter.instances[0].disconnect_calls, 1)
 
+    async def test_metrics_snapshot_tracks_lifecycle_and_latency(self) -> None:
+        session, _ = await self.create()
+        first = await self.manager.add_stream(
+            session.session_id,
+            owner_key="owner-a",
+            device_id="WXB339",
+        )
+        await self.manager.handle_client_event(
+            session.session_id,
+            event="first_frame",
+            stream_id=first.stream_id,
+            error_code=None,
+            details={"width": 1920, "height": 1080, "track_state": "live"},
+        )
+        second = await self.manager.add_stream(
+            session.session_id,
+            owner_key="owner-a",
+            device_id="WXB337",
+        )
+        await self.manager.handle_client_event(
+            session.session_id,
+            event="playback_failed",
+            stream_id=second.stream_id,
+            error_code="FIRST_FRAME_TIMEOUT",
+            details={},
+        )
+        snapshot = await self.manager.telemetry_snapshot()
+        gauges = snapshot["gauges"]
+        counters = snapshot["counters"]
+        self.assertEqual(gauges["realtime_active_sessions"], 1)
+        self.assertEqual(gauges["realtime_active_streams"], 2)
+        self.assertEqual(gauges["realtime_streams_playing"], 1)
+        self.assertEqual(gauges["realtime_streams_failed"], 1)
+        self.assertEqual(counters["realtime_session_create_total"], 1)
+        self.assertEqual(counters["realtime_stream_open_total"], 2)
+        self.assertEqual(counters["realtime_first_frame_timeout_total"], 1)
+        self.assertEqual(
+            snapshot["durations"][
+                "open_video_to_first_frame_duration_ms"
+            ]["count"],
+            1,
+        )
+        await self.manager.close_session(
+            session.session_id,
+            owner_key="owner-a",
+            force=True,
+        )
+        closed = await self.manager.telemetry_snapshot()
+        self.assertEqual(closed["gauges"]["realtime_active_sessions"], 0)
+        self.assertEqual(closed["gauges"]["realtime_active_streams"], 0)
+        self.assertEqual(closed["counters"]["realtime_session_close_total"], 1)
+        self.assertEqual(closed["counters"]["realtime_stream_close_total"], 2)
+
+    async def test_gateway_and_media_connection_gauges_return_to_zero(
+        self,
+    ) -> None:
+        self.manager.telemetry.adapter_event(
+            "gateway_connected",
+            duration_ms=12.5,
+        )
+        self.manager.telemetry.adapter_event(
+            "media_connected",
+            duration_ms=18.5,
+        )
+        active = await self.manager.telemetry_snapshot()
+        self.assertEqual(
+            active["gauges"]["realtime_gateway_connections"],
+            1,
+        )
+        self.assertEqual(
+            active["gauges"]["realtime_media_connections"],
+            1,
+        )
+        self.manager.telemetry.adapter_event("media_disconnected")
+        self.manager.telemetry.adapter_event("gateway_disconnected")
+        released = await self.manager.telemetry_snapshot()
+        self.assertEqual(
+            released["gauges"]["realtime_gateway_connections"],
+            0,
+        )
+        self.assertEqual(
+            released["gauges"]["realtime_media_connections"],
+            0,
+        )
+        self.assertEqual(
+            released["durations"]["gateway_connect_duration_ms"]["count"],
+            1,
+        )
+        self.assertEqual(
+            released["durations"]["media_connect_duration_ms"]["count"],
+            1,
+        )
+
+    async def test_lease_expiry_and_closed_session_replay_are_rejected(
+        self,
+    ) -> None:
+        session, lease = await self.create()
+        self.assertTrue(
+            await self.manager.validate_lease(session.session_id, lease)
+        )
+        session.expires_at = dt.datetime.now(dt.timezone.utc) - dt.timedelta(
+            seconds=1
+        )
+        self.assertFalse(
+            await self.manager.validate_lease(session.session_id, lease)
+        )
+        fresh, fresh_lease = await self.create()
+        await self.manager.close_session(
+            fresh.session_id,
+            owner_key="owner-a",
+            force=True,
+        )
+        self.assertFalse(
+            await self.manager.validate_lease(
+                fresh.session_id,
+                fresh_lease,
+            )
+        )
+
+    async def test_owner_session_and_create_rate_limits(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                **REALTIME_ENV,
+                "CHA_V2_REALTIME_MAX_SESSIONS_PER_OWNER": "1",
+                "CHA_V2_REALTIME_SESSION_CREATE_LIMIT": "2",
+            },
+            clear=False,
+        ):
+            manager = RealtimeSessionManager(
+                Settings.from_env(),
+                adapter_factory=FakeAdapter,
+            )
+            first, _ = await manager.create_session(
+                owner_key="limited-owner",
+                owner_name="tester",
+            )
+            with self.assertRaises(RealtimeError) as active_limit:
+                await manager.create_session(
+                    owner_key="limited-owner",
+                    owner_name="tester",
+                )
+            self.assertEqual(
+                active_limit.exception.code,
+                "owner_session_limit_reached",
+            )
+            await manager.close_session(
+                first.session_id,
+                owner_key="limited-owner",
+                force=True,
+            )
+            second, _ = await manager.create_session(
+                owner_key="limited-owner",
+                owner_name="tester",
+            )
+            await manager.close_session(
+                second.session_id,
+                owner_key="limited-owner",
+                force=True,
+            )
+            with self.assertRaises(RealtimeError) as rate_limit:
+                await manager.create_session(
+                    owner_key="limited-owner",
+                    owner_name="tester",
+                )
+            self.assertEqual(
+                rate_limit.exception.code,
+                "session_create_rate_limited",
+            )
+
+    async def test_graceful_shutdown_releases_all_sessions(self) -> None:
+        await self.manager.start()
+        first, _ = await self.create()
+        second, _ = await self.manager.create_session(
+            owner_key="owner-b",
+            owner_name="tester-b",
+        )
+        await self.manager.add_stream(
+            first.session_id,
+            owner_key="owner-a",
+            device_id="WXB339",
+        )
+        await self.manager.add_stream(
+            second.session_id,
+            owner_key="owner-b",
+            device_id="WXB337",
+        )
+        await self.manager.shutdown()
+        snapshot = await self.manager.telemetry_snapshot()
+        self.assertFalse(snapshot["cleanup_task_running"])
+        self.assertEqual(snapshot["gauges"]["realtime_active_sessions"], 0)
+        self.assertEqual(snapshot["gauges"]["realtime_active_streams"], 0)
+        self.assertTrue(
+            all(item.disconnect_calls == 1 for item in FakeAdapter.instances)
+        )
+
+    async def test_abnormal_exit_then_timeout_returns_to_baseline(self) -> None:
+        session, _ = await self.create()
+        stream = await self.manager.add_stream(
+            session.session_id,
+            owner_key="owner-a",
+            device_id="WXB339",
+        )
+        socket = FakeControlSocket()
+        session.control_socket = socket
+        await self.manager.detach_control(session.session_id, socket)
+        self.assertEqual(session.status, SessionStatus.DEGRADED)
+        self.assertEqual(stream.status, StreamStatus.DEGRADED)
+        session.expires_at = utc_now() - dt.timedelta(seconds=1)
+        await self.manager.cleanup_expired()
+        snapshot = await self.manager.telemetry_snapshot()
+        self.assertEqual(snapshot["gauges"]["realtime_active_sessions"], 0)
+        self.assertEqual(snapshot["gauges"]["realtime_active_streams"], 0)
+        self.assertEqual(
+            snapshot["gauges"]["realtime_gateway_connections"],
+            0,
+        )
+        self.assertEqual(
+            snapshot["gauges"]["realtime_media_connections"],
+            0,
+        )
+        self.assertEqual(
+            snapshot["counters"]["realtime_abnormal_disconnect_total"],
+            1,
+        )
+        self.assertEqual(
+            snapshot["counters"][
+                "realtime_session_timeout_cleanup_total"
+            ],
+            1,
+        )
+
+    async def test_one_hundred_session_churn_is_bounded(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                **REALTIME_ENV,
+                "CHA_V2_REALTIME_MAX_STREAMS_PER_SESSION": "4",
+                "CHA_V2_REALTIME_MAX_RETAINED_SESSIONS": "16",
+                "CHA_V2_REALTIME_SESSION_CREATE_LIMIT": "500",
+            },
+            clear=False,
+        ):
+            manager = RealtimeSessionManager(
+                Settings.from_env(),
+                adapter_factory=FakeAdapter,
+            )
+            for index in range(100):
+                session, _ = await manager.create_session(
+                    owner_key="churn-owner",
+                    owner_name="churn",
+                )
+                for offset in range(4):
+                    stream = await manager.add_stream(
+                        session.session_id,
+                        owner_key="churn-owner",
+                        device_id=f"WXB{index:03d}-{offset}",
+                    )
+                    await manager.handle_client_event(
+                        session.session_id,
+                        event="first_frame",
+                        stream_id=stream.stream_id,
+                        error_code=None,
+                        details={
+                            "width": 1920,
+                            "height": 1080,
+                            "track_state": "live",
+                        },
+                    )
+                await manager.close_session(
+                    session.session_id,
+                    owner_key="churn-owner",
+                    force=True,
+                )
+            snapshot = await manager.telemetry_snapshot()
+            self.assertEqual(snapshot["gauges"]["realtime_active_sessions"], 0)
+            self.assertEqual(snapshot["gauges"]["realtime_active_streams"], 0)
+            self.assertLessEqual(
+                snapshot["gauges"]["realtime_retained_sessions"],
+                16,
+            )
+            self.assertEqual(
+                snapshot["counters"]["realtime_session_create_total"],
+                100,
+            )
+            self.assertEqual(
+                snapshot["counters"]["realtime_session_close_total"],
+                100,
+            )
+            self.assertEqual(
+                snapshot["counters"]["realtime_stream_open_total"],
+                400,
+            )
+            self.assertEqual(
+                snapshot["counters"]["realtime_stream_close_total"],
+                400,
+            )
+
+    async def test_structured_log_contains_correlation_fields(self) -> None:
+        with self.assertLogs(
+            "uvicorn.error.cha.realtime.session",
+            level="INFO",
+        ) as captured:
+            session, _ = await self.create()
+            await self.manager.add_stream(
+                session.session_id,
+                owner_key="owner-a",
+                device_id="WXB339",
+            )
+        line = next(
+            item for item in captured.output if "stream_opened" in item
+        )
+        payload = json.loads(line.split("realtime_event ", 1)[1])
+        self.assertEqual(payload["session_id"], session.session_id)
+        self.assertTrue(payload["stream_id"])
+        self.assertEqual(payload["device_id"], "WXB339")
+        self.assertEqual(payload["event"], "stream_opened")
+        self.assertEqual(payload["session_status"], "CREATING")
+        self.assertEqual(payload["stream_status"], "CONNECTING")
+        self.assertIn("duration_ms", payload)
+        self.assertIn("error_code", payload)
+        self.assertIn("release_mode", payload)
+
 
 class AEEAdapterTests(unittest.TestCase):
+    def test_login_observer_receives_bounded_duration(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "CHA_V2_AEE_API_BASE_URL": "https://aee.example",
+                "CHA_V2_AEE_ORIGIN": "https://aee.example",
+                "CHA_V2_AEE_GATEWAY_HOST": "gateway.example",
+                "CHA_V2_AEE_USERNAME": "test-user",
+                "CHA_V2_AEE_PASSWORD": "test-password",
+            },
+            clear=False,
+        ):
+            adapter = AEEAdapter("session-observer", Settings.from_env())
+        events: list[tuple[str, float | None, str | None]] = []
+        adapter.bind_observer(
+            lambda event, duration, error: events.append(
+                (event, duration, error)
+            )
+        )
+        with patch.object(adapter, "_login", return_value="test-token"):
+            asyncio.run(adapter.prepare())
+        self.assertEqual(events[0][0], "aee_login_started")
+        self.assertEqual(events[-1][0], "aee_login_succeeded")
+        self.assertIsNotNone(events[-1][1])
+        self.assertGreaterEqual(events[-1][1], 0)
+
     def test_upstream_urls_are_redacted(self) -> None:
         redacted = redact_upstream_error(
             "ws://host/?token=abc&pwd=def&sessionId=ghi"

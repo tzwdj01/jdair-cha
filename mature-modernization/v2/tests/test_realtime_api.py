@@ -90,6 +90,10 @@ class _APIAdapter:
     async def disconnect(self) -> None:
         self.disconnect_calls += 1
 
+    async def proxy(self, _kind, socket, *, proxy_host: str) -> None:
+        del proxy_host
+        await socket.accept(subprotocol="protoo")
+
 
 @dataclass
 class _ASGIResponse:
@@ -112,6 +116,7 @@ async def _request(
     *,
     headers: dict[str, str] | None = None,
     json_body: dict[str, Any] | None = None,
+    scheme: str = "http",
 ) -> _ASGIResponse:
     body = (
         json.dumps(json_body).encode("utf-8")
@@ -130,7 +135,7 @@ async def _request(
         "asgi": {"version": "3.0", "spec_version": "2.3"},
         "http_version": "1.1",
         "method": method,
-        "scheme": "http",
+        "scheme": scheme,
         "path": path,
         "raw_path": path.encode("ascii"),
         "query_string": b"",
@@ -184,6 +189,52 @@ async def _request(
     )
 
 
+async def _websocket_exchange(
+    app,
+    path: str,
+    *,
+    cookie: str,
+    origin: str | None,
+) -> list[dict[str, Any]]:
+    headers = [
+        (b"host", b"testserver"),
+        (b"cookie", cookie.encode("latin-1")),
+    ]
+    if origin is not None:
+        headers.append((b"origin", origin.encode("latin-1")))
+    scope = {
+        "type": "websocket",
+        "asgi": {"version": "3.0", "spec_version": "2.3"},
+        "scheme": "ws",
+        "path": path,
+        "raw_path": path.encode("ascii"),
+        "query_string": b"",
+        "root_path": "",
+        "headers": headers,
+        "client": ("127.0.0.1", 12345),
+        "server": ("testserver", 80),
+        "subprotocols": ["protoo"],
+        "state": {},
+    }
+    incoming = [
+        {"type": "websocket.connect"},
+        {"type": "websocket.disconnect", "code": 1000},
+    ]
+    messages: list[dict[str, Any]] = []
+
+    async def receive() -> dict[str, Any]:
+        if incoming:
+            return incoming.pop(0)
+        await asyncio.sleep(0)
+        return {"type": "websocket.disconnect", "code": 1000}
+
+    async def send(message: dict[str, Any]) -> None:
+        messages.append(message)
+
+    await app(scope, receive, send)
+    return messages
+
+
 class RealtimeAPITests(unittest.IsolatedAsyncioTestCase):
     @classmethod
     def setUpClass(cls) -> None:
@@ -206,6 +257,9 @@ class RealtimeAPITests(unittest.IsolatedAsyncioTestCase):
                 "CHA_V2_REALTIME_CLEANUP_INTERVAL_SECONDS": "60",
                 "CHA_V2_REALTIME_COMMAND_TIMEOUT_SECONDS": "0.05",
                 "CHA_V2_REALTIME_MAX_STREAMS_PER_SESSION": "2",
+                "CHA_V2_REALTIME_MAX_SESSIONS_PER_OWNER": "10",
+                "CHA_V2_REALTIME_SESSION_CREATE_LIMIT": "100",
+                "CHA_V2_REALTIME_MAX_RETAINED_SESSIONS": "32",
             },
             clear=False,
         )
@@ -404,6 +458,215 @@ class RealtimeAPITests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["data"]["session_id"], session_id)
+
+    async def test_diagnostics_requires_auth_and_is_redacted(self) -> None:
+        missing = await _request(
+            self.main.app,
+            "GET",
+            "/api/v2/realtime/diagnostics",
+        )
+        self.assertEqual(missing.status_code, 401)
+        response = await self.request(
+            "GET",
+            "/api/v2/realtime/diagnostics",
+        )
+        self.assertEqual(response.status_code, 200)
+        data = response.json()["data"]
+        self.assertIn("runtime", data)
+        serialized = json.dumps(data).lower()
+        for forbidden in (
+            "session_id",
+            "stream_id",
+            "device_id",
+            "password",
+            "authorization",
+            "connecteinfo",
+            "gateway_url",
+            "media_url",
+            "cookie",
+        ):
+            self.assertNotIn(forbidden, serialized)
+        self.assertTrue(response.json()["meta"]["request_id"])
+
+    async def test_realtime_api_rejects_missing_login(self) -> None:
+        response = await _request(
+            self.main.app,
+            "GET",
+            "/api/v2/realtime/devices",
+        )
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(
+            response.json()["data"]["code"],
+            "authentication_required",
+        )
+
+    async def test_realtime_health_does_not_probe_aee(self) -> None:
+        await self.main.realtime_manager.start()
+        try:
+            response = await _request(
+                self.main.app,
+                "GET",
+                "/api/v2/realtime/health",
+            )
+            self.assertEqual(response.status_code, 503)
+            data = response.json()["data"]
+            self.assertEqual(data["upstream_probe"], "not_performed")
+            self.assertEqual(data["session_manager"], "running")
+            self.assertFalse(data["configured"])
+        finally:
+            await self.main.realtime_manager.shutdown()
+
+    async def test_session_owner_cannot_be_replayed_by_other_login(
+        self,
+    ) -> None:
+        created = await self.request(
+            "POST",
+            "/api/v2/realtime/sessions",
+        )
+        session_id = created.json()["data"]["session_id"]
+        forbidden = await _request(
+            self.main.app,
+            "GET",
+            f"/api/v2/realtime/sessions/{session_id}",
+            headers={"cookie": "jdair_mcs8_session=other-login"},
+        )
+        self.assertEqual(forbidden.status_code, 403)
+        self.assertEqual(
+            forbidden.json()["data"]["code"],
+            "session_forbidden",
+        )
+        await self.request(
+            "DELETE",
+            f"/api/v2/realtime/sessions/{session_id}",
+        )
+
+    async def test_lease_cookie_security_attributes(self) -> None:
+        secure = await _request(
+            self.main.app,
+            "POST",
+            "/api/v2/realtime/sessions",
+            headers=self.headers,
+            scheme="https",
+        )
+        cookie = secure.headers["set-cookie"]
+        self.assertIn("HttpOnly", cookie)
+        self.assertIn("Secure", cookie)
+        self.assertIn("SameSite=strict", cookie)
+        session_id = secure.json()["data"]["session_id"]
+        await self.request(
+            "DELETE",
+            f"/api/v2/realtime/sessions/{session_id}",
+        )
+
+    async def test_websocket_origin_policy_for_all_endpoints(self) -> None:
+        for endpoint in ("control", "gateway", "media"):
+            created = await self.request(
+                "POST",
+                "/api/v2/realtime/sessions",
+            )
+            session_id = created.json()["data"]["session_id"]
+            lease_cookie = created.headers["set-cookie"].split(";", 1)[0]
+            path = f"/ws/v2/realtime/{session_id}/{endpoint}"
+
+            valid = await _websocket_exchange(
+                self.main.app,
+                path,
+                cookie=lease_cookie,
+                origin="http://testserver",
+            )
+            self.assertTrue(
+                any(item["type"] == "websocket.accept" for item in valid),
+                endpoint,
+            )
+            await self.request(
+                "DELETE",
+                f"/api/v2/realtime/sessions/{session_id}",
+            )
+
+            for rejected_origin in (
+                "https://attacker.example",
+                None,
+            ):
+                rejected_session = await self.request(
+                    "POST",
+                    "/api/v2/realtime/sessions",
+                )
+                rejected_id = rejected_session.json()["data"]["session_id"]
+                rejected_cookie = rejected_session.headers[
+                    "set-cookie"
+                ].split(";", 1)[0]
+                rejected = await _websocket_exchange(
+                    self.main.app,
+                    f"/ws/v2/realtime/{rejected_id}/{endpoint}",
+                    cookie=rejected_cookie,
+                    origin=rejected_origin,
+                )
+                self.assertTrue(
+                    any(
+                        item["type"] == "websocket.close"
+                        and item.get("code") == 4403
+                        for item in rejected
+                    ),
+                    (endpoint, rejected_origin),
+                )
+                await self.request(
+                    "DELETE",
+                    f"/api/v2/realtime/sessions/{rejected_id}",
+                )
+
+    async def test_websocket_rejects_wrong_and_closed_lease(self) -> None:
+        owner = await self.request(
+            "POST",
+            "/api/v2/realtime/sessions",
+        )
+        other = await _request(
+            self.main.app,
+            "POST",
+            "/api/v2/realtime/sessions",
+            headers={"cookie": "jdair_mcs8_session=other-login"},
+        )
+        owner_id = owner.json()["data"]["session_id"]
+        owner_cookie = owner.headers["set-cookie"].split(";", 1)[0]
+        other_cookie = other.headers["set-cookie"].split(";", 1)[0]
+        path = f"/ws/v2/realtime/{owner_id}/control"
+
+        wrong = await _websocket_exchange(
+            self.main.app,
+            path,
+            cookie=other_cookie,
+            origin="http://testserver",
+        )
+        self.assertTrue(
+            any(
+                item["type"] == "websocket.close"
+                and item.get("code") == 4403
+                for item in wrong
+            )
+        )
+        await self.request(
+            "DELETE",
+            f"/api/v2/realtime/sessions/{owner_id}",
+        )
+        replay = await _websocket_exchange(
+            self.main.app,
+            path,
+            cookie=owner_cookie,
+            origin="http://testserver",
+        )
+        self.assertTrue(
+            any(
+                item["type"] == "websocket.close"
+                and item.get("code") == 4403
+                for item in replay
+            )
+        )
+        other_id = other.json()["data"]["session_id"]
+        await _request(
+            self.main.app,
+            "DELETE",
+            f"/api/v2/realtime/sessions/{other_id}",
+            headers={"cookie": "jdair_mcs8_session=other-login"},
+        )
 
 
 if __name__ == "__main__":

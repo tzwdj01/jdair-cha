@@ -56,8 +56,33 @@ class ConfigTests(unittest.TestCase):
         ):
             self.assertEqual(
                 Settings.from_env().realtime_max_streams_per_session,
-                16,
+                4,
             )
+
+    def test_realtime_operational_limits_have_safe_defaults(self) -> None:
+        settings = Settings.from_env()
+        self.assertEqual(settings.realtime_max_sessions_per_owner, 3)
+        self.assertEqual(settings.realtime_session_create_limit, 10)
+        self.assertEqual(settings.realtime_session_create_window_seconds, 60)
+        self.assertEqual(settings.realtime_max_retained_sessions, 128)
+        self.assertFalse(settings.realtime_allow_missing_ws_origin)
+
+    def test_realtime_operational_limits_fall_back_for_non_positive_values(
+        self,
+    ) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "CHA_V2_REALTIME_MAX_SESSIONS_PER_OWNER": "0",
+                "CHA_V2_REALTIME_SESSION_CREATE_LIMIT": "-1",
+                "CHA_V2_REALTIME_SESSION_CREATE_WINDOW_SECONDS": "0",
+            },
+            clear=False,
+        ):
+            settings = Settings.from_env()
+        self.assertEqual(settings.realtime_max_sessions_per_owner, 3)
+        self.assertEqual(settings.realtime_session_create_limit, 10)
+        self.assertEqual(settings.realtime_session_create_window_seconds, 60)
 
     def test_base_url_is_normalized_and_validated(self) -> None:
         self.assertEqual(
