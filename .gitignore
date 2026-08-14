@@ -25,3 +25,5 @@ venv
 **/*dashboard-production*.png
 **/m3-*-result.json
 **/m3-*.png
+**/m32a-*-result.json
+**/m32a-*.png
