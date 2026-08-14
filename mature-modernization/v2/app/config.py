@@ -95,6 +95,12 @@ class Settings:
     realtime_closed_retention_seconds: int
     realtime_command_timeout_seconds: float
     realtime_max_streams_per_session: int
+    realtime_max_sessions_per_owner: int
+    realtime_session_create_limit: int
+    realtime_session_create_window_seconds: int
+    realtime_max_retained_sessions: int
+    realtime_allowed_origins: tuple[str, ...]
+    realtime_allow_missing_ws_origin: bool
     aee_api_base_url: str
     aee_origin: str
     aee_gateway_host: str
@@ -203,7 +209,46 @@ class Settings:
                     "CHA_V2_REALTIME_MAX_STREAMS_PER_SESSION",
                     4,
                 ),
-                16,
+                4,
+            ),
+            realtime_max_sessions_per_owner=max(
+                1,
+                min(
+                    env_int("CHA_V2_REALTIME_MAX_SESSIONS_PER_OWNER", 3),
+                    10,
+                ),
+            ),
+            realtime_session_create_limit=max(
+                1,
+                min(
+                    env_int("CHA_V2_REALTIME_SESSION_CREATE_LIMIT", 10),
+                    1000,
+                ),
+            ),
+            realtime_session_create_window_seconds=max(
+                1,
+                env_int(
+                    "CHA_V2_REALTIME_SESSION_CREATE_WINDOW_SECONDS",
+                    60,
+                ),
+            ),
+            realtime_max_retained_sessions=max(
+                8,
+                min(
+                    env_int(
+                        "CHA_V2_REALTIME_MAX_RETAINED_SESSIONS",
+                        128,
+                    ),
+                    1024,
+                ),
+            ),
+            realtime_allowed_origins=env_csv(
+                "CHA_V2_REALTIME_ALLOWED_ORIGINS",
+                (),
+            ),
+            realtime_allow_missing_ws_origin=env_bool(
+                "CHA_V2_REALTIME_ALLOW_MISSING_WS_ORIGIN",
+                False,
             ),
             aee_api_base_url=env_url("CHA_V2_AEE_API_BASE_URL"),
             aee_origin=env_url(

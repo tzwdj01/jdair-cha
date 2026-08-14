@@ -167,9 +167,16 @@ async def readiness(request: Request):
     required = settings.legacy_is_required()
     realtime_configured = settings.realtime_aee_is_configured()
     realtime_required = settings.feature_realtime_readonly
+    realtime_snapshot = await realtime_manager.telemetry_snapshot()
+    realtime_manager_running = bool(
+        realtime_snapshot["cleanup_task_running"]
+    )
     ready = (
         (not required or legacy_status == "ok")
-        and (not realtime_required or realtime_configured)
+        and (
+            not realtime_required
+            or (realtime_configured and realtime_manager_running)
+        )
     )
     return envelope(
         request,
@@ -194,6 +201,12 @@ async def readiness(request: Request):
                         )
                     ),
                     "required": realtime_required,
+                    "session_manager": (
+                        "running"
+                        if realtime_manager_running
+                        else "not_running"
+                    ),
+                    "active_probe": "not_performed",
                 },
             },
         },

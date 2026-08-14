@@ -163,6 +163,23 @@ def create_realtime_router(
             samesite="strict",
         )
 
+    def websocket_origin_allowed(websocket: WebSocket) -> bool:
+        origin = websocket.headers.get("origin", "").rstrip("/")
+        if not origin:
+            return settings.realtime_allow_missing_ws_origin
+        host = websocket.headers.get("host", "")
+        if not host:
+            return False
+        scheme = websocket.url.scheme.replace("wss", "https").replace(
+            "ws",
+            "http",
+        )
+        expected = f"{scheme}://{host}".rstrip("/")
+        configured = {
+            item.rstrip("/") for item in settings.realtime_allowed_origins
+        }
+        return origin == expected or origin in configured
+
     @router.get("/api/v2/realtime", response_class=HTMLResponse)
     async def realtime_page() -> HTMLResponse:
         if not settings.feature_realtime_readonly:
@@ -278,6 +295,58 @@ def create_realtime_router(
                     status_code=503,
                 ),
             )
+
+    @router.get("/api/v2/realtime/health", include_in_schema=False)
+    async def realtime_health(request: Request) -> JSONResponse:
+        snapshot = await manager.telemetry_snapshot()
+        configured = settings.realtime_aee_is_configured()
+        enabled = settings.feature_realtime_readonly
+        manager_ready = bool(snapshot["cleanup_task_running"])
+        ready = manager_ready and (not enabled or configured)
+        return envelope(
+            request,
+            {
+                "status": "ready" if ready else "not_ready",
+                "enabled": enabled,
+                "configured": configured,
+                "session_manager": (
+                    "running" if manager_ready else "not_running"
+                ),
+                "upstream_probe": "not_performed",
+            },
+            ok=ready,
+            status_code=200 if ready else 503,
+        )
+
+    @router.get("/api/v2/realtime/diagnostics")
+    async def realtime_diagnostics(request: Request) -> JSONResponse:
+        if not settings.feature_realtime_readonly:
+            return disabled(request)
+        try:
+            await identity(request)
+            snapshot = await manager.telemetry_snapshot()
+            return envelope(
+                request,
+                {
+                    "runtime": snapshot,
+                    "limits": {
+                        "max_streams_per_session": (
+                            settings.realtime_max_streams_per_session
+                        ),
+                        "max_sessions_per_owner": (
+                            settings.realtime_max_sessions_per_owner
+                        ),
+                    },
+                    "security": {
+                        "credentials_server_side": True,
+                        "receive_only": True,
+                        "audio_enabled": settings.feature_realtime_audio,
+                        "control_enabled": settings.feature_realtime_control,
+                    },
+                },
+            )
+        except RealtimeError as exc:
+            return failure(request, exc)
 
     @router.post("/api/v2/realtime/sessions", status_code=201)
     async def create_session(
@@ -446,12 +515,8 @@ def create_realtime_router(
             return failure(request, exc)
 
     async def lease_allowed(websocket: WebSocket, session_id: str) -> bool:
-        origin = websocket.headers.get("origin")
-        host = websocket.headers.get("host")
-        if origin and host:
-            expected = f"{websocket.url.scheme.replace('ws', 'http')}://{host}"
-            if origin.rstrip("/") != expected.rstrip("/"):
-                return False
+        if not websocket_origin_allowed(websocket):
+            return False
         return await manager.validate_lease(
             session_id,
             websocket.cookies.get(COOKIE_PREFIX + session_id),

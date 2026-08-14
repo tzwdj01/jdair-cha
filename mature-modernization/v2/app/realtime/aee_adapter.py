@@ -10,7 +10,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from copy import deepcopy
-from typing import Any
+from typing import Any, Callable
 
 from fastapi import WebSocket
 
@@ -23,6 +23,7 @@ TOKEN_PATTERN = re.compile(
     r"(?i)((?:token|pwd|password|sessionid)=)[^&\s]+"
 )
 AUTH_PATTERN = re.compile(r"(?i)(authorization:\s*bearer\s+)\S+")
+AdapterObserver = Callable[[str, float | None, str | None], None]
 MEDIA_REQUEST_METHODS = frozenset(
     {
         "getRouterRtpCapabilities",
@@ -58,6 +59,46 @@ class AEEAdapter:
         self._authorized_devices: set[str] = set()
         self._open_monitors: set[str] = set()
         self._closed = False
+        self._observer: AdapterObserver | None = None
+
+    @property
+    def is_prepared(self) -> bool:
+        return bool(self._token)
+
+    def bind_observer(self, observer: AdapterObserver) -> None:
+        self._observer = observer
+
+    def _emit(
+        self,
+        event: str,
+        *,
+        duration_ms: float | None = None,
+        error_code: str | None = None,
+    ) -> None:
+        payload = {
+            "event": event,
+            "session_id": self.session_id,
+            "stream_id": None,
+            "device_id": None,
+            "session_status": None,
+            "stream_status": None,
+            "duration_ms": (
+                round(duration_ms, 2) if duration_ms is not None else None
+            ),
+            "error_code": error_code,
+            "release_mode": None,
+        }
+        if self._observer is not None:
+            self._observer(event, duration_ms, error_code)
+        else:
+            logger.info(
+                "realtime_event %s",
+                json.dumps(
+                    payload,
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                ),
+            )
 
     async def prepare(self) -> None:
         if self._token:
@@ -66,11 +107,23 @@ class AEEAdapter:
             if self._token:
                 return
             self._validate_configuration()
+            started = time.perf_counter()
+            self._emit("aee_login_started")
             try:
                 token = await asyncio.to_thread(self._login)
-            except AEEUpstreamError:
+            except AEEUpstreamError as exc:
+                self._emit(
+                    "aee_login_failed",
+                    duration_ms=(time.perf_counter() - started) * 1000,
+                    error_code=exc.code,
+                )
                 raise
             except Exception as exc:
+                self._emit(
+                    "aee_login_failed",
+                    duration_ms=(time.perf_counter() - started) * 1000,
+                    error_code="AEE_LOGIN_FAILED",
+                )
                 logger.error(
                     "aee_prepare_failed session_id=%s error=%s",
                     self.session_id,
@@ -82,6 +135,10 @@ class AEEAdapter:
                 ) from exc
             self._token = token
             self._closed = False
+            self._emit(
+                "aee_login_succeeded",
+                duration_ms=(time.perf_counter() - started) * 1000,
+            )
 
     def _validate_configuration(self) -> None:
         missing = [
@@ -202,6 +259,8 @@ class AEEAdapter:
             ) from exc
 
         url = self._gateway_url() if kind == "gateway" else self._media_url()
+        started = time.perf_counter()
+        connected = False
         try:
             upstream = await connect(
                 url,
@@ -212,6 +271,11 @@ class AEEAdapter:
                 close_timeout=3,
                 ping_interval=None,
                 max_size=None,
+            )
+            connected = True
+            self._emit(
+                f"{kind}_connected",
+                duration_ms=(time.perf_counter() - started) * 1000,
             )
         except Exception as exc:
             logger.error(
@@ -239,6 +303,8 @@ class AEEAdapter:
                 if self._upstreams.get(kind) is upstream:
                     self._upstreams.pop(kind, None)
             await upstream.close(code=1000)
+            if connected:
+                self._emit(f"{kind}_disconnected")
 
     async def _relay_messages(
         self,

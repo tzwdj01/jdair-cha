@@ -23,6 +23,7 @@ from .models import (
     StreamStatus,
     utc_now,
 )
+from .telemetry import RealtimeTelemetry
 
 
 logger = logging.getLogger("uvicorn.error.cha.realtime.session")
@@ -37,10 +38,13 @@ class RealtimeSessionManager:
         settings: Settings,
         *,
         adapter_factory: AdapterFactory = AEEAdapter,
+        telemetry: RealtimeTelemetry | None = None,
     ) -> None:
         self.settings = settings
         self.adapter_factory = adapter_factory
+        self.telemetry = telemetry or RealtimeTelemetry()
         self._sessions: dict[str, RealtimeSession] = {}
+        self._owner_create_history: dict[str, list[float]] = {}
         self._lock = asyncio.Lock()
         self._cleanup_task: asyncio.Task[None] | None = None
 
@@ -65,6 +69,9 @@ class RealtimeSessionManager:
                     "realtime_shutdown_cleanup_failed session_id=%s",
                     session_id,
                 )
+        async with self._lock:
+            self._sessions.clear()
+            self._owner_create_history.clear()
 
     async def create_session(
         self,
@@ -72,9 +79,23 @@ class RealtimeSessionManager:
         owner_key: str,
         owner_name: str,
     ) -> tuple[RealtimeSession, str]:
+        started = time.perf_counter()
         now = utc_now()
         session_id = uuid.uuid4().hex
         lease = secrets.token_urlsafe(32)
+        adapter = self.adapter_factory(session_id, self.settings)
+        bind_observer = getattr(adapter, "bind_observer", None)
+        if callable(bind_observer):
+            bind_observer(
+                lambda event, duration_ms, error_code: (
+                    self._adapter_event(
+                        session_id,
+                        event,
+                        duration_ms=duration_ms,
+                        error_code=error_code,
+                    )
+                )
+            )
         session = RealtimeSession(
             session_id=session_id,
             owner_key=owner_key,
@@ -85,12 +106,50 @@ class RealtimeSessionManager:
             last_heartbeat_at=now,
             expires_at=now
             + dt.timedelta(seconds=self.settings.realtime_session_ttl_seconds),
-            adapter=self.adapter_factory(session_id, self.settings),
+            adapter=adapter,
             updated_at=now,
         )
         async with self._lock:
+            self._prune_closed_sessions_locked()
+            active_for_owner = sum(
+                item.owner_key == owner_key
+                and item.status != SessionStatus.CLOSED
+                for item in self._sessions.values()
+            )
+            if active_for_owner >= self.settings.realtime_max_sessions_per_owner:
+                raise RealtimeError(
+                    "owner_session_limit_reached",
+                    "The login session has reached its realtime session limit.",
+                    status_code=429,
+                )
+            monotonic_now = time.monotonic()
+            cutoff = (
+                monotonic_now
+                - self.settings.realtime_session_create_window_seconds
+            )
+            history = [
+                item
+                for item in self._owner_create_history.get(owner_key, [])
+                if item >= cutoff
+            ]
+            if len(history) >= self.settings.realtime_session_create_limit:
+                self._owner_create_history[owner_key] = history
+                raise RealtimeError(
+                    "session_create_rate_limited",
+                    "Realtime sessions are being created too frequently.",
+                    status_code=429,
+                )
+            history.append(monotonic_now)
+            self._owner_create_history[owner_key] = history
             self._sessions[session_id] = session
-        self._log(session, event="session_created", status=session.status.value)
+        duration_ms = (time.perf_counter() - started) * 1000
+        self.telemetry.increment("realtime_session_create_total")
+        self.telemetry.observe("session_create_duration_ms", duration_ms)
+        self._log(
+            session,
+            event="session_created",
+            duration_ms=duration_ms,
+        )
         return session, lease
 
     async def get_session(
@@ -155,6 +214,11 @@ class RealtimeSessionManager:
             session.status = SessionStatus.CREATING
             session.updated_at = utc_now()
             started = time.perf_counter()
+            self._log(
+                session,
+                event="stream_open_requested",
+                device_id=device_id,
+            )
             try:
                 await session.adapter.prepare()
             except AEEUpstreamError as exc:
@@ -167,7 +231,6 @@ class RealtimeSessionManager:
                 self._log(
                     session,
                     event="aee_prepare_failed",
-                    status=session.status.value,
                     device_id=device_id,
                     error_code=exc.code,
                     duration_ms=(time.perf_counter() - started) * 1000,
@@ -197,11 +260,11 @@ class RealtimeSessionManager:
             self._prune_closed_streams(session)
             session.status = SessionStatus.CREATING
             session.updated_at = now
+            self.telemetry.increment("realtime_stream_open_total")
             self._log(
                 session,
                 stream=stream,
-                event="stream_created",
-                status=stream.status.value,
+                event="stream_opened",
                 duration_ms=(time.perf_counter() - started) * 1000,
             )
             return stream
@@ -230,6 +293,11 @@ class RealtimeSessionManager:
             stream.runtime_state = "RELEASING"
             stream.updated_at = utc_now()
             started = time.perf_counter()
+            self._log(
+                session,
+                stream=stream,
+                event="stream_close_requested",
+            )
             acknowledged = await self._send_control_command(
                 session,
                 "close_stream",
@@ -264,13 +332,13 @@ class RealtimeSessionManager:
                         session,
                         stream=stream,
                         event="stream_release_failed",
-                        status=stream.status.value,
                         error_code=stream.error_code,
                         duration_ms=(
                             time.perf_counter() - started
                         )
                         * 1000,
                     )
+                    self.telemetry.increment("realtime_release_failure_total")
                     raise RealtimeError(
                         "stream_release_failed",
                         (
@@ -291,6 +359,7 @@ class RealtimeSessionManager:
                     stream.updated_at = utc_now()
                     session.status = SessionStatus.DEGRADED
                     session.updated_at = utc_now()
+                    self.telemetry.increment("realtime_release_failure_total")
                     raise RealtimeError(
                         "stream_release_failed",
                         "The video stream release could not be confirmed.",
@@ -306,12 +375,14 @@ class RealtimeSessionManager:
             stream.updated_at = now
             self._recompute_session_status(session)
             session.updated_at = now
+            duration_ms = (time.perf_counter() - started) * 1000
+            self.telemetry.increment("realtime_stream_close_total")
+            self.telemetry.observe("close_video_duration_ms", duration_ms)
             self._log(
                 session,
                 stream=stream,
                 event="stream_released",
-                status=stream.status.value,
-                duration_ms=(time.perf_counter() - started) * 1000,
+                duration_ms=duration_ms,
             )
             return session
 
@@ -331,6 +402,7 @@ class RealtimeSessionManager:
             session.status = SessionStatus.CLOSING
             session.updated_at = utc_now()
             started = time.perf_counter()
+            self._log(session, event="session_close_requested")
             if not force:
                 await self._send_control_command(
                     session,
@@ -350,6 +422,10 @@ class RealtimeSessionManager:
                 event="session_disconnect_failed",
             )
             session.connection_reusable = False
+            active_before_close = sum(
+                stream.status != StreamStatus.CLOSED
+                for stream in session.streams.values()
+            )
             for stream in session.streams.values():
                 stream.status = StreamStatus.CLOSED
                 stream.release_mode = (
@@ -375,12 +451,20 @@ class RealtimeSessionManager:
             session.expires_at = now + dt.timedelta(
                 seconds=self.settings.realtime_closed_retention_seconds
             )
+            duration_ms = (time.perf_counter() - started) * 1000
+            self.telemetry.increment("realtime_session_close_total")
+            self.telemetry.increment(
+                "realtime_stream_close_total",
+                active_before_close,
+            )
+            self.telemetry.observe("session_shutdown_duration_ms", duration_ms)
             self._log(
                 session,
                 event="session_closed",
-                status=session.status.value,
-                duration_ms=(time.perf_counter() - started) * 1000,
+                duration_ms=duration_ms,
             )
+            async with self._lock:
+                self._prune_closed_sessions_locked()
             if control_socket is not None:
                 try:
                     await control_socket.close(code=1000)
@@ -394,6 +478,11 @@ class RealtimeSessionManager:
         try:
             session = await self._lookup(session_id)
         except RealtimeError:
+            return False
+        if (
+            session.status == SessionStatus.CLOSED
+            or session.expires_at <= utc_now()
+        ):
             return False
         return secrets.compare_digest(
             session.lease_hash,
@@ -416,7 +505,6 @@ class RealtimeSessionManager:
         self._log(
             session,
             event="control_connected",
-            status=session.status.value,
         )
         return session
 
@@ -452,8 +540,14 @@ class RealtimeSessionManager:
             self._log(
                 session,
                 event="control_disconnected",
-                status=session.status.value,
             )
+            if session.status == SessionStatus.DEGRADED:
+                self._log(
+                    session,
+                    event="session_degraded",
+                    error_code="CONTROL_DISCONNECTED",
+                )
+            self.telemetry.increment("realtime_abnormal_disconnect_total")
         if release_required:
             await self._disconnect_adapter(
                 session,
@@ -462,7 +556,6 @@ class RealtimeSessionManager:
             self._log(
                 session,
                 event="control_disconnect_release",
-                status=session.status.value,
             )
 
     async def handle_control_message(
@@ -526,6 +619,13 @@ class RealtimeSessionManager:
                 stream.error_code = None
                 stream.runtime_state = "PLAYING"
                 stream.updated_at = now
+                duration_ms = (
+                    now - stream.created_at
+                ).total_seconds() * 1000
+                self.telemetry.observe(
+                    "open_video_to_first_frame_duration_ms",
+                    duration_ms,
+                )
         elif event == "playback_failed":
             if stream is not None:
                 stream.status = StreamStatus.FAILED
@@ -535,6 +635,16 @@ class RealtimeSessionManager:
                 stream.runtime_state = "FAILED"
                 stream.updated_at = now
             session.status = SessionStatus.DEGRADED
+            self._log(
+                session,
+                stream=stream,
+                event="session_degraded",
+                error_code=error_code or "PLAYBACK_FAILED",
+            )
+            if str(error_code or "").upper() == "FIRST_FRAME_TIMEOUT":
+                self.telemetry.increment(
+                    "realtime_first_frame_timeout_total"
+                )
         elif event == "browser_disconnected":
             session.status = SessionStatus.DEGRADED
             session.connection_reusable = False
@@ -551,8 +661,17 @@ class RealtimeSessionManager:
         self._log(
             session,
             stream=stream,
-            event=event,
-            status=(stream.status.value if stream else session.status.value),
+            event=(
+                "first_frame_received"
+                if event == "first_frame"
+                else (
+                    "first_frame_timeout"
+                    if event == "playback_failed"
+                    and str(error_code or "").upper()
+                    == "FIRST_FRAME_TIMEOUT"
+                    else event
+                )
+            ),
             error_code=error_code,
         )
         return session
@@ -575,7 +694,6 @@ class RealtimeSessionManager:
         self._log(
             session,
             event=f"{kind}_proxy_connecting",
-            status=session.status.value,
         )
         try:
             await session.adapter.proxy(kind, socket, proxy_host=proxy_host)
@@ -586,7 +704,6 @@ class RealtimeSessionManager:
             self._log(
                 session,
                 event=f"{kind}_proxy_failed",
-                status=session.status.value,
                 error_code=exc.code,
             )
             raise
@@ -598,7 +715,6 @@ class RealtimeSessionManager:
             self._log(
                 session,
                 event=f"{kind}_proxy_failed",
-                status=session.status.value,
                 error_code=error_code,
             )
             logger.warning(
@@ -618,6 +734,9 @@ class RealtimeSessionManager:
                 SessionStatus.CLOSED,
             }
             if unexpected_disconnect:
+                self.telemetry.increment(
+                    "realtime_abnormal_disconnect_total"
+                )
                 session.status = SessionStatus.DEGRADED
                 session.connection_reusable = False
                 for stream in session.streams.values():
@@ -633,10 +752,14 @@ class RealtimeSessionManager:
                     session,
                     event=f"{kind}_proxy_release_failed",
                 )
+                self._log(
+                    session,
+                    event="session_degraded",
+                    error_code=f"{kind.upper()}_DISCONNECTED",
+                )
             self._log(
                 session,
                 event=f"{kind}_proxy_disconnected",
-                status=session.status.value,
             )
 
     async def active_count(self) -> int:
@@ -645,6 +768,17 @@ class RealtimeSessionManager:
                 session.status != SessionStatus.CLOSED
                 for session in self._sessions.values()
             )
+
+    async def telemetry_snapshot(self) -> dict[str, object]:
+        async with self._lock:
+            sessions = list(self._sessions.values())
+        return self.telemetry.snapshot(
+            sessions,
+            cleanup_task_running=(
+                self._cleanup_task is not None
+                and not self._cleanup_task.done()
+            ),
+        )
 
     @staticmethod
     def _active_streams(
@@ -691,6 +825,38 @@ class RealtimeSessionManager:
         for stream in closed[:-history_limit]:
             session.streams.pop(stream.stream_id, None)
 
+    def _prune_closed_sessions_locked(self) -> None:
+        limit = self.settings.realtime_max_retained_sessions
+        closed = sorted(
+            (
+                session
+                for session in self._sessions.values()
+                if session.status == SessionStatus.CLOSED
+            ),
+            key=lambda item: item.closed_at or item.updated_at,
+        )
+        excess = max(0, len(self._sessions) - limit)
+        for session in closed[:excess]:
+            self._sessions.pop(session.session_id, None)
+
+    def _adapter_event(
+        self,
+        session_id: str,
+        event: str,
+        *,
+        duration_ms: float | None,
+        error_code: str | None,
+    ) -> None:
+        self.telemetry.adapter_event(event, duration_ms=duration_ms)
+        session = self._sessions.get(session_id)
+        if session is not None:
+            self._log(
+                session,
+                event=event,
+                duration_ms=duration_ms,
+                error_code=error_code,
+            )
+
     async def _disconnect_adapter(
         self,
         session: RealtimeSession,
@@ -709,9 +875,9 @@ class RealtimeSessionManager:
             self._log(
                 session,
                 event=event,
-                status=session.status.value,
                 error_code="AEE_DISCONNECT_FAILED",
             )
+            self.telemetry.increment("realtime_release_failure_total")
             return False
 
     async def _send_control_command(
@@ -802,8 +968,17 @@ class RealtimeSessionManager:
 
     async def cleanup_expired(self) -> None:
         now = utc_now()
+        cutoff = (
+            time.monotonic()
+            - self.settings.realtime_session_create_window_seconds
+        )
         async with self._lock:
             snapshot = list(self._sessions.values())
+            self._owner_create_history = {
+                owner: [stamp for stamp in stamps if stamp >= cutoff]
+                for owner, stamps in self._owner_create_history.items()
+                if any(stamp >= cutoff for stamp in stamps)
+            }
         for session in snapshot:
             if session.expires_at > now:
                 continue
@@ -819,10 +994,13 @@ class RealtimeSessionManager:
                 )
                 self._log(
                     session,
-                    event="session_expired",
-                    status=session.status.value,
+                    event="session_timeout_cleanup",
+                )
+                self.telemetry.increment(
+                    "realtime_session_timeout_cleanup_total"
                 )
             except Exception:
+                self.telemetry.increment("realtime_release_failure_total")
                 logger.exception(
                     "realtime_expiry_cleanup_failed session_id=%s",
                     session.session_id,
@@ -833,12 +1011,13 @@ class RealtimeSessionManager:
         session: RealtimeSession,
         *,
         event: str,
-        status: str,
+        status: str | None = None,
         stream: RealtimeStream | None = None,
         device_id: str | None = None,
         error_code: str | None = None,
         duration_ms: float | None = None,
     ) -> None:
+        del status
         payload = {
             "session_id": session.session_id,
             "stream_id": stream.stream_id if stream else None,
@@ -846,7 +1025,8 @@ class RealtimeSessionManager:
                 stream.device_id if stream else (device_id or None)
             ),
             "event": event,
-            "status": status,
+            "session_status": session.status.value,
+            "stream_status": stream.status.value if stream else None,
             "duration_ms": (
                 round(duration_ms, 2) if duration_ms is not None else None
             ),

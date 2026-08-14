@@ -21,6 +21,8 @@ the `/api/v2/` namespace and does not replace existing `/api/*` routes.
 - `GET /api/v2/dashboard/freshness`
 - `GET /api/v2/realtime` (formal 1/4-stream inspection page; feature-gated)
 - `GET /api/v2/realtime/devices`
+- `GET /api/v2/realtime/health` (coarse readiness; no AEE login)
+- `GET /api/v2/realtime/diagnostics` (authenticated aggregate snapshot)
 - `POST /api/v2/realtime/sessions`
 - `GET /api/v2/realtime/sessions/{session_id}`
 - `POST /api/v2/realtime/sessions/{session_id}/heartbeat`
@@ -56,6 +58,19 @@ close, retry and fullscreen state without rebuilding the shared AEE runtime.
 An unconfirmed partial close degrades only the target stream. Shared
 Gateway/Media/control failures are visible and offer an explicit whole-session
 reconnect instead of an unbounded reconnect loop.
+
+M3.2C adds bounded process-local operational telemetry without introducing a
+monitoring-server dependency. Diagnostics expose aggregate gauges, counters
+and duration summaries only; they do not expose session identifiers, device
+identifiers, AEE credentials, upstream URLs or ConnecteInfo. Realtime lifecycle
+logs correlate `session_id`, `stream_id`, `device_id`, event, status, duration,
+error and release mode. Control, Gateway and Media WebSockets require an
+allowed Origin and a valid unexpired session lease. CLOSED leases cannot be
+replayed.
+
+Default abuse guards allow at most three active realtime sessions per login
+session and ten session creations per 60 seconds. These values are configurable
+but do not change the four-stream product limit.
 
 Four streams are validated. Six and nine streams are not validated or
 advertised. Audio, device control, screenshots and AccountPool remain disabled.
