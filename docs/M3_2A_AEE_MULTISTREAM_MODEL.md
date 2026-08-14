@@ -1,5 +1,8 @@
 # M3.2A AEE 多路实时视频模型验证
 
+> 历史实验文档（experimental / archived）。最终容量结论以
+> `M3_FINAL_VALIDATION_REPORT.md` 为准。
+
 验证日期：2026-08-14
 结论：采用 **Model A**
 

@@ -3,7 +3,7 @@
 This service is deployed beside the existing CHA application. It owns only
 the `/api/v2/` namespace and does not replace existing `/api/*` routes.
 
-## M2 dashboard and M3.2B realtime inspection
+## M2 dashboard and M3 Final realtime inspection
 
 - `GET /api/v2/health`
 - `GET /api/v2/health/live`
@@ -19,7 +19,7 @@ the `/api/v2/` namespace and does not replace existing `/api/*` routes.
 - `GET /api/v2/dashboard/coverage`
 - `GET /api/v2/dashboard/exceptions`
 - `GET /api/v2/dashboard/freshness`
-- `GET /api/v2/realtime` (formal 1/4-stream inspection page; feature-gated)
+- `GET /api/v2/realtime` (formal 1/4/6-stream inspection page; feature-gated)
 - `GET /api/v2/realtime/devices`
 - `GET /api/v2/realtime/health` (coarse readiness; no AEE login)
 - `GET /api/v2/realtime/diagnostics` (authenticated aggregate snapshot)
@@ -27,6 +27,8 @@ the `/api/v2/` namespace and does not replace existing `/api/*` routes.
 - `GET /api/v2/realtime/sessions/{session_id}`
 - `POST /api/v2/realtime/sessions/{session_id}/heartbeat`
 - `POST /api/v2/realtime/sessions/{session_id}/streams`
+- `POST /api/v2/realtime/sessions/{session_id}/streams/{stream_id}/audio`
+- `DELETE /api/v2/realtime/sessions/{session_id}/streams/{stream_id}/audio`
 - `DELETE /api/v2/realtime/sessions/{session_id}/streams/{stream_id}`
 - `DELETE /api/v2/realtime/sessions/{session_id}`
 - `WS /ws/v2/realtime/{session_id}/control`
@@ -49,12 +51,13 @@ environment variables. The browser receives only a CHA session cookie and
 same-origin WebSocket paths. The V2 service logs in to AEE server-side, keeps
 gateway and media tokens in process memory, rewrites `ConnecteInfo`, and
 relays the SDK WebSockets without returning either token to browser code.
-M3.2B integrates the validated Model A runtime into a formal maintenance
+M3 Final integrates the validated Model A runtime into a formal maintenance
 inspection page. One CHA session owns one AEE login, Gateway relay, media-room
-connection and receive transport, with at most four independently tracked
-video consumers. One active stream uses a single-tile layout; two through four
-streams use a 2x2 layout. Each tile exposes first-frame, resolution, track,
-close, retry and fullscreen state without rebuilding the shared AEE runtime.
+connection and receive transport, with at most six independently tracked
+video consumers. The final validated limit is six: one active stream uses a
+single-tile layout, two through four streams use 2x2, and five through six use
+3x2. Each tile exposes first-frame, resolution, track, close, retry, fullscreen
+and local screenshot without rebuilding the shared AEE runtime.
 An unconfirmed partial close degrades only the target stream. Shared
 Gateway/Media/control failures are visible and offer an explicit whole-session
 reconnect instead of an unbounded reconnect loop.
@@ -72,8 +75,11 @@ Default abuse guards allow at most three active realtime sessions per login
 session and ten session creations per 60 seconds. These values are configurable
 but do not change the four-stream product limit.
 
-Four streams are validated. Six and nine streams are not validated or
-advertised. Audio, device control, screenshots and AccountPool remain disabled.
+Six streams are validated on one AEE account/session. Nine streams are not
+validated or advertised. Receive-only audio is technically validated, limited
+to one user-enabled stream at a time, and remains disabled by default in
+`FEATURES.env`. Device control and AccountPool remain disabled; screenshot is
+local-only and never uploads media to the service.
 
 ## Local test
 

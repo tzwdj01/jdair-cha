@@ -4,8 +4,8 @@
 
 - [ ] `VERSION`、`BUILD` 与 RC 计划一致
 - [ ] Model A 未改变
-- [ ] 最大 streams 仍为 4
-- [ ] 没有 6/9 路入口
+- [ ] 最大 streams 为真实验证值 6
+- [ ] 有 1/4/6 路入口且没有 9 路入口
 - [ ] `realtime_audio=false`
 - [ ] `realtime_control=false`
 - [ ] `account_pool=false`
@@ -15,8 +15,10 @@
 - [ ] 完整 backend tests PASS
 - [ ] Python compileall PASS
 - [ ] 所有 JavaScript syntax PASS
-- [ ] M3.2B 浏览器验收 PASS
-- [ ] M3.2C browser churn PASS
+- [ ] M3 Final 六路浏览器验收 PASS
+- [ ] 20 轮 browser churn PASS
+- [ ] 200 session lifecycle churn PASS
+- [ ] audio receive-only 和 local screenshot PASS
 - [ ] session churn/timeout/shutdown PASS
 - [ ] package 解压后完整测试 PASS
 
@@ -54,7 +56,9 @@
 - [ ] liveness PASS
 - [ ] application readiness PASS
 - [ ] realtime health PASS
-- [ ] M3.2B 真实 4 路 × 600 秒证据仍有效
+- [ ] 真实 4 路 × 600 秒证据仍有效
+- [ ] 真实短时 6 路、survivor、reopen、释放证据 PASS
+- [ ] 9 路明确标记 NOT TESTED 且 UI 不显示
 - [ ] 若 Adapter/relay 有行为修改，完成必要短回归
 
 ## 发布包与 Git

@@ -10,7 +10,11 @@ from pathlib import Path
 def main() -> None:
     root = Path(__file__).resolve().parents[1]
     source = root / "mature-modernization" / "v2"
-    output = root / "mature-modernization" / "jdair-cha-v2-m3-rc.tar.gz"
+    output = (
+        root
+        / "mature-modernization"
+        / "jdair-cha-v2-m3-final-rc.tar.gz"
+    )
     required = [
         "VERSION",
         "BUILD",
@@ -39,7 +43,16 @@ def main() -> None:
         root / "docs" / "M3_REALTIME_RELEASE_CANDIDATE.md": (
             "docs/M3_REALTIME_RELEASE_CANDIDATE.md"
         ),
+        root / "docs" / "M3_REALTIME_ARCHITECTURE.md": (
+            "docs/M3_REALTIME_ARCHITECTURE.md"
+        ),
+        root / "docs" / "M3_FINAL_VALIDATION_REPORT.md": (
+            "docs/M3_FINAL_VALIDATION_REPORT.md"
+        ),
         root / "ops" / "rollback-v2.sh": "ops/rollback-v2.sh",
+        root / "ops" / "mature_m3_final_release.sh": (
+            "ops/mature_m3_final_release.sh"
+        ),
     }
     for relative in required:
         if not (source / relative).is_file():
@@ -128,13 +141,13 @@ def main() -> None:
         "build": (source / "BUILD").read_text().strip(),
         "features": (source / "FEATURES.env").read_text().splitlines(),
     }
-    manifest_path = root / "m3-rc-manifest.json"
+    manifest_path = root / "m3-final-rc-manifest.json"
     manifest_path.write_text(
         json.dumps(manifest, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
     result["manifest"] = str(manifest_path)
-    (root / "m3-rc-package-result.json").write_text(
+    (root / "m3-final-rc-package-result.json").write_text(
         json.dumps(result, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )

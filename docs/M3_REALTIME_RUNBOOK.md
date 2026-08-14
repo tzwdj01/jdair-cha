@@ -1,6 +1,6 @@
 # M3 实时视频监察运维 Runbook
 
-适用版本：`0.7.0 / m3-realtime-rc`
+适用版本：`0.8.0 / m3-final-rc`
 
 ## 1. 判断服务是否健康
 
@@ -25,6 +25,11 @@ Realtime health 不主动登录 AEE，避免健康探针造成频繁 AEE 登录�
 - `realtime_first_frame_timeout_total`
 - `realtime_release_failure_total`
 - `realtime_session_timeout_cleanup_total`
+- `realtime_audio_open_total`
+- `realtime_audio_close_total`
+- `realtime_audio_failure_total`
+- `realtime_screenshot_total`
+- `realtime_screenshot_failure_total`
 
 正常关闭后 active session、stream、Gateway 和 Media 数应回落。
 
@@ -46,7 +51,7 @@ realtime_event {"session_id":"..."}
 | --- | --- | --- |
 | `device_offline` | 设备离线 | 检查终端在线状态 |
 | `duplicate_device` | 同设备重复添加 | 关闭原 tile 或停止重复操作 |
-| `stream_limit_reached` | 单 session 已达 4 路 | 关闭一路后再添加 |
+| `stream_limit_reached` | 单 session 已达 6 路 | 关闭一路后再添加 |
 | `owner_session_limit_reached` | 单登录 active session 过多 | 关闭旧页面/session |
 | `session_create_rate_limited` | 短时间创建 session 过多 | 排查页面循环重建 |
 | `FIRST_FRAME_TIMEOUT` | 20 秒未收到首帧 | 单路重试并检查设备网络 |
@@ -54,6 +59,9 @@ realtime_event {"session_id":"..."}
 | `AEE_MEDIA_CONNECT_FAILED` | Media 不可用 | 检查媒体服务 |
 | `STREAM_RELEASE_UNCONFIRMED` | 单路释放 ACK 未确认 | 保留 survivor，检查客户端日志 |
 | `AEE_DISCONNECT_FAILED` | 上游释放未确认 | 禁用 realtime 并检查残留连接 |
+| `audio_open_failed` | 接收音频未建立 | 保持视频，关闭音频后重试 |
+| `audio_release_failed` | 音频释放未确认 | 结束 session 并确认连接回落 |
+| `screenshot_failed` | 浏览器本地截图失败 | 确认画面 PLAYING 后重试 |
 
 ## 5. AEE 不可用时
 
@@ -68,6 +76,9 @@ session 进入 `FAILED` 或 `DEGRADED`。不要通过高频刷新 health 主动�
 4. 确认 `/api/v2/realtime` 返回 feature disabled。
 
 本仓库 RC 默认即为关闭状态。
+
+Audio 即使已验证也保持 `CHA_V2_FEATURE_REALTIME_AUDIO=false`，只有在独立
+发布审批后才允许对 Canary 用户开启。
 
 ## 7. 确认资源释放
 
@@ -106,3 +117,17 @@ session 进入 `FAILED` 或 `DEGRADED`。不要通过高频刷新 health 主动�
 - 原始服务器环境文件。
 
 对外只提供 CHA `request_id`、内部 `error_code` 和脱敏后的处理结论。
+
+## 10. Canary 方案
+
+1. 只选择极少量内部测试用户，保留旧系统入口。
+2. 先部署候选 release，但保持 realtime/audio 开关关闭。
+3. 验证 liveness、readiness、realtime health 和 diagnostics。
+4. 经审批后只开启 realtime；最大路数保持 6，不测试 9 路。
+5. 视频稳定后再单独审批 audio Canary。
+6. 观察 session/stream、Gateway/Media、first-frame、release、login latency。
+
+以下任一情况立即中止：资源不能释放；Gateway/Media 持续增长；首帧超时或
+AEE 登录异常明显增长；页面持续错误；明确内存泄漏；owner 隔离失败；Token
+泄漏；旧系统受影响；业务设备异常。中止时先关闭 feature flag，再执行既定
+回滚。

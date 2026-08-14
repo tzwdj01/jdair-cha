@@ -1,5 +1,7 @@
 # M3.2B 正式 1/4 路实时视频监察
 
+> 历史阶段文档（archived）。M3 Final 已将真实验证上限提升为 6 路。
+
 版本：0.6.0
 
 构建：`m3-four-grid-realtime`

@@ -3,7 +3,8 @@ set -Eeuo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 rollback_script="${script_dir}/rollback-v2.sh"
-result_path="${1:-m3-rc-rollback-result.json}"
+result_path="${1:-m3-final-rc-rollback-result.json}"
+package="${2:-mature-modernization/jdair-cha-v2-m3-final-rc.tar.gz}"
 work_root="$(mktemp -d -t cha-m3-rollback-XXXXXX)"
 trap 'rm -rf "$work_root"' EXIT
 
@@ -12,17 +13,18 @@ releases="${v2_root}/releases"
 current="${v2_root}/current"
 env_file="${work_root}/etc/v2.env"
 env_backup="${work_root}/backup/v2.env"
-previous="${releases}/0.6.0-m3-four-grid-realtime"
-candidate="${releases}/0.7.0-m3-realtime-rc"
+previous="${releases}/0.7.0-m3-realtime-rc"
+candidate="${releases}/0.8.0-m3-final-rc"
 
 mkdir -p "$previous" "$candidate" "$(dirname "$env_file")" \
   "$(dirname "$env_backup")"
-printf '0.6.0\n' > "$previous/VERSION"
-printf 'm3-four-grid-realtime\n' > "$previous/BUILD"
+test -s "$package"
+tar -tzf "$package" >/dev/null
+printf '0.7.0\n' > "$previous/VERSION"
+printf 'm3-realtime-rc\n' > "$previous/BUILD"
 printf 'CHA_V2_FEATURE_REALTIME_READONLY=false\nSTABLE=1\n' > "$env_file"
 cp "$env_file" "$env_backup"
-printf '0.7.0\n' > "$candidate/VERSION"
-printf 'm3-realtime-rc\n' > "$candidate/BUILD"
+tar -xzf "$package" -C "$candidate"
 printf 'CHA_V2_FEATURE_REALTIME_READONLY=false\nRC=1\n' \
   > "${work_root}/candidate.env"
 
@@ -32,8 +34,8 @@ before_env_sha="$(sha256sum "$env_file" | cut -d' ' -f1)"
 
 ln -sfn "$candidate" "$current"
 install -m 0600 "${work_root}/candidate.env" "$env_file"
-test "$(tr -d '\r\n[:space:]' < "$current/VERSION")" = "0.7.0"
-test "$(tr -d '\r\n[:space:]' < "$current/BUILD")" = "m3-realtime-rc"
+test "$(tr -d '\r\n[:space:]' < "$current/VERSION")" = "0.8.0"
+test "$(tr -d '\r\n[:space:]' < "$current/BUILD")" = "m3-final-rc"
 grep -q '^CHA_V2_FEATURE_REALTIME_READONLY=false$' "$env_file"
 
 CHA_V2_ROOT="$v2_root" \
@@ -50,8 +52,8 @@ build="$(tr -d '\r\n[:space:]' < "$current/BUILD")"
 
 test "$after_target" = "$before_target"
 test "$after_env_sha" = "$before_env_sha"
-test "$version" = "0.6.0"
-test "$build" = "m3-four-grid-realtime"
+test "$version" = "0.7.0"
+test "$build" = "m3-realtime-rc"
 grep -q '^CHA_V2_FEATURE_REALTIME_READONLY=false$' "$env_file"
 
 python3 - "$result_path" "$before_target" "$after_target" \

@@ -34,3 +34,7 @@ venv
 **/m3-rc-manifest.json
 **/m3-rc-rollback-result.json
 **/m3-rc-package-test-result.json
+**/m3-final-rc-manifest.json
+**/m3-final-rc-rollback-result.json
+**/m3-final-rc-package-result.json
+**/m3-final-rc-package-test-result.json

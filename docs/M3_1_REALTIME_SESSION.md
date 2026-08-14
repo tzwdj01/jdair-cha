@@ -1,5 +1,8 @@
 # M3.1 单路实时视频会话
 
+> 历史阶段文档（archived）。最终生产边界以
+> `M3_REALTIME_ARCHITECTURE.md` 和 `M3_FINAL_VALIDATION_REPORT.md` 为准。
+
 ## 链路与分层
 
 M3.1 继续复用已验证的 AEE 原生链路：
