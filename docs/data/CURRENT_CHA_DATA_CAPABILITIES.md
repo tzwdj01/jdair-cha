@@ -63,10 +63,10 @@ RealtimeSessionManager
 The current V2 Dashboard is predominantly a read-only aggregation layer over
 Legacy. It is not yet an independent long-term data asset.
 
-The first M4 deterministic aggregation foundation now exists under
-`mature-modernization/v2/app/data`. It is deliberately isolated from network,
-database and API concerns and therefore does not yet change production data
-flow.
+The first M4 deterministic aggregation and read-only transport foundations now
+exist under `mature-modernization/v2/app/data`. They are deliberately isolated
+from API, scheduler and database concerns and therefore do not yet change
+production data flow.
 
 ## 3. Authentication and user identity
 
@@ -391,11 +391,24 @@ Verification:
 * eight focused unit tests cover sorting, deduplication, report-window
   clipping, pre-window state, missing state, conflicts, raw units and partial
   results;
-* the current complete V2 backend suite passes `81 tests`.
+* six focused transport tests cover the exact GET allowlist, custom `token`
+  header, query encoding, bounded 401 retry, 403 handling, token redaction,
+  response validation and base-URL hardening;
+* the current complete V2 backend suite passes `88 tests`.
+
+Implemented read-only transport boundary:
+
+* `AEEDataHTTPClient` accepts only the evidenced Class A GET paths;
+* login/token ownership is injected and remains server-side;
+* a 401 can invalidate an in-memory token and retry once;
+* 403 and transport/JSON failures are mapped to bounded CHA-owned errors;
+* no username, password, Cookie, token value or browser storage is read by the
+  transport.
 
 Not implemented by this foundation:
 
-* AEE HTTP authentication or a production AEE data Adapter;
+* login ownership, token lifetime/refresh or a complete production AEE data
+  Adapter;
 * PostgreSQL schema, migrations or repository;
 * ingestion scheduling or checkpoints;
 * API routes or Dashboard pages;
@@ -454,6 +467,6 @@ Required M4 improvements:
 7. No production-ready PostgreSQL migrations or repository.
 8. Multi-page M4 Dashboard information architecture is documented, but the
    APIs and pages are not implemented.
-9. The authenticated transport and lifetime for AEE `/api/v1/*` data requests
-   have not yet been legally evidenced; implementation must not guess an
-   Authorization scheme.
+9. The custom `token` request header is static-evidenced and implemented as an
+   injected server-side transport boundary, but token-only live sufficiency,
+   token lifetime and refresh behavior remain unverified.

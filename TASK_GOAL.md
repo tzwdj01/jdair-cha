@@ -118,8 +118,13 @@ Last updated: 2026-08-15
   `a56baee docs: activate M4 inspection data center`。
 * 当前 M4 分支已增加纯 Python、无网络/数据库副作用的确定性聚合基础：
   AEE-style 设备状态 transition 的区间截断在线时长，以及
-  `RecordFileList` 原始单位文件统计；当前全量 V2 自动化回归为
-  `81 tests PASS`。
+  `RecordFileList` 原始单位文件统计。
+* 当前 AEE 静态代码已确认 `/api/v1/auth/Token` 的 `access_token` 被数据请求
+  helper 作为自定义 `token` HTTP header 使用；未读取或记录实际 Token。
+* 已增加只读 `AEEDataHTTPClient` 基础：精确 GET allowlist、注入式服务端
+  token provider、401 invalidate 后单次重试和 CHA-owned bounded errors。
+  它尚未连接登录、API、scheduler、数据库或生产配置。
+* 当前全量 V2 自动化回归为 `88 tests PASS`。
 * 当前开发机没有 Docker、PostgreSQL client/server、`pg_dump` 或
   `pg_restore`。因此不能在此环境宣称 PostgreSQL migration、backup 或 restore
   rehearsal 已完成。
@@ -664,6 +669,8 @@ Commit 应按逻辑阶段组织。
     quality flag 暴露，不静默转换为可信数据。
 * 上述聚合目前只有应用层 contracts、纯函数和单元测试；尚未连接 AEE HTTP
   Adapter、PostgreSQL repository、API 或 Dashboard。
+* 已增加窄 AEE read-only HTTP transport；它不拥有账号密码、不读取浏览器存储，
+  也不向前端暴露 Token。完整 data Adapter 的 login/token lifecycle 仍未完成。
 
 ## M4 AEE Evidence
 
@@ -699,6 +706,13 @@ Commit 应按逻辑阶段组织。
   因此当前不得直接照搬 AEE 浏览器算法。
 * 上述证据均未记录 Cookie、Authorization、密码、可复用 Token、私有媒体 URL
   或未脱敏业务行。
+* 当前 AEE bundle 静态确认：
+  * `/api/v1/auth/Token` 返回的 `access_token` 被保存到 session-scoped browser
+    state；
+  * AEE 数据请求 helper 把该值放入自定义 HTTP `token` header；
+  * 当前未发现 `Authorization: Bearer` 数据接口约定或显式 refresh contract。
+* live 页面请求与上述 helper 一致，但浏览器 same-origin session state 是否也是
+  服务端数据请求的必要条件、Token 生命周期和 401 后刷新方式仍需验证。
 
 ## M4 Classification
 
@@ -713,8 +727,9 @@ Commit 应按逻辑阶段组织。
   PostgreSQL ingestion、统计 API 和 Dashboard。
 * 聚合逻辑先以纯函数和脱敏 fixture 固化，避免在 AEE HTTP 认证和 PostgreSQL
   生命周期尚未验证时把网络、持久化与业务统计耦合。
-* AEE `/api/v1/*` 数据接口的浏览器认证传递方式、Token/Cookie 性质和生命周期
-  尚未形成合法证据；在确认前不得猜测或硬编码 `Authorization: Bearer`。
+* AEE `/api/v1/*` 数据接口的自定义 `token` header 已有静态证据；不得改用未经
+  证实的 `Authorization: Bearer`。Token-only live sufficiency、Cookie dependency、
+  生命周期和 refresh 仍需验证。
 * PostgreSQL migration/repository 实现必须等到可用的隔离 PostgreSQL 环境和
   migration/backup/restore 工具链就绪；不得以 SQLite 或未演练的 SQL 替代
   PostgreSQL 验收。
@@ -1103,21 +1118,23 @@ M4 Done Criteria：
   记录。
 * 已实现并测试确定性设备在线时长和文件统计聚合基础：
   `mature-modernization/v2/app/data/metrics.py`；
-  当前全量 V2 回归 `81 tests PASS`。
+* 已实现并测试只读 AEE HTTP transport foundation：
+  `mature-modernization/v2/app/data/aee_http.py`；
+* 当前全量 V2 回归 `88 tests PASS`。
 
 ## In Progress
 
 * `ACTIVE MILESTONE: M4`。
 * 正在把已验证的 AEE/CHA 字段语义固化为窄 contracts 和确定性统计边界。
-* 正在补齐 AEE HTTP 数据接口认证传递方式、device online status map、
-  alarm lifecycle、media code maps 和用户活动数据证据。
+* 正在补齐 AEE HTTP Token-only sufficiency/lifecycle、device online status
+  map、alarm lifecycle、media code maps 和用户活动数据证据。
 * 正在准备 PostgreSQL repository/migration 的隔离运行条件；当前尚未开始
   production 或本地假替代 migration。
 
 ## Next
 
-1. 通过合法、只读的浏览器 Network/static evidence 确认 AEE `/api/v1/*`
-   数据接口的认证传递方式、凭据性质和生命周期；不得读取或固化 Cookie/Token。
+1. 使用服务端临时内存 Token 完成最小、只读、脱敏的 token-only 请求验证，
+   确认是否还依赖 Cookie、401 行为和登录/刷新频率；不得输出或持久化 Token。
 2. 捕获 `/api/v1/DevOnlineList` 脱敏 raw response，验证非 1 status map、
    ordering、duplicate、retention、分页和查询边界。
 3. 完成 AlarmList alarm/status/deal code map、生命周期、删除语义和 retention
@@ -1140,8 +1157,9 @@ M4 Done Criteria：
 * 当前开发机缺少 Docker/PostgreSQL、`psql`、`pg_dump` 和 `pg_restore`；
   因此隔离 PostgreSQL migration/backup/restore rehearsal 在该环境
   `BLOCKED`。这不阻塞纯 contracts、normalizer、fixture 和无数据库单元测试。
-* 正式 AEE 数据 Adapter 在认证传递方式和凭据生命周期形成合法证据前
-  `BLOCKED`；不得猜测 Bearer header 或让浏览器长期持有 AEE 凭据。
+* 正式 AEE 数据 Adapter 的登录所有权、Token-only live sufficiency、生命周期
+  和刷新策略在形成合法证据前 `BLOCKED`。只读 HTTP transport 和无网络
+  normalizer 不受此阻塞；不得猜测 Bearer header 或让浏览器长期持有 AEE 凭据。
 
 ## AEE Verification Required
 
@@ -1157,7 +1175,8 @@ M4 Done Criteria：
 * AEE 用户使用数据：
   login/logout、session、last active、访问设备、Realtime 监察记录和观看时长。
 * AEE `/api/v1/*` 数据 API 认证边界：
-  请求实际使用的认证载体、是否与 Realtime access token 相同、有效期、刷新方式、
+  custom `token` header 已静态确认；仍需确认 token-only live sufficiency、
+  是否还依赖 Cookie、是否与 Realtime access token 完全同源、有效期、刷新方式、
   服务端最小暴露方案，以及失败时的状态码/错误模型。只记录脱敏结论，不记录
   Cookie、Authorization、密码或可复用 Token。
 * AEE 告警剩余语义：

@@ -23,7 +23,7 @@ CHA UI template or production runtime dependency.
 
 | Domain | AEE capability | Evidence | Classification | CHA status | M4 recommendation |
 | --- | --- | --- | --- | --- | --- |
-| authentication | authenticated AEE user and permission list | LIVE VERIFIED | Class A | server-side AEE credentials exist for Realtime only | investigate data scopes without exposing credentials |
+| authentication | `/api/v1/auth/Token` access token; AEE data helper sends it in custom `token` header | LIVE page requests + STATIC transport evidence | Class A | M3 server-side login exists; M4 read-only HTTP transport foundation added, not wired | verify token-only server call, lifetime and refresh without exposing credentials |
 | permissions | `VIDEOMONITOR` controls device drag/play access | LIVE VERIFIED | Class A | Canary isolation is CHA-owned | catalog required permissions per read-only data capability |
 | device tree | device ID/name, online/status, alarm, GPS, network/storage projections | LIVE VERIFIED through `/api/v1/ext/DevTree`, fields partial | Class A | CHA devices expose a subset | build normalized read-only adapter after code-map and refresh semantics are captured |
 | device groups | group/tree organization | LIVE VERIFIED through `/api/v1/ext/DevTree`, semantics partial | Class A | CHA exposes maintenance group name/ID | catalog hierarchy and stable identifiers |
@@ -79,6 +79,12 @@ CHA UI template or production runtime dependency.
   until a source event or supported history interface is verified.
 * AEE page-private state, private routing and page-global media glue remain
   Class D.
+* Current static code links `/api/v1/auth/Token` `access_token` directly to the
+  custom `token` header used by `/api/v1/*` data requests. This disproves the
+  earlier unverified Bearer-header assumption.
+* The current browser may also send same-origin session state. Token-only
+  sufficiency, access-token lifetime and refresh behavior still require a
+  sanitized server-side integration check.
 
 ## AEE verification required
 
@@ -94,3 +100,5 @@ sanitized Network/WebSocket observation:
 * alarm lifecycle/code maps, retention, deletion semantics and permissions;
 * user activity/session endpoint and privacy restrictions;
 * pagination/rate limits and supported server-side integration boundary.
+* token-only server-side access to each required read-only path, token
+  lifetime, 401 behavior and refresh/login frequency.

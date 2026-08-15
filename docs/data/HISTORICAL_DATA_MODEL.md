@@ -28,23 +28,30 @@ Implemented and covered by unit tests:
   seconds and bytes;
 * explicit quality flags for missing start state, provisional status mapping,
   conflicting or duplicate events, invalid values and partial/truncated
-  result sets.
+  result sets;
+* a narrow, server-side, read-only AEE HTTP transport using the static-evidenced
+  custom `token` header, exact endpoint allowlisting, bounded errors and one
+  401-driven token invalidation/retry.
 
 The implementation is in:
 
 * `mature-modernization/v2/app/data/metrics.py`;
+* `mature-modernization/v2/app/data/aee_http.py`;
 * `mature-modernization/v2/tests/test_data_metrics.py`.
+* `mature-modernization/v2/tests/test_aee_data_http.py`.
 
 Not yet implemented:
 
-* authenticated AEE HTTP data Adapter;
+* AEE login/token owner, token lifetime/refresh policy and a complete
+  authenticated data Adapter;
 * PostgreSQL tables, repository or migration tooling;
 * ingestion checkpoints and retry behavior;
 * M4 data APIs and Dashboard pages.
 
-This boundary is intentional. The AEE data-interface authentication transport
-and an isolated PostgreSQL migration/backup/restore environment must be
-verified before those layers are coupled to the aggregation rules.
+This boundary is intentional. Static evidence confirms the custom `token`
+header, but token-only live sufficiency, lifetime and refresh are still
+unverified. Those items and an isolated PostgreSQL migration/backup/restore
+environment must be verified before ingestion is enabled.
 
 ## 2. Common metadata
 

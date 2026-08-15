@@ -26,6 +26,42 @@ An interface found only in CHA Legacy is labeled accordingly. It must not be
 claimed as an AEE page interface until the AEE page is observed using it or
 upstream documentation confirms it.
 
+## HTTP data authentication boundary
+
+Current sanitized evidence:
+
+| Item | Evidence |
+| --- | --- |
+| Login endpoint | `/api/v1/auth/Token`, already used by the server-side M3 AEE Adapter and `STATIC VERIFIED` in the current AEE bundle |
+| Login output | response `access_token`; no value was read or recorded |
+| Browser storage | current AEE code places the access token in session-scoped browser state |
+| Data request header | current AEE request helper initializes a custom HTTP header named `token` from that session-scoped access token |
+| Live correlation | authorized DevTree, RecordFileList, AlarmList and DevOnlineList page requests succeeded through the same helper |
+| 401 behavior | the current page has bounded HTTP error handling; an explicit token-refresh contract was not found |
+| Token lifetime | `AEE VERIFICATION REQUIRED` |
+| Cookie dependency | same-origin browser requests may also carry browser session state; token-only server integration is not yet live-isolated |
+
+Security conclusion:
+
+* the AEE data API does **not** use an evidenced
+  `Authorization: Bearer <token>` contract;
+* CHA must use a server-side token provider and the evidenced custom `token`
+  header;
+* token values, browser storage and credentials must never be returned to the
+  CHA browser, logged or committed;
+* a token-only, read-only live integration check is still required before
+  enabling ingestion.
+
+CHA implementation status:
+
+* `AEEDataHTTPClient` now provides an exact GET allowlist, injected in-memory
+  token provider, bounded CHA error codes and one retry after a 401-driven
+  token invalidation;
+* it contains no username/password login logic and is not connected to an API,
+  scheduler, database or production configuration;
+* login ownership, token lifetime and refresh remain separate evidence-gated
+  work.
+
 ## Confirmed interfaces
 
 ### AEE device tree
