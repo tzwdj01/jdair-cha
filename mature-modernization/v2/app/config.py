@@ -119,6 +119,7 @@ class Settings:
     feature_account_pool_v2: bool
     feature_records_v2: bool
     feature_inspection_v2: bool
+    inspection_store_mode: str
 
     def realtime_aee_is_configured(self) -> bool:
         return bool(
@@ -314,6 +315,10 @@ class Settings:
             feature_inspection_v2=env_bool(
                 "CHA_V2_FEATURE_INSPECTION_V2"
             ),
+            inspection_store_mode=os.getenv(
+                "CHA_V2_INSPECTION_STORE_MODE",
+                "",
+            ).strip(),
         )
 
     def public_features(self) -> dict[str, bool]:

@@ -14,6 +14,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 
 from .api.inspection import create_inspection_router
 from .config import Settings
+from .data.store import StoreViewEventSink
 from .realtime.api import create_realtime_router
 from .realtime.session_manager import RealtimeSessionManager
 from .services.dashboard import (
@@ -25,6 +26,8 @@ from .services.legacy import (
     LegacyClient,
     LegacyTransportError,
 )
+from .services.inspection import InspectionDataService
+from .services.store_factory import build_inspection_store
 
 
 UTC = dt.timezone.utc
@@ -39,12 +42,24 @@ started_at = dt.datetime.now(UTC)
 dashboard_template_path = (
     Path(__file__).resolve().parent / "templates" / "m2_dashboard.html"
 )
-realtime_manager = RealtimeSessionManager(settings)
-# No durable InspectionStore is wired in this release. The inspection API is
-# registered so its availability state is explicit: feature flag off returns
-# feature_disabled, flag on returns store_not_configured until a durable store
-# (or an explicitly approved development store) is provided.
-inspection_service = None
+# The inspection store is optional. Production always returns None until a
+# durable PostgreSQL store is wired and rehearsed. A non-production deployment
+# may explicitly request the process-local memory store for local testing.
+inspection_store = build_inspection_store(settings)
+view_event_sink = (
+    StoreViewEventSink(inspection_store)
+    if inspection_store is not None
+    else None
+)
+realtime_manager = RealtimeSessionManager(
+    settings,
+    view_event_sink=view_event_sink,
+)
+inspection_service = (
+    InspectionDataService(inspection_store)
+    if inspection_store is not None
+    else None
+)
 
 
 def iso_now() -> str:

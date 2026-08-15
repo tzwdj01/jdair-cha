@@ -65,6 +65,12 @@ The realtime inspection endpoint also returns the current runtime snapshot
 (active sessions/streams, Gateway/Media connections) when the realtime session
 manager is wired; runtime state stays separate from durable history.
 
+For local development/testing only, a non-production deployment may set
+`CHA_V2_INSPECTION_STORE_MODE=memory` to wire the process-local memory store
+end-to-end (realtime view sink → store → inspection service → API → pages).
+The memory store loses history on restart and is never enabled in production;
+production keeps this empty until a durable PostgreSQL store is rehearsed.
+
 The legacy page and every legacy `/api/*` contract remain unchanged.
 
 The committed release keeps `realtime_readonly=false`. A development or test

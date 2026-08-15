@@ -599,7 +599,12 @@ Implemented durable store seam:
   sessions/streams, Gateway/Media connections) when a realtime session manager
   is wired; runtime state is kept separate from store history and is `null`
   when no manager is provided;
-* thirty repository/sink/service/API/page tests cover roundtrip, scope
+* non-production deployments may opt into the process-local memory store via
+  `CHA_V2_INSPECTION_STORE_MODE=memory`; when enabled, the realtime view sink,
+  inspection service and API are wired end-to-end so the pages show real
+  forward-only CHA usage history; production always returns no store and the
+  feature stays honest (“数据源未接入/待验证”);
+* thirty-four repository/sink/service/API/page tests cover roundtrip, scope
   filtering,
   latest-wins, media append/upsert, first-wins behavior, the
   manager-to-store write path, page-oriented overviews, the HTTP API and page
