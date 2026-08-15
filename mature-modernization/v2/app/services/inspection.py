@@ -59,6 +59,13 @@ class MediaGroupMetric:
 
 
 @dataclass(frozen=True, slots=True)
+class DeviceThresholdHit:
+    device_id: str
+    reference_at: dt.datetime
+    age_seconds: float
+
+
+@dataclass(frozen=True, slots=True)
 class DeviceOverview:
     generated_at: dt.datetime
     scope_start: dt.datetime
@@ -78,6 +85,8 @@ class MediaOverview:
     scope_end: dt.datetime
     media: MediaAggregationResult
     groups: tuple[MediaGroupMetric, ...]
+    long_no_upload_devices: tuple[DeviceThresholdHit, ...]
+    long_no_upload_governed: bool
     latest_uploaded_at: dt.datetime | None
     latest_created_at: dt.datetime | None
     daily_counts: tuple[tuple[str, int], ...]
@@ -105,6 +114,8 @@ class LocationOverview:
     scope_start: dt.datetime
     scope_end: dt.datetime
     aggregation: DeviceLocationAggregationResult
+    stale_location_devices: tuple[DeviceThresholdHit, ...]
+    stale_location_governed: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -167,9 +178,11 @@ class InspectionDataService:
         self,
         store: InspectionStore,
         business_timezone: dt.tzinfo = SHANGHAI,
+        thresholds: Mapping[str, float] | None = None,
     ) -> None:
         self._store = store
         self._business_tz = business_timezone
+        self._thresholds = dict(thresholds or {})
 
     async def device_overview(
         self,
@@ -225,6 +238,7 @@ class InspectionDataService:
         start: dt.datetime,
         end: dt.datetime,
         device_ids: Iterable[str] | None = None,
+        as_of: dt.datetime | None = None,
     ) -> MediaOverview:
         files = await self._store.fetch_media_files(
             start=start,
@@ -251,12 +265,42 @@ class InspectionDataService:
             ),
             default=None,
         )
+        as_of_utc = _aware(as_of).astimezone(UTC) if as_of else dt.datetime.now(UTC)
+        long_no_upload_hours = self._thresholds.get(
+            "long_no_upload_hours"
+        )
+        governed = long_no_upload_hours is not None
+        hits: list[DeviceThresholdHit] = []
+        if governed:
+            latest_upload_by_device: dict[str, dt.datetime] = {}
+            for item in files:
+                if item.uploaded_at_source is None:
+                    continue
+                uploaded = item.uploaded_at_source.astimezone(UTC)
+                previous = latest_upload_by_device.get(item.device_id)
+                if previous is None or uploaded > previous:
+                    latest_upload_by_device[item.device_id] = uploaded
+            threshold_seconds = long_no_upload_hours * 3600
+            for device_id, last_uploaded in sorted(
+                latest_upload_by_device.items()
+            ):
+                age = (as_of_utc - last_uploaded).total_seconds()
+                if age > threshold_seconds:
+                    hits.append(
+                        DeviceThresholdHit(
+                            device_id=device_id,
+                            reference_at=last_uploaded,
+                            age_seconds=round(age, 3),
+                        )
+                    )
         return MediaOverview(
             generated_at=dt.datetime.now(UTC),
             scope_start=_aware(start).astimezone(UTC),
             scope_end=_aware(end).astimezone(UTC),
             media=media,
             groups=_media_groups(files),
+            long_no_upload_devices=tuple(hits),
+            long_no_upload_governed=governed,
             latest_uploaded_at=(
                 latest_uploaded.astimezone(UTC)
                 if latest_uploaded is not None
@@ -319,21 +363,43 @@ class InspectionDataService:
         start: dt.datetime,
         end: dt.datetime,
         device_ids: Iterable[str] | None = None,
+        as_of: dt.datetime | None = None,
     ) -> LocationOverview:
         events = await self._store.fetch_device_location_events(
             start=start,
             end=end,
             device_ids=device_ids,
         )
+        aggregation = aggregate_device_locations(
+            events,
+            window_start=start,
+            window_end=end,
+        )
+        as_of_utc = _aware(as_of).astimezone(UTC) if as_of else dt.datetime.now(UTC)
+        stale_location_hours = self._thresholds.get(
+            "stale_location_hours"
+        )
+        governed = stale_location_hours is not None
+        hits: list[DeviceThresholdHit] = []
+        if governed:
+            threshold_seconds = stale_location_hours * 3600
+            for metric in aggregation.devices:
+                age = (as_of_utc - metric.last_gps_at).total_seconds()
+                if age > threshold_seconds:
+                    hits.append(
+                        DeviceThresholdHit(
+                            device_id=metric.device_id,
+                            reference_at=metric.last_gps_at,
+                            age_seconds=round(age, 3),
+                        )
+                    )
         return LocationOverview(
             generated_at=dt.datetime.now(UTC),
             scope_start=_aware(start).astimezone(UTC),
             scope_end=_aware(end).astimezone(UTC),
-            aggregation=aggregate_device_locations(
-                events,
-                window_start=start,
-                window_end=end,
-            ),
+            aggregation=aggregation,
+            stale_location_devices=tuple(hits),
+            stale_location_governed=governed,
         )
 
     async def device_timeline(

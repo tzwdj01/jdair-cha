@@ -277,6 +277,137 @@ class InspectionDataServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(g2.image_count, 1)
         self.assertEqual(g2.file_size_bytes, 1024)
 
+    async def test_media_long_no_upload_governed_threshold(self) -> None:
+        service = InspectionDataService(
+            self.store,
+            thresholds={"long_no_upload_hours": 1},
+        )
+        await self.store.upsert_media_files(
+            normalize_media_files(
+                [
+                    {
+                        "id": "file-1",
+                        "devId": "WX1",
+                        "fType": 3,
+                        "uploadTime": "2026-08-15 00:15:00+00:00",
+                        "startTime": "2026-08-15 00:10:00+00:00",
+                    },
+                    {
+                        "id": "file-2",
+                        "devId": "WX2",
+                        "fType": 3,
+                        "uploadTime": "2026-08-15 01:00:00+00:00",
+                        "startTime": "2026-08-15 00:50:00+00:00",
+                    },
+                ],
+                source_timezone=UTC,
+                observed_at=dt.datetime(2026, 8, 15, 1, 0, 2, tzinfo=UTC),
+                ingested_at=dt.datetime(
+                    2026,
+                    8,
+                    15,
+                    1,
+                    0,
+                    3,
+                    tzinfo=UTC,
+                ),
+            ).files
+        )
+
+        overview = await service.media_overview(
+            start=self.start,
+            end=self.end,
+            as_of=dt.datetime(2026, 8, 15, 1, 30, tzinfo=UTC),
+        )
+
+        self.assertTrue(overview.long_no_upload_governed)
+        hits = {
+            item.device_id: item
+            for item in overview.long_no_upload_devices
+        }
+        self.assertEqual(set(hits), {"WX1"})
+        self.assertEqual(hits["WX1"].age_seconds, 4500)
+
+    async def test_media_long_no_upload_not_governed_by_default(self) -> None:
+        await self.store.upsert_media_files(
+            normalize_media_files(
+                [
+                    {
+                        "id": "file-1",
+                        "devId": "WX1",
+                        "fType": 3,
+                        "uploadTime": "2026-08-15 00:15:00+00:00",
+                        "startTime": "2026-08-15 00:10:00+00:00",
+                    }
+                ],
+                source_timezone=UTC,
+                observed_at=dt.datetime(2026, 8, 15, 1, tzinfo=UTC),
+                ingested_at=dt.datetime(
+                    2026,
+                    8,
+                    15,
+                    1,
+                    0,
+                    1,
+                    tzinfo=UTC,
+                ),
+            ).files
+        )
+
+        overview = await self.service.media_overview(
+            start=self.start,
+            end=self.end,
+            as_of=dt.datetime(2026, 8, 15, 2, tzinfo=UTC),
+        )
+
+        self.assertFalse(overview.long_no_upload_governed)
+        self.assertEqual(overview.long_no_upload_devices, ())
+
+    async def test_location_stale_governed_threshold(self) -> None:
+        service = InspectionDataService(
+            self.store,
+            thresholds={"stale_location_hours": 1},
+        )
+        await self.store.upsert_device_location_events(
+            normalize_device_location_events(
+                [
+                    {
+                        "lat": 39.9,
+                        "lng": 116.4,
+                        "gpsTime": "2026-08-15 00:20:00+00:00",
+                    }
+                ],
+                device_id="WX1",
+                source_timezone=UTC,
+                observed_at=dt.datetime(2026, 8, 15, 1, tzinfo=UTC),
+                ingested_at=dt.datetime(
+                    2026,
+                    8,
+                    15,
+                    1,
+                    0,
+                    1,
+                    tzinfo=UTC,
+                ),
+            ).events
+        )
+
+        overview = await service.location_overview(
+            start=self.start,
+            end=self.end,
+            as_of=dt.datetime(2026, 8, 15, 2, tzinfo=UTC),
+        )
+
+        self.assertTrue(overview.stale_location_governed)
+        self.assertEqual(
+            {item.device_id for item in overview.stale_location_devices},
+            {"WX1"},
+        )
+        self.assertEqual(
+            overview.stale_location_devices[0].age_seconds,
+            6000,
+        )
+
     async def test_realtime_overview_reports_usage_history(self) -> None:
         await self.store.upsert_realtime_view_events(
             (

@@ -306,6 +306,11 @@
       const daily = (overview.daily_counts || []).map((pair) =>
         `<tr><td>${esc(pair[0])}</td><td>${esc(pair[1])}</td></tr>`
       ).join("");
+      const longNoUploadRows = (overview.long_no_upload_devices || []).map((item) => `<tr>
+        <td>${esc(item.device_id)}</td>
+        <td>${esc(item.reference_at)}</td>
+        <td>${esc(item.age_seconds)}s</td>
+      </tr>`).join("");
       byId("content").innerHTML =
         '<div class="grid">' +
         metric(media.fetched_count == null ? "--" : media.fetched_count, "范围内文件数") +
@@ -323,6 +328,12 @@
         '<div class="card"><h2>按日上传趋势</h2>' +
         (daily ? '<table><thead><tr><th>日期</th><th>数量</th></tr></thead><tbody>' + daily + '</tbody></table>'
           : '<div class="empty">暂无可展示的每日趋势。</div>') +
+        '</div>' +
+        '<div class="card"><h2>长时间未上传设备</h2>' +
+        (longNoUploadRows ? '<table><thead><tr><th>设备</th><th>最近上传</th><th>已间隔</th></tr></thead><tbody>' + longNoUploadRows + '</tbody></table>'
+          : (overview.long_no_upload_governed
+            ? '<div class="empty">当前无超过受治理阈值的设备。</div>'
+            : '<div class="empty">未配置受治理阈值（CHA_V2_INSPECTION_THRESHOLDS），不产出该分类。</div>')) +
         '</div>' +
         '<div class="empty">说明：“长时间未上传”等需要治理阈值的分类暂不产出。</div>';
     }

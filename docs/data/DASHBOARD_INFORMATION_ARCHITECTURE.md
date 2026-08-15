@@ -201,6 +201,11 @@ The group dimension uses the source `group_id` (department/division key) and
 provides the `部门/分组 → 设备` drill-down level; `city` remains a derived
 value that is not produced until a governed geocoding/coordinate policy exists.
 
+Threshold-based labels are governed by `CHA_V2_INSPECTION_THRESHOLDS`:
+`long_no_upload_hours` (media) and `stale_location_hours` (locations) produce
+hits only when configured; otherwise raw coverage/age values are shown and no
+label is invented. “长时间离线” waits for the non-1 status map to be verified.
+
 ### 5.2 Read-only inspection API
 
 `app/api/inspection.py` exposes the service over HTTP under

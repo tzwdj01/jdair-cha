@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 from dataclasses import dataclass
 from pathlib import Path
@@ -45,6 +46,36 @@ def env_int(name: str, default: int) -> int:
     except ValueError:
         return default
     return value if value > 0 else default
+
+
+def env_positive_float_map(
+    name: str,
+    default: dict[str, float] | None = None,
+) -> dict[str, float]:
+    """Parse a JSON object of positive floats (governed thresholds).
+
+    Invalid JSON, non-numeric or non-positive values are dropped; the result
+    only contains usable thresholds. This keeps classification conservative:
+    without a configured threshold no threshold-based label is produced.
+    """
+
+    raw = os.getenv(name)
+    if not raw or not raw.strip():
+        return dict(default or {})
+    try:
+        data = json.loads(raw)
+    except (TypeError, ValueError):
+        return dict(default or {})
+    if not isinstance(data, dict):
+        return dict(default or {})
+    result: dict[str, float] = {}
+    for key, value in data.items():
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            continue
+        number = float(value)
+        if number > 0:
+            result[str(key).strip()] = number
+    return result
 
 
 def normalize_base_url(value: str) -> str:
@@ -120,6 +151,7 @@ class Settings:
     feature_records_v2: bool
     feature_inspection_v2: bool
     inspection_store_mode: str
+    inspection_thresholds: dict[str, float]
 
     def realtime_aee_is_configured(self) -> bool:
         return bool(
@@ -319,6 +351,9 @@ class Settings:
                 "CHA_V2_INSPECTION_STORE_MODE",
                 "",
             ).strip(),
+            inspection_thresholds=env_positive_float_map(
+                "CHA_V2_INSPECTION_THRESHOLDS"
+            ),
         )
 
     def public_features(self) -> dict[str, bool]:

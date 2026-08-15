@@ -617,10 +617,16 @@ Implemented durable store seam:
   with an explicit window and a source-agnostic `RowCollector` protocol; it is
   testable with fake collectors and never assumes AEE authentication, which
   remains an unverified prerequisite owned by the collector;
+* governed thresholds are read from `CHA_V2_INSPECTION_THRESHOLDS` (JSON of
+  positive numbers): `long_no_upload_hours` and `stale_location_hours` produce
+  per-device threshold hits only when configured, with an injectable `as_of`
+  for deterministic evaluation; without a configured threshold no label is
+  invented. “长时间离线” remains un-produced until the non-1 status map is
+  verified;
 * `docs/aee/AEE_DATA_VERIFICATION_RUNBOOK.md` turns the P0 conditional
   verification into concrete, lawful, sanitized observation steps with
   evidence templates;
-* forty-two repository/sink/service/API/page tests cover roundtrip, scope
+* forty-seven repository/sink/service/API/page tests cover roundtrip, scope
   filtering,
   latest-wins, media append/upsert, first-wins behavior, the
   manager-to-store write path, page-oriented overviews, the HTTP API and page

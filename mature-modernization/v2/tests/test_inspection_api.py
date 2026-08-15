@@ -352,6 +352,9 @@ class InspectionAPITests(unittest.IsolatedAsyncioTestCase):
             media_overview["devices"][0]["video_duration_seconds"],
             125,
         )
+        media_data = media.json()["data"]["overview"]
+        self.assertFalse(media_data["long_no_upload_governed"])
+        self.assertEqual(media_data["long_no_upload_devices"], [])
 
         realtime = await _request(
             app,

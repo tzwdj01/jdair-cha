@@ -4,7 +4,12 @@ import os
 import unittest
 from unittest.mock import patch
 
-from app.config import Settings, env_bool, normalize_base_url
+from app.config import (
+    Settings,
+    env_bool,
+    env_positive_float_map,
+    normalize_base_url,
+)
 
 
 class ConfigTests(unittest.TestCase):
@@ -137,6 +142,43 @@ class ConfigTests(unittest.TestCase):
         )
         with self.assertRaises(ValueError):
             normalize_base_url("file:///etc/passwd")
+
+    def test_positive_float_map_keeps_only_usable_thresholds(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "TEST_THRESHOLDS": (
+                    '{"long_no_upload_hours": 72, '
+                    '"stale_location_hours": 24, '
+                    '"bad": -5, "zero": 0, "bool": true}'
+                )
+            },
+            clear=False,
+        ):
+            values = env_positive_float_map("TEST_THRESHOLDS")
+        self.assertEqual(
+            values,
+            {
+                "long_no_upload_hours": 72.0,
+                "stale_location_hours": 24.0,
+            },
+        )
+
+    def test_positive_float_map_absent_or_invalid_is_empty(self) -> None:
+        with patch.dict(os.environ, {"TEST_THRESHOLDS": ""}, clear=False):
+            self.assertEqual(env_positive_float_map("TEST_THRESHOLDS"), {})
+        with patch.dict(
+            os.environ,
+            {"TEST_THRESHOLDS": "not-json"},
+            clear=False,
+        ):
+            self.assertEqual(env_positive_float_map("TEST_THRESHOLDS"), {})
+        with patch.dict(
+            os.environ,
+            {"TEST_THRESHOLDS": "[1,2]"},
+            clear=False,
+        ):
+            self.assertEqual(env_positive_float_map("TEST_THRESHOLDS"), {})
 
 
 if __name__ == "__main__":

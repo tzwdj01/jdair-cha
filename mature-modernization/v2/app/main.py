@@ -56,7 +56,10 @@ realtime_manager = RealtimeSessionManager(
     view_event_sink=view_event_sink,
 )
 inspection_service = (
-    InspectionDataService(inspection_store)
+    InspectionDataService(
+        inspection_store,
+        thresholds=settings.inspection_thresholds,
+    )
     if inspection_store is not None
     else None
 )

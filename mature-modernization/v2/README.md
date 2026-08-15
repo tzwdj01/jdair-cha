@@ -87,6 +87,11 @@ The data-quality diagnostic reports store coverage, freshness and quality
 flags per historical table plus source-system distribution; it reports only
 rows that actually exist and never infers missing data.
 
+Governed thresholds (`CHA_V2_INSPECTION_THRESHOLDS`, JSON of positive numbers)
+enable `long_no_upload_hours` and `stale_location_hours` classifications only
+when configured; without them raw coverage/age values are shown and no label
+is invented.
+
 The legacy page and every legacy `/api/*` contract remain unchanged.
 
 The committed release keeps `realtime_readonly=false`. A development or test

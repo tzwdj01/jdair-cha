@@ -197,6 +197,10 @@ Last updated: 2026-08-15
 * 已提供 AEE 数据取证 Runbook（`docs/aee/AEE_DATA_VERIFICATION_RUNBOOK.md`）：
   DevOnlineList / RecordFileList / token-cookie 依赖 / AlarmList 的脱敏取证
   步骤与证据模板。
+* 已增加受治理阈值机制：`CHA_V2_INSPECTION_THRESHOLDS`（JSON 正数）配置后，
+  `long_no_upload_hours`（媒体）与 `stale_location_hours`（位置）才产出
+  per-device 分类，`as_of` 可注入保证确定性；未配置不产出任何标签。
+  “长时间离线”在非 1 status map 验证前仍不产出。
 * realtime 概览增加运行态快照：接入 realtime manager 时返回当前 active
   sessions/streams、Gateway/Media 连接；无 manager 时 `runtime=null`，
   运行态与 store 历史严格分开。
@@ -204,7 +208,7 @@ Last updated: 2026-08-15
   当前 active batch path 只加载 routine tasks，普通 flight matcher 为未接线
   reference code；现有 city/time/score/certainty 只能作为 unverified candidate，
   不得用于 confirmed relation 或 coverage rate。
-* 当前全量 V2 自动化回归为 `192 tests PASS`。
+* 当前全量 V2 自动化回归为 `197 tests PASS`。
 * 当前开发机没有 Docker、PostgreSQL client/server、`pg_dump` 或
   `pg_restore`。因此不能在此环境宣称 PostgreSQL migration、backup 或 restore
   rehearsal 已完成。
@@ -1347,9 +1351,11 @@ M4 Done Criteria：
   （`app/services/ingestion.py`，设备/媒体/告警三类）；
 * 已实现并测试数据质量诊断（service + API + “数据质量”标签）；
 * 已实现并测试摄入调度编排（`app/services/ingestion_scheduler.py`）；
+* 已实现并测试受治理阈值判定（config 解析 + media long_no_upload +
+  location stale，`as_of` 可注入）；
 * 已完成 Legacy media/business-reference heuristic code audit，并将 active
   routine-task candidate 与 dormant flight code 明确区分；
-* 当前全量 V2 回归 `192 tests PASS`。
+* 当前全量 V2 回归 `197 tests PASS`。
 
 ## In Progress
 
