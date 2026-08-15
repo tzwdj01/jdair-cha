@@ -736,6 +736,12 @@ VERIFIED。
   * button/event handler 和错误反馈路径已在生产触发；
   * 自动化 Chrome 返回“浏览器未允许进入全屏”；
   * 当前状态为 `COMPLETED / UNVERIFIED`，需要普通用户操作复核。
+  * `19:28–19:33 CST` 已再次建立 WXB353 生产播放窗口并准备人工复核；
+    WXB353 于 `19:29:28` 获得 1920 × 1080 首帧和 live track，但浏览器 tab
+    在确认成功进入/退出全屏前关闭。
+  * page-exit cleanup 正常完成：session 约 `7.2 ms` 关闭，Gateway/Media proxy
+    均断开，Realtime 随后恢复为 `false`。该结果新增证明异常离页释放，不构成
+    全屏 PASS 证据。
 
 详细脱敏证据见：
 

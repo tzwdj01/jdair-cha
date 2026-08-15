@@ -139,6 +139,31 @@ This is not evidence of a confirmed product-code defect. The current browser
 control environment did not provide the transient user activation required by
 the Fullscreen API. A normal user-operated Chrome click is still required.
 
+### Follow-up validation window — 19:28–19:33 CST
+
+A second production Canary window was opened specifically for a normal
+user-operated fullscreen check:
+
+* Realtime was enabled only for the existing Canary allowlist.
+* WXB353 reached first frame at `19:29:28 CST`.
+* Resolution was `1920 × 1080` and the track was `live`.
+* A ten-minute automatic disable timer was installed before handing off the
+  page.
+* The realtime browser tab closed before a successful fullscreen
+  enter/exit observation was confirmed.
+* Page-exit cleanup closed the session successfully:
+  * `control_disconnected` was detected;
+  * the session transitioned through `DEGRADED → CLOSING → CLOSED`;
+  * session close completed in about `7.2 ms`;
+  * Gateway and Media proxy disconnect events were recorded;
+  * the session DELETE request returned HTTP 200.
+* The automatic timer was cancelled after cleanup.
+* Realtime was explicitly restored to `false`; Audio, Control and AccountPool
+  remained `false`.
+
+This follow-up proves page-close cleanup but does not prove fullscreen.
+Fullscreen therefore remains `COMPLETED / UNVERIFIED`.
+
 ## Resource and telemetry result
 
 Authenticated diagnostics after both sessions closed:
