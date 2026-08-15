@@ -160,8 +160,8 @@ CHA can begin collecting its own explicitly scoped events prospectively.
 | routine task detail/process | AVAILABLE | Legacy detail endpoints | not allow-listed in V2 | add read-only adapter only when needed |
 | flight-to-device relation | UNKNOWN | no governed mapping | no | define evidence-based mapping |
 | task-to-device relation | UNKNOWN | no governed mapping | no | define evidence-based mapping |
-| media-to-flight candidate | DERIVABLE | media time/location + flight schedule | Legacy has heuristic helpers | audit accuracy before reuse |
-| media-to-task candidate | DERIVABLE | media time/location + task schedule | Legacy has heuristic helpers | audit accuracy before reuse |
+| media-to-flight candidate | NOT_AVAILABLE | active Legacy batch path does not load ordinary flight rows | dormant generic matcher only | do not claim active capability; verify AMRO data and real examples before design |
+| media-to-task candidate | DERIVABLE | media time/location + routine-task schedule | Legacy heuristic exists; not normalized or verified | preserve evidence/reason codes; never auto-confirm |
 | flight video coverage rate | DERIVABLE | normalized relations | current Dashboard returns `None` | define numerator/denominator |
 | task video coverage rate | DERIVABLE | normalized relations | current Dashboard returns `None` | define numerator/denominator |
 

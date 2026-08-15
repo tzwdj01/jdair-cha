@@ -421,6 +421,31 @@ Candidate relation table:
 Existing Legacy matching helpers are heuristic. They must be audited against
 real examples before migration into an M4 service.
 
+The code audit is recorded in:
+
+`docs/data/LEGACY_MEDIA_BUSINESS_REFERENCE_AUDIT.md`
+
+Current decision:
+
+* the active Legacy batch path produces only routine-task candidates;
+* dormant ordinary-flight matching code is not an active capability;
+* Legacy time/city scores and certainty labels are not verified semantics;
+* every generated relation must remain `candidate` until a governed source or
+  explicit human action confirms it;
+* no flight/task coverage rate may be produced from Legacy heuristic labels.
+
+Minimum candidate evidence should include:
+
+* media source-time field and derivation method;
+* media position source;
+* GPS-to-media time delta when fallback GPS is used;
+* geocoder/city-map version;
+* reference time field and time-kind code;
+* signed time delta and direction;
+* source page/completeness status;
+* matcher version and reason codes;
+* explicit `confirmed=false`.
+
 ## 10. Aggregates
 
 Daily/hourly aggregates should be derived from durable source rows:

@@ -297,6 +297,37 @@ Legacy query dimensions:
 Legacy also supports detail and process-step queries. These are not currently
 allow-listed by `LegacyClient`.
 
+### Legacy media reference heuristic
+
+The production-baseline Legacy release has an authenticated
+`POST /api/record-flight-references` helper used by the records table.
+
+Code audit findings:
+
+* media time comes from source time aliases, then a filename timestamp fallback;
+* media coordinates are preferred, otherwise the nearest per-device GPS point
+  within plus/minus two hours is used;
+* matching is city-level and applies fixed six-hour time windows;
+* the active batch path fetches only routine tasks for the previous/current/next
+  day;
+* the generic ordinary-flight matcher and `flights_near_day` helper are not
+  connected to the active endpoint;
+* score/certainty thresholds are fixed Legacy heuristics with no recorded
+  business validation;
+* pagination/source failures are not surfaced as completeness metadata.
+
+Therefore:
+
+* current active media-to-routine-task matching is a
+  `HEURISTIC / UNVERIFIED CANDIDATE`;
+* current active media-to-flight matching is `NOT AVAILABLE` even though dormant
+  generic code exists;
+* neither path can provide a verified relation or coverage numerator.
+
+Full evidence and decision:
+
+`docs/data/LEGACY_MEDIA_BUSINESS_REFERENCE_AUDIT.md`
+
 ## 9. Realtime session and telemetry data
 
 ### Runtime session data
@@ -376,8 +407,10 @@ Current metrics:
 
 Current coverage limitations:
 
-* flight-to-video coverage is not implemented;
-* routine-task-to-video coverage is not implemented;
+* flight-to-video coverage is not implemented; the active Legacy reference
+  endpoint does not load ordinary flight rows;
+* routine-task-to-video coverage is not implemented; Legacy has only an
+  unverified candidate heuristic;
 * device online trend is aggregate sampled snapshots only;
 * city filtering does not apply to the global video trend;
 * no durable historical metric store exists;

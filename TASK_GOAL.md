@@ -151,6 +151,10 @@ Last updated: 2026-08-15
   per-device event/coordinate count、source span、latest age 和 optional-field
   coverage；aggregate 不返回坐标、不自行判定 stale/fresh，并显式处理
   duplicate、update、conflict、invalid 和 incomplete scope。
+* 已完成 Legacy media-to-flight/task reference helper 的代码取证：
+  当前 active batch path 只加载 routine tasks，普通 flight matcher 为未接线
+  reference code；现有 city/time/score/certainty 只能作为 unverified candidate，
+  不得用于 confirmed relation 或 coverage rate。
 * 当前全量 V2 自动化回归为 `149 tests PASS`。
 * 当前开发机没有 Docker、PostgreSQL client/server、`pg_dump` 或
   `pg_restore`。因此不能在此环境宣称 PostgreSQL migration、backup 或 restore
@@ -742,6 +746,16 @@ Commit 应按逻辑阶段组织。
   * exact duplicate 删除，同位置更新折叠到 latest observation；
   * 同 source/device/time 的坐标冲突排除并标记 partial；
   * 不定义 stale threshold、sampling coverage ratio 或 coordinate system。
+* 已完成 Legacy records “reference information” heuristic audit：
+  * media time aliases 和 filename fallback 已记录；
+  * media coordinate → plus/minus 2-hour nearest GPS → city alias 证据链已记录；
+  * active batch endpoint 只查询前/当/后一天 routine-task rows；
+  * `flights_near_day` 和 ordinary flight matching 在当前 release 无 active call
+    path；
+  * six-hour windows、fixed score 和 certainty thresholds 无业务验证；
+  * 当前结论为 candidate-only，不自动确认，不生成 coverage metric。
+  * 证据：
+    `docs/data/LEGACY_MEDIA_BUSINESS_REFERENCE_AUDIT.md`。
 
 ## M4 AEE Evidence
 
@@ -1205,6 +1219,8 @@ M4 Done Criteria：
 * 已实现并测试 AlarmList Adapter contract 和 `AlarmEvent` normalization；
 * 已实现并测试 Realtime/Alarm deterministic event metrics；
 * 已实现并测试 DeviceLocation threshold-free deterministic metrics；
+* 已完成 Legacy media/business-reference heuristic code audit，并将 active
+  routine-task candidate 与 dormant flight code 明确区分；
 * 当前全量 V2 回归 `149 tests PASS`。
 
 ## In Progress
@@ -1233,8 +1249,9 @@ M4 Done Criteria：
 5. 调查 AEE 是否提供合法的用户 login/session/view history；如果不存在，明确
    标记 `NOT_AVAILABLE`。CHA 已具备前向 `RealtimeViewEvent` finalization
    contract，但 durable repository 必须等待隔离 PostgreSQL rehearsal。
-6. 审计 Legacy 航班/例行任务与 media 的现有 heuristic relation helpers，
-   先形成字段、时间窗、位置和误配风险证据；不得直接把 heuristic 标记为 VERIFIED。
+6. 获取脱敏 AMRO flight/routine-task 实际样例，验证 stable identity、timezone、
+   date/task type code map、pagination completeness 和 correction lifecycle；
+   在真实正负样本验收前不实现自动 relation matcher。
 7. 保持 Production Realtime、Audio、Control、AccountPool 关闭。
 
 ## Blocked
@@ -1250,6 +1267,9 @@ M4 Done Criteria：
 * 正式 AEE 数据 Adapter 的登录所有权、Token-only live sufficiency、生命周期
   和刷新策略在形成合法证据前 `BLOCKED`。只读 HTTP transport 和无网络
   normalizer 不受此阻塞；不得猜测 Bearer header 或让浏览器长期持有 AEE 凭据。
+* media-to-flight/task 自动关系和 coverage rate 在缺少 AMRO 脱敏字段样例、
+  stable identity/time code map、分页完整性和已确认正负样本前 `BLOCKED`。
+  这不阻塞 dimensions、candidate schema 和其它数据资产工作。
 
 ## AEE Verification Required
 

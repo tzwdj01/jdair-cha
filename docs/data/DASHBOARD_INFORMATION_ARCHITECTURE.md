@@ -40,7 +40,7 @@ Candidate cards:
 | long-time offline | future status history | DERIVABLE |
 | long-time no upload | future media index | DERIVABLE |
 | alarm count | normalized event + deterministic aggregation | DERIVABLE after complete ingestion |
-| flight/task video coverage | normalized relations | DERIVABLE |
+| flight/task video coverage | normalized, confirmed relations | DERIVABLE after relation validation |
 
 Unknown metrics must display “数据源未接入/待验证”, not zero.
 
@@ -113,6 +113,11 @@ Add only when sources are verified:
 * `/dashboard/flights`
 * `/dashboard/map`
 * `/dashboard/data-quality`
+
+The Legacy record “reference information” helper is not a verified coverage
+source. Its active path currently generates routine-task candidates only.
+Candidate labels and scores must not be counted as confirmed flight/task video
+coverage.
 
 ## 4. Drill-down model
 
