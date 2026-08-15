@@ -2,7 +2,7 @@
 
 Last reviewed: `2026-08-15`
 
-Status: `M4 BASELINE / CODE-AUDITED`
+Status: `M4 BASELINE / CODE-AUDITED / AGGREGATION FOUNDATION IMPLEMENTED`
 
 ## 1. Scope and evidence
 
@@ -62,6 +62,11 @@ RealtimeSessionManager
 
 The current V2 Dashboard is predominantly a read-only aggregation layer over
 Legacy. It is not yet an independent long-term data asset.
+
+The first M4 deterministic aggregation foundation now exists under
+`mature-modernization/v2/app/data`. It is deliberately isolated from network,
+database and API concerns and therefore does not yet change production data
+flow.
 
 ## 3. Authentication and user identity
 
@@ -360,7 +365,43 @@ Current coverage limitations:
 * the current page is a single M2 overview rather than the M4 multi-page data
   center.
 
-## 11. Persistence inventory
+## 11. M4 deterministic aggregation foundation
+
+Implemented pure functions:
+
+* `aggregate_device_uptime`
+  * accepts AEE-style `devId/groupId/id/status/time` rows;
+  * requires an explicit timezone-aware reporting window;
+  * sorts and deduplicates status transitions;
+  * uses the latest pre-window event to seed the initial state;
+  * clips an open online interval to the requested `window_end`, never to the
+    browser or ingestion current time;
+  * exposes missing initial state, conflicting same-time statuses, invalid
+    rows, duplicate removal and the provisional non-1 status rule as quality
+    flags.
+* `aggregate_media_files`
+  * groups `RecordFileList` rows by device;
+  * keeps video duration in source seconds and file size in source bytes;
+  * counts image/audio/video/device-file types without UI rounding;
+  * exposes invalid values, unknown types and query-limit/pagination
+    truncation as quality flags.
+
+Verification:
+
+* eight focused unit tests cover sorting, deduplication, report-window
+  clipping, pre-window state, missing state, conflicts, raw units and partial
+  results;
+* the current complete V2 backend suite passes `81 tests`.
+
+Not implemented by this foundation:
+
+* AEE HTTP authentication or a production AEE data Adapter;
+* PostgreSQL schema, migrations or repository;
+* ingestion scheduling or checkpoints;
+* API routes or Dashboard pages;
+* production configuration changes.
+
+## 12. Persistence inventory
 
 | Store | Data | Durability | Suitable for M4 history |
 | --- | --- | --- | --- |
@@ -373,7 +414,14 @@ Current coverage limitations:
 | PostgreSQL | configured as optional/not enabled in current V2 | none yet | intended M4 durable store |
 | Redis | not enabled | none | use only if a real requirement appears |
 
-## 12. Reliability and data-quality rules
+Local development limitation:
+
+* the current workstation has no Docker/PostgreSQL runtime, `psql`,
+  `pg_dump` or `pg_restore`;
+* no PostgreSQL migration, backup or restore rehearsal is currently claimed;
+* SQLite or unexecuted SQL must not be presented as PostgreSQL verification.
+
+## 13. Reliability and data-quality rules
 
 Existing strengths:
 
@@ -394,7 +442,7 @@ Required M4 improvements:
 * stop using raw field-name fallbacks at Dashboard rendering time;
 * preserve `UNKNOWN` instead of converting missing values to misleading zeroes.
 
-## 13. Priority gaps
+## 14. Priority gaps
 
 1. No durable per-device online/offline history.
 2. No durable media-file metadata index.
@@ -406,3 +454,6 @@ Required M4 improvements:
 7. No production-ready PostgreSQL migrations or repository.
 8. Multi-page M4 Dashboard information architecture is documented, but the
    APIs and pages are not implemented.
+9. The authenticated transport and lifetime for AEE `/api/v1/*` data requests
+   have not yet been legally evidenced; implementation must not guess an
+   Authorization scheme.

@@ -2,7 +2,7 @@
 
 Last reviewed: `2026-08-15`
 
-Status: `DESIGN / NOT YET IMPLEMENTED`
+Status: `DESIGN / DETERMINISTIC AGGREGATION FOUNDATION IMPLEMENTED`
 
 ## 1. Principles
 
@@ -17,6 +17,34 @@ Status: `DESIGN / NOT YET IMPLEMENTED`
 5. Current-state polling does not provide an exact transition timestamp.
 6. Derived metrics are reproducible outputs, not source truth.
 7. Null/unknown is different from zero/false.
+
+## 1.1 Current implementation boundary
+
+Implemented and covered by unit tests:
+
+* deterministic, report-window-clipped aggregation of AEE-style device status
+  transitions;
+* deterministic per-device aggregation of `RecordFileList` rows using raw
+  seconds and bytes;
+* explicit quality flags for missing start state, provisional status mapping,
+  conflicting or duplicate events, invalid values and partial/truncated
+  result sets.
+
+The implementation is in:
+
+* `mature-modernization/v2/app/data/metrics.py`;
+* `mature-modernization/v2/tests/test_data_metrics.py`.
+
+Not yet implemented:
+
+* authenticated AEE HTTP data Adapter;
+* PostgreSQL tables, repository or migration tooling;
+* ingestion checkpoints and retry behavior;
+* M4 data APIs and Dashboard pages.
+
+This boundary is intentional. The AEE data-interface authentication transport
+and an isolated PostgreSQL migration/backup/restore environment must be
+verified before those layers are coupled to the aggregation rules.
 
 ## 2. Common metadata
 
@@ -295,6 +323,15 @@ Materialized aggregates are justified only after measuring query cost.
 ## 11. PostgreSQL migration sequence
 
 No production migration is authorized by this design.
+
+Current local constraint:
+
+* no Docker/PostgreSQL runtime, `psql`, `pg_dump` or `pg_restore` is available
+  on the current development workstation;
+* therefore no forward/downgrade/backup/restore rehearsal is currently
+  complete;
+* do not substitute SQLite or an unexecuted SQL review for PostgreSQL
+  verification.
 
 Required sequence:
 

@@ -113,6 +113,16 @@ Last updated: 2026-08-15
   `codex/m4-inspection-data-center-20260815`。
 * M4 的核心从媒体并发扩展转为监察数据调查、标准化、历史沉淀、关联分析、
   多页面 Dashboard 和业务下钻。
+* M4 初始治理、AEE 能力目录、字段目录、CHA 当前能力清单、数据可用性矩阵、
+  历史模型和 Dashboard 信息架构已提交到
+  `a56baee docs: activate M4 inspection data center`。
+* 当前 M4 分支已增加纯 Python、无网络/数据库副作用的确定性聚合基础：
+  AEE-style 设备状态 transition 的区间截断在线时长，以及
+  `RecordFileList` 原始单位文件统计；当前全量 V2 自动化回归为
+  `81 tests PASS`。
+* 当前开发机没有 Docker、PostgreSQL client/server、`pg_dump` 或
+  `pg_restore`。因此不能在此环境宣称 PostgreSQL migration、backup 或 restore
+  rehearsal 已完成。
 
 ---
 
@@ -645,6 +655,15 @@ Commit 应按逻辑阶段组织。
 * 当前 V2 尚未启用 PostgreSQL 监察数据资产；任何 production migration 仍受
   rehearsal、backup、rollback 和明确授权约束。
 * 已建立初始数据能力、字段可用性、历史模型和 Dashboard 信息架构文档。
+* 已实现第一批无副作用的确定性聚合函数：
+  * 设备 status transition 按设备排序、去重、使用窗口前状态播种，并把未闭合在线
+    区间截断到查询 `window_end`；
+  * 文件统计保留 `duration` 秒和 `fileLen` 字节原始单位，并显式暴露
+    pagination/query-limit 导致的 partial 状态；
+  * 非 1 status map、缺失初始状态、冲突事件、非法行和未知文件类型均通过
+    quality flag 暴露，不静默转换为可信数据。
+* 上述聚合目前只有应用层 contracts、纯函数和单元测试；尚未连接 AEE HTTP
+  Adapter、PostgreSQL repository、API 或 Dashboard。
 
 ## M4 AEE Evidence
 
@@ -692,6 +711,13 @@ Commit 应按逻辑阶段组织。
 
 * 先稳定 capability/interface/field catalogs 和 availability matrix，再实现
   PostgreSQL ingestion、统计 API 和 Dashboard。
+* 聚合逻辑先以纯函数和脱敏 fixture 固化，避免在 AEE HTTP 认证和 PostgreSQL
+  生命周期尚未验证时把网络、持久化与业务统计耦合。
+* AEE `/api/v1/*` 数据接口的浏览器认证传递方式、Token/Cookie 性质和生命周期
+  尚未形成合法证据；在确认前不得猜测或硬编码 `Authorization: Bearer`。
+* PostgreSQL migration/repository 实现必须等到可用的隔离 PostgreSQL 环境和
+  migration/backup/restore 工具链就绪；不得以 SQLite 或未演练的 SQL 替代
+  PostgreSQL 验收。
 * 当前不启动 production DB migration，不修改 production feature flag、Nginx、
   systemd、`current` 或 AEE Secret。
 * 不引入 FFmpeg、SFU、transcoding、custom decoder 或复杂 AccountPool。
@@ -1072,27 +1098,37 @@ M4 Done Criteria：
   * `docs/aee/AEE_INTERFACE_CATALOG.md`；
   * `docs/aee/AEE_FIELD_CATALOG.md`。
 * 已完成 AEE DevTree、Server Files 和 Alarm 页的第一轮合法只读接口取证。
+* 已完成 `/api/v1/DevOnlineList` 和三个文件统计页面的 live/static 对照：
+  online transition 与 `RecordFileList` 客户端聚合算法、单位和 10,000 行上限已
+  记录。
+* 已实现并测试确定性设备在线时长和文件统计聚合基础：
+  `mature-modernization/v2/app/data/metrics.py`；
+  当前全量 V2 回归 `81 tests PASS`。
 
 ## In Progress
 
 * `ACTIVE MILESTONE: M4`。
-* 正在校准 AEE capability/interface/field catalog 和字段可用性矩阵。
-* 正在补齐 device online history、alarm lifecycle、media code maps 和用户活动
-  数据证据。
+* 正在把已验证的 AEE/CHA 字段语义固化为窄 contracts 和确定性统计边界。
+* 正在补齐 AEE HTTP 数据接口认证传递方式、device online status map、
+  alarm lifecycle、media code maps 和用户活动数据证据。
+* 正在准备 PostgreSQL repository/migration 的隔离运行条件；当前尚未开始
+  production 或本地假替代 migration。
 
 ## Next
 
-1. 捕获 `/api/v1/DevOnlineList` 脱敏 raw response，验证非 1 status map、
+1. 通过合法、只读的浏览器 Network/static evidence 确认 AEE `/api/v1/*`
+   数据接口的认证传递方式、凭据性质和生命周期；不得读取或固化 Cookie/Token。
+2. 捕获 `/api/v1/DevOnlineList` 脱敏 raw response，验证非 1 status map、
    ordering、duplicate、retention、分页和查询边界。
-2. 完成 AlarmList alarm/status/deal code map、生命周期、删除语义和 retention
+3. 完成 AlarmList alarm/status/deal code map、生命周期、删除语义和 retention
    取证。
-3. 确认 RecordFileList `id` 唯一性范围、
+4. 确认 RecordFileList `id` 唯一性范围、
    `source/upLoadStatus` 完整 code map 和 channel/storage 可用性。
-4. 调查 AEE 是否提供合法的用户 login/session/view history；如果不存在，明确
+5. 获得隔离 PostgreSQL runtime 和 `pg_dump`/`pg_restore` 工具后，再增加
+   migration/repository，并执行 forward、rollback、backup、restore rehearsal。
+6. 调查 AEE 是否提供合法的用户 login/session/view history；如果不存在，明确
    标记 `NOT_AVAILABLE`，并只前向收集 CHA `RealtimeViewEvent`。
-5. 在 catalogs 稳定后选择第一批历史模型，先完成隔离 PostgreSQL migration
-   rehearsal；未经授权不修改 production database。
-6. 保持 Production Realtime、Audio、Control、AccountPool 关闭。
+7. 保持 Production Realtime、Audio、Control、AccountPool 关闭。
 
 ## Blocked
 
@@ -1101,6 +1137,11 @@ M4 Done Criteria：
   `AEE VERIFICATION REQUIRED` 或 `UNKNOWN`，但不阻塞无依赖的 CHA 审计和模型设计。
 * production DB migration 在没有 rehearsal、backup、rollback 和明确授权前
   `BLOCKED`。
+* 当前开发机缺少 Docker/PostgreSQL、`psql`、`pg_dump` 和 `pg_restore`；
+  因此隔离 PostgreSQL migration/backup/restore rehearsal 在该环境
+  `BLOCKED`。这不阻塞纯 contracts、normalizer、fixture 和无数据库单元测试。
+* 正式 AEE 数据 Adapter 在认证传递方式和凭据生命周期形成合法证据前
+  `BLOCKED`；不得猜测 Bearer header 或让浏览器长期持有 AEE 凭据。
 
 ## AEE Verification Required
 
@@ -1115,6 +1156,10 @@ M4 Done Criteria：
   以及按用户/组织查询的权限边界。
 * AEE 用户使用数据：
   login/logout、session、last active、访问设备、Realtime 监察记录和观看时长。
+* AEE `/api/v1/*` 数据 API 认证边界：
+  请求实际使用的认证载体、是否与 Realtime access token 相同、有效期、刷新方式、
+  服务端最小暴露方案，以及失败时的状态码/错误模型。只记录脱敏结论，不记录
+  Cookie、Authorization、密码或可复用 Token。
 * AEE 告警剩余语义：
   alarm/status/deal code map、level、lifecycle、删除语义、retention、pagination、
   handler/description 权限边界。
