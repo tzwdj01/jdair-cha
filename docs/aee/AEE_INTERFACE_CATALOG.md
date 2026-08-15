@@ -60,6 +60,9 @@ CHA implementation status:
 * `AEEReadOnlyDataAdapter` now provides endpoint-specific, read-only contracts
   for DevTree, DevOnlineList and RecordFileList, with explicit source timezone,
   range and pagination validation plus bounded page-envelope parsing;
+* `collect_aee_pages` now follows pages deterministically and exposes
+  max-page/max-record truncation, changing totals, empty pages, unknown totals,
+  duplicate source IDs and invalid rows as quality evidence;
 * it contains no username/password login logic and is not connected to an API,
   scheduler, database or production configuration;
 * login ownership, token lifetime and refresh remain separate evidence-gated
@@ -171,6 +174,8 @@ Current CHA contract:
 * page numbers are positive and page size is bounded to 10,000;
 * malformed rows and unknown totals are retained as data-quality flags rather
   than silently treated as complete data.
+* source IDs are observed for duplicate diagnostics but are not deduplicated
+  because their uniqueness scope remains unverified.
 
 ### AEE task list
 

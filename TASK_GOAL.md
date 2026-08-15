@@ -127,7 +127,9 @@ Last updated: 2026-08-15
 * 已增加 `AEEReadOnlyDataAdapter` endpoint contracts：DevTree、
   DevOnlineList、RecordFileList 的显式 timezone/range/pagination 校验和
   page-envelope completeness metadata。
-* 当前全量 V2 自动化回归为 `94 tests PASS`。
+* 已增加 deterministic multi-page collection：不静默吞掉 max page/record
+  截断、unknown/changing total、empty page、duplicate source ID 或 invalid row。
+* 当前全量 V2 自动化回归为 `103 tests PASS`。
 * 当前开发机没有 Docker、PostgreSQL client/server、`pg_dump` 或
   `pg_restore`。因此不能在此环境宣称 PostgreSQL migration、backup 或 restore
   rehearsal 已完成。
@@ -677,6 +679,8 @@ Commit 应按逻辑阶段组织。
 * 已增加 endpoint-specific Class A adapter contracts；当前仅覆盖 live-verified 的
   DevTree、DevOnlineList 和 RecordFileList，不提前接入 TaskList、write path 或
   未稳定的 Alarm lifecycle。
+* 已增加分页完整性 collector；source ID duplicate 只记录、不删除，直到其唯一性
+  范围完成 AEE 验证。
 
 ## M4 AEE Evidence
 
@@ -1128,13 +1132,15 @@ M4 Done Criteria：
   `mature-modernization/v2/app/data/aee_http.py`；
 * 已实现并测试 endpoint-specific read-only Adapter contracts：
   `mature-modernization/v2/app/data/aee_adapter.py`；
-* 当前全量 V2 回归 `94 tests PASS`。
+* 已实现并测试 deterministic pagination/completeness collector：
+  `mature-modernization/v2/app/data/pagination.py`；
+* 当前全量 V2 回归 `103 tests PASS`。
 
 ## In Progress
 
 * `ACTIVE MILESTONE: M4`。
-* 正在把已验证的 AEE/CHA 字段语义固化为窄 contracts、page completeness 和
-  确定性统计边界。
+* 正在把已验证的 AEE/CHA 字段语义固化为窄 contracts、page completeness、
+  data-quality evidence 和确定性统计边界。
 * 正在补齐 AEE HTTP Token-only sufficiency/lifecycle、device online status
   map、alarm lifecycle、media code maps 和用户活动数据证据。
 * 正在准备 PostgreSQL repository/migration 的隔离运行条件；当前尚未开始

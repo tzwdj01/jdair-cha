@@ -10,6 +10,7 @@ from .metrics import (
     aggregate_device_uptime,
     aggregate_media_files,
 )
+from .pagination import AEEPageCollection, collect_aee_pages
 
 __all__ = [
     "AEEDataHTTPClient",
@@ -22,4 +23,6 @@ __all__ = [
     "MediaDeviceMetric",
     "aggregate_device_uptime",
     "aggregate_media_files",
+    "AEEPageCollection",
+    "collect_aee_pages",
 ]

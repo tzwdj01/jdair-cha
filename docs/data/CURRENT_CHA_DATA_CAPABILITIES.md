@@ -397,7 +397,10 @@ Verification:
 * six endpoint-contract tests cover timezone conversion, exact query
   parameters, pagination/`has_more`, invalid-row handling, unknown totals,
   range validation and bounded upstream errors;
-* the current complete V2 backend suite passes `94 tests`.
+* nine collection tests cover known/unknown totals, short-page completion,
+  max-page/max-record limits, empty pages, changing totals, duplicate source
+  IDs and invalid source rows;
+* the current complete V2 backend suite passes `103 tests`.
 
 Implemented read-only transport boundary:
 
@@ -415,6 +418,10 @@ Implemented read-only transport boundary:
   and bounded pagination;
 * page envelopes expose `records_total`, `has_more`, invalid-row count and
   quality flags.
+* `collect_aee_pages` follows page contracts with explicit operational limits
+  and never converts a truncated or unstable result set into a complete one.
+* duplicate upstream `id` values are reported but preserved until uniqueness
+  scope is verified.
 
 Not implemented by this foundation:
 

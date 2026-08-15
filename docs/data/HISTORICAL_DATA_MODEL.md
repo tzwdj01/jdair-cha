@@ -34,16 +34,20 @@ Implemented and covered by unit tests:
   401-driven token invalidation/retry;
 * endpoint-specific DevTree, DevOnlineList and RecordFileList contracts with
   explicit source timezone, range/pagination validation and page
-  completeness metadata.
+  completeness metadata;
+* deterministic multi-page collection with explicit truncation, unknown-total,
+  changing-total, empty-page, duplicate-ID and invalid-row quality flags.
 
 The implementation is in:
 
 * `mature-modernization/v2/app/data/metrics.py`;
 * `mature-modernization/v2/app/data/aee_http.py`;
 * `mature-modernization/v2/app/data/aee_adapter.py`;
+* `mature-modernization/v2/app/data/pagination.py`;
 * `mature-modernization/v2/tests/test_data_metrics.py`.
 * `mature-modernization/v2/tests/test_aee_data_http.py`.
 * `mature-modernization/v2/tests/test_aee_data_adapter.py`.
+* `mature-modernization/v2/tests/test_aee_data_pagination.py`.
 
 Not yet implemented:
 
