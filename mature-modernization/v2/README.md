@@ -79,6 +79,10 @@ into the store with accepted/invalid counts and quality flags. It is
 source-agnostic and does not depend on AEE authentication, which remains a
 separate unverified prerequisite.
 
+`InspectionIngestionScheduler` orchestrates collect → normalize → persist with
+an explicit window and a source-agnostic `RowCollector` protocol, testable with
+fake collectors.
+
 The data-quality diagnostic reports store coverage, freshness and quality
 flags per historical table plus source-system distribution; it reports only
 rows that actually exist and never infers missing data.

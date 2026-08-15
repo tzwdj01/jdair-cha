@@ -192,6 +192,11 @@ Last updated: 2026-08-15
 * 已增加数据质量诊断：按窗口统计各历史表行数、含质量 flag 行数、最新时间、
   设备数与来源系统分布，接入 `/api/v2/inspection/data-quality` 与
   “数据质量”标签；只报告 store 中真实存在的行，不推断缺失数据。
+* 已增加摄入调度编排 `InspectionIngestionScheduler`：显式窗口 +
+  source-agnostic `RowCollector` 协议，fake collector 可测，不假设 AEE 认证。
+* 已提供 AEE 数据取证 Runbook（`docs/aee/AEE_DATA_VERIFICATION_RUNBOOK.md`）：
+  DevOnlineList / RecordFileList / token-cookie 依赖 / AlarmList 的脱敏取证
+  步骤与证据模板。
 * realtime 概览增加运行态快照：接入 realtime manager 时返回当前 active
   sessions/streams、Gateway/Media 连接；无 manager 时 `runtime=null`，
   运行态与 store 历史严格分开。
@@ -199,7 +204,7 @@ Last updated: 2026-08-15
   当前 active batch path 只加载 routine tasks，普通 flight matcher 为未接线
   reference code；现有 city/time/score/certainty 只能作为 unverified candidate，
   不得用于 confirmed relation 或 coverage rate。
-* 当前全量 V2 自动化回归为 `189 tests PASS`。
+* 当前全量 V2 自动化回归为 `192 tests PASS`。
 * 当前开发机没有 Docker、PostgreSQL client/server、`pg_dump` 或
   `pg_restore`。因此不能在此环境宣称 PostgreSQL migration、backup 或 restore
   rehearsal 已完成。
@@ -1341,9 +1346,10 @@ M4 Done Criteria：
 * 已实现并测试 `InspectionIngestor` 摄入接缝
   （`app/services/ingestion.py`，设备/媒体/告警三类）；
 * 已实现并测试数据质量诊断（service + API + “数据质量”标签）；
+* 已实现并测试摄入调度编排（`app/services/ingestion_scheduler.py`）；
 * 已完成 Legacy media/business-reference heuristic code audit，并将 active
   routine-task candidate 与 dormant flight code 明确区分；
-* 当前全量 V2 回归 `189 tests PASS`。
+* 当前全量 V2 回归 `192 tests PASS`。
 
 ## In Progress
 

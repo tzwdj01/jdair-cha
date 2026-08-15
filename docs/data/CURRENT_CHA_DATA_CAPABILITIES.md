@@ -613,7 +613,14 @@ Implemented durable store seam:
   flags per historical table plus source-system distribution, feeding the
   “数据质量” tab; it reports only rows that actually exist in the store and
   never infers missing data;
-* thirty-nine repository/sink/service/API/page tests cover roundtrip, scope
+* `InspectionIngestionScheduler` orchestrates collect → normalize → persist
+  with an explicit window and a source-agnostic `RowCollector` protocol; it is
+  testable with fake collectors and never assumes AEE authentication, which
+  remains an unverified prerequisite owned by the collector;
+* `docs/aee/AEE_DATA_VERIFICATION_RUNBOOK.md` turns the P0 conditional
+  verification into concrete, lawful, sanitized observation steps with
+  evidence templates;
+* forty-two repository/sink/service/API/page tests cover roundtrip, scope
   filtering,
   latest-wins, media append/upsert, first-wins behavior, the
   manager-to-store write path, page-oriented overviews, the HTTP API and page
