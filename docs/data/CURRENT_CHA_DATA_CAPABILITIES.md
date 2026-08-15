@@ -155,7 +155,23 @@ Current gaps:
 
 * `/api/gps-track` is not allow-listed by the V2 `LegacyClient`.
 * no CHA durable `DeviceLocationEvent` table exists.
-* no normalized timezone, accuracy-quality or late-arrival policy exists.
+* V2 now has a pure, unwired `DeviceLocationEvent` normalization contract for
+  per-device Legacy GPS-history rows:
+  * source, observation and ingestion times are separated and normalized to
+    UTC;
+  * the queried device ID is an explicit scope boundary, and conflicting row
+    device IDs are rejected;
+  * global coordinate range and the Legacy zero-coordinate sentinel are
+    validated;
+  * missing speed, direction, accuracy and battery remain `None` rather than
+    being converted to zero;
+  * coordinate system, measurement units, battery semantics and GPS/network
+    code maps remain explicit quality flags;
+  * future source timestamps are retained but marked.
+* the contract is not connected to `LegacyClient`, a scheduler, PostgreSQL, an
+  API or production configuration.
+* no evidence-backed stale/late-arrival threshold, coordinate-system map or
+  measurement-unit map exists yet.
 
 ## 6. Media files and records
 

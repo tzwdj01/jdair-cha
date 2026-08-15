@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import math
 from dataclasses import dataclass
 from typing import Any, Iterable, Mapping
 
@@ -34,6 +35,34 @@ class DeviceStatusEvent:
 @dataclass(frozen=True, slots=True)
 class DeviceStatusNormalizationResult:
     events: tuple[DeviceStatusEvent, ...]
+    source_row_count: int
+    invalid_row_count: int
+    quality_flags: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class DeviceLocationEvent:
+    source_system: str
+    source_record_id: str | None
+    device_id: str
+    location_source: str
+    latitude: float
+    longitude: float
+    gps_occurred_at: dt.datetime
+    speed_value: float | None
+    direction_value: float | None
+    accuracy_value: float | None
+    battery_value: float | None
+    gps_type_code: int | str | None
+    network_type_code: int | str | None
+    observed_at: dt.datetime
+    ingested_at: dt.datetime
+    quality_flags: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class DeviceLocationNormalizationResult:
+    events: tuple[DeviceLocationEvent, ...]
     source_row_count: int
     invalid_row_count: int
     quality_flags: tuple[str, ...]
@@ -176,6 +205,170 @@ def normalize_device_status_events(
         result_flags.add("non_online_status_map_partial")
 
     return DeviceStatusNormalizationResult(
+        events=tuple(events),
+        source_row_count=len(source_rows),
+        invalid_row_count=invalid_row_count,
+        quality_flags=tuple(sorted(result_flags)),
+    )
+
+
+def normalize_device_location_events(
+    rows: Iterable[Mapping[str, Any]],
+    *,
+    device_id: str,
+    source_timezone: dt.tzinfo,
+    observed_at: dt.datetime,
+    ingested_at: dt.datetime,
+    source_system: str = "mcs8",
+    location_source: str = "legacy_gps_history",
+) -> DeviceLocationNormalizationResult:
+    observed, ingested = _normalize_lifecycle_times(
+        observed_at,
+        ingested_at,
+    )
+    _validate_source_timezone(source_timezone)
+    normalized_device_id = _required_text(device_id, "device_id")
+    normalized_source_system = _required_text(
+        source_system,
+        "source_system",
+    )
+    normalized_location_source = _required_text(
+        location_source,
+        "location_source",
+    )
+    source_rows = list(rows)
+    events: list[DeviceLocationEvent] = []
+    invalid_row_count = 0
+    result_flags: set[str] = {
+        "coordinate_system_unverified",
+        "location_data_restricted",
+    }
+
+    for row in source_rows:
+        row_device_id = _optional_text(
+            _first_value(row, ("devId", "DevId", "szIDNO"))
+        )
+        if (
+            row_device_id is not None
+            and row_device_id != normalized_device_id
+        ):
+            invalid_row_count += 1
+            result_flags.add("row_device_scope_mismatch")
+            continue
+
+        latitude = _optional_finite_float(
+            _first_value(row, ("lat", "latitude"))
+        )
+        longitude = _optional_finite_float(
+            _first_value(row, ("lng", "longitude"))
+        )
+        gps_occurred_at = _optional_source_time(
+            _first_value(row, ("gpsTime", "dateTime", "time")),
+            source_timezone=source_timezone,
+        )
+        if (
+            latitude is None
+            or longitude is None
+            or not _valid_coordinate(latitude, longitude)
+            or gps_occurred_at is None
+        ):
+            invalid_row_count += 1
+            continue
+
+        flags: set[str] = {
+            "coordinate_system_unverified",
+            "location_data_restricted",
+        }
+        source_record_id = _optional_text(row.get("id"))
+        if source_record_id is None:
+            flags.add("source_record_id_missing")
+        else:
+            flags.add("source_id_scope_unverified")
+
+        speed_value = _optional_measurement(
+            row,
+            "speed",
+            flags,
+            "invalid_speed_ignored",
+            "speed_unit_unverified",
+        )
+        direction_value = _optional_measurement(
+            row,
+            ("direct", "direction"),
+            flags,
+            "invalid_direction_ignored",
+            "direction_unit_unverified",
+        )
+        accuracy_value = _optional_measurement(
+            row,
+            "accuracy",
+            flags,
+            "invalid_accuracy_ignored",
+            "accuracy_unit_unverified",
+        )
+        battery_value = _optional_measurement(
+            row,
+            "battery",
+            flags,
+            "invalid_battery_ignored",
+            "battery_semantics_unverified",
+        )
+        gps_type_code = _optional_source_code(row.get("gpsType"))
+        if _is_present(row.get("gpsType")):
+            if gps_type_code is None:
+                flags.add("invalid_gps_type_ignored")
+            else:
+                flags.add("gps_type_code_map_unknown")
+
+        raw_network_type = _first_value(
+            row,
+            ("netWorkType", "networkType"),
+        )
+        network_type_code = _optional_source_code(raw_network_type)
+        if _is_present(raw_network_type):
+            if network_type_code is None:
+                flags.add("invalid_network_type_ignored")
+            else:
+                flags.add("network_type_code_map_unknown")
+
+        if gps_occurred_at > observed:
+            flags.add("source_time_after_observation")
+
+        events.append(
+            DeviceLocationEvent(
+                source_system=normalized_source_system,
+                source_record_id=source_record_id,
+                device_id=normalized_device_id,
+                location_source=normalized_location_source,
+                latitude=latitude,
+                longitude=longitude,
+                gps_occurred_at=gps_occurred_at,
+                speed_value=speed_value,
+                direction_value=direction_value,
+                accuracy_value=accuracy_value,
+                battery_value=battery_value,
+                gps_type_code=gps_type_code,
+                network_type_code=network_type_code,
+                observed_at=observed,
+                ingested_at=ingested,
+                quality_flags=tuple(sorted(flags)),
+            )
+        )
+
+    if invalid_row_count:
+        result_flags.add("invalid_rows_ignored")
+    if any(
+        "source_id_scope_unverified" in event.quality_flags
+        for event in events
+    ):
+        result_flags.add("source_id_scope_unverified")
+    if any(
+        "source_time_after_observation" in event.quality_flags
+        for event in events
+    ):
+        result_flags.add("source_time_after_observation")
+
+    return DeviceLocationNormalizationResult(
         events=tuple(events),
         source_row_count=len(source_rows),
         invalid_row_count=invalid_row_count,
@@ -578,6 +771,13 @@ def _first_value(
     return None
 
 
+def _required_text(value: Any, name: str) -> str:
+    text = _optional_text(value)
+    if text is None:
+        raise ValueError(f"{name} must not be empty")
+    return text
+
+
 def _optional_text(value: Any) -> str | None:
     if value is None:
         return None
@@ -601,6 +801,63 @@ def _optional_non_negative_int(value: Any) -> int | None:
     if parsed is None or parsed < 0:
         return None
     return parsed
+
+
+def _optional_finite_float(value: Any) -> float | None:
+    if isinstance(value, bool):
+        return None
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(parsed):
+        return None
+    return parsed
+
+
+def _valid_coordinate(latitude: float, longitude: float) -> bool:
+    if not -90 <= latitude <= 90:
+        return False
+    if not -180 <= longitude <= 180:
+        return False
+    return not (
+        abs(latitude) < 0.000001
+        and abs(longitude) < 0.000001
+    )
+
+
+def _optional_measurement(
+    row: Mapping[str, Any],
+    names: str | tuple[str, ...],
+    flags: set[str],
+    invalid_flag: str,
+    semantics_flag: str,
+) -> float | None:
+    aliases = (names,) if isinstance(names, str) else names
+    raw_value = _first_value(row, aliases)
+    value = _optional_finite_float(raw_value)
+    if _is_present(raw_value):
+        if value is None:
+            flags.add(invalid_flag)
+        else:
+            flags.add(semantics_flag)
+    return value
+
+
+def _optional_source_code(value: Any) -> int | str | None:
+    if not _is_present(value) or isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value) if value.is_integer() else None
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return None
+        parsed_int = _optional_int(text)
+        return parsed_int if parsed_int is not None else text
+    return None
 
 
 def _optional_bool_marker(value: Any) -> bool | None:

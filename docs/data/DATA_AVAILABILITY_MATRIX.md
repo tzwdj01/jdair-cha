@@ -26,15 +26,15 @@ the required source events. It does not mean the value already exists.
 | online | AVAILABLE | DeviceStatus/catalog | current boolean | no | store status observations/events |
 | status code | AVAILABLE | observed AEE DevTree/DeviceStatus | normalized application contract; not persisted/API wired | no | preserve raw code; non-1 semantics remain unknown |
 | alarm code | AVAILABLE | observed AEE DevTree | not normalized in CHA | no | AEE field semantics still require cataloging |
-| GPS time | AVAILABLE | GPS/catalog | `gpsTime` | GPS query available | normalize timezone and event-time semantics |
-| latitude | AVAILABLE | GPS/catalog | current `lat` | GPS query available | store only valid coordinates |
-| longitude | AVAILABLE | GPS/catalog | current `lng` | GPS query available | store only valid coordinates |
+| GPS time | AVAILABLE | GPS/catalog | `gpsTime`; normalized UTC application contract | GPS query available; not persisted | source/observation/ingestion times separated; stale threshold remains unknown |
+| latitude | AVAILABLE | GPS/catalog | current `lat`; validated application contract | GPS query available; not persisted | global range and zero sentinel validated; restricted data |
+| longitude | AVAILABLE | GPS/catalog | current `lng`; validated application contract | GPS query available; not persisted | global range and zero sentinel validated; restricted data |
 | last seen | AVAILABLE | log/GPS/catalog fallback | `lastOnlineTime` proxy | no durable history | rename/normalize; do not call it last online |
 | last online at | DERIVABLE | AEE `DevOnlineList` / future CHA status events | not available | upstream query only | verify status map/order, then derive transition |
 | last offline at | DERIVABLE | AEE `DevOnlineList` / future CHA status events | not available | upstream query only | verify non-1 status map/order, then derive transition |
 | login/startup time | UNKNOWN | AEE/MCS8 investigation required | no | no | identify supported source or mark not available |
-| network state | AVAILABLE | GPS history `netWorkType` | not exposed by V2 | raw historical points | catalog semantics and freshness |
-| battery | AVAILABLE | GPS/AEE observed fields | not exposed by V2 | raw GPS points possible | units and alarm relation require verification |
+| network state | AVAILABLE | GPS history `netWorkType` | raw code normalized with unknown-map flag | raw historical points; not persisted | catalog semantics and freshness |
+| battery | AVAILABLE | GPS/AEE observed fields | nullable numeric value with unknown-semantics flag | raw GPS points possible; not persisted | units and alarm relation require verification |
 | media availability | DERIVABLE | bounded `mediaMonitor` result | runtime only | no | do not probe frequently; record only real view attempts or supported status source |
 | device model | UNKNOWN | catalog may contain raw field | not normalized | no | inspect sanitized catalog sample |
 | warehouse | AVAILABLE | local mapping | `warehouse` | no | local operational mapping, not upstream truth |
@@ -170,8 +170,9 @@ CHA can begin collecting its own explicitly scoped events prospectively.
 1. Current online state is `AVAILABLE`. AEE online transition rows are also an
    `AVAILABLE` source; CHA historical uptime metrics remain `DERIVABLE` and
    are not yet persisted.
-2. Current device GPS and raw GPS history are `AVAILABLE`; durable CHA location
-   history is not yet implemented.
+2. Current device GPS and raw GPS history are `AVAILABLE`; a conservative,
+   restricted `DeviceLocationEvent` application contract is implemented and
+   tested, but durable CHA location history, ingestion and API wiring are not.
 3. Media records are queryable, but their schema is only partially normalized.
 4. Realtime usage history is `DERIVABLE` from current runtime events but is not
    persisted.

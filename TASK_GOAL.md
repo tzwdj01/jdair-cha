@@ -132,6 +132,11 @@ Last updated: 2026-08-15
 * 已增加 normalized `DeviceStatusEvent` 和 `MediaFile` contracts：
   source/observation/ingestion 时间分离、原始 code 保留、非 1 status 不猜测为
   offline、敏感人员/备注字段默认省略。
+* 已增加 conservative `DeviceLocationEvent` application contract：
+  基于已审计的 Legacy `/api/GetGpsModelList` per-device query shape，验证坐标和
+  device scope，分离 GPS/observation/ingestion 时间，缺失测量值保持 null，并
+  显式标记 restricted location、坐标系/单位/code map 未验证。当前未连接
+  LegacyClient、scheduler、PostgreSQL、API 或生产配置。
 * 已增加 normalized `RealtimeViewEvent` finalization contract 和可选 sink 边界：
   首帧只记录一次，close/disconnect/timeout/shutdown 明确分类，按 `stream_id`
   幂等，且不包含 Cookie hash、AEE 凭据或媒体协商数据。
@@ -142,7 +147,7 @@ Last updated: 2026-08-15
   user/device viewing totals、duration/latency、result/error distribution，
   以及 raw alarm device/type/status/deal-status counts；duplicate、conflict 和
   incomplete scope 不会被静默吞掉。
-* 当前全量 V2 自动化回归为 `138 tests PASS`。
+* 当前全量 V2 自动化回归为 `144 tests PASS`。
 * 当前开发机没有 Docker、PostgreSQL client/server、`pg_dump` 或
   `pg_restore`。因此不能在此环境宣称 PostgreSQL migration、backup 或 restore
   rehearsal 已完成。
@@ -716,6 +721,16 @@ Commit 应按逻辑阶段组织。
   * Alarm mutable rows 按 latest observation 折叠；
   * 同时刻冲突 Alarm 排除，missing raw status 保持 unknown 而不是 0；
   * 当前函数只聚合调用方提供的明确 scope，不自行猜测“今日”或 retention 范围。
+* 已审计当前 production baseline 对应的 Legacy phase5 GPS 路径：
+  * `/api/gps-track` 调用 MCS8 `/api/GetGpsModelList`；
+  * query scope 为单设备、起止时间、page 1、pagesize 5000；
+  * source aliases 为 `lat/latitude`、`lng/longitude`、
+    `gpsTime/dateTime/time`、`direct/direction` 和 `netWorkType`；
+  * Legacy 会过滤越界及近零坐标，但会把缺失 speed/direction/accuracy 转为 0；
+  * M4 历史 contract 保留坐标过滤，不复制缺失值归零行为。
+* 已增加 `DeviceLocationEvent` 纯 normalization layer；位置数据统一标记
+  restricted，不保留 free-text address，不猜测 coordinate system、单位、
+  GPS/network code map、stale threshold、retention 或 sampling。
 
 ## M4 AEE Evidence
 
@@ -1171,19 +1186,23 @@ M4 Done Criteria：
   `mature-modernization/v2/app/data/pagination.py`；
 * 已实现并测试 `DeviceStatusEvent` / `MediaFile` normalization：
   `mature-modernization/v2/app/data/normalization.py`；
+* 已实现并测试 Legacy GPS-history `DeviceLocationEvent` normalization：
+  明确 per-device scope、坐标校验、UTC 生命周期、nullable measurements、
+  source raw codes 和 restricted/unknown quality flags；
 * 已实现并测试 `RealtimeViewEvent` contract 和 Realtime lifecycle sink：
   `mature-modernization/v2/app/data/realtime_views.py`；
 * 已实现并测试 AlarmList Adapter contract 和 `AlarmEvent` normalization；
 * 已实现并测试 Realtime/Alarm deterministic event metrics；
-* 当前全量 V2 回归 `138 tests PASS`。
+* 当前全量 V2 回归 `144 tests PASS`。
 
 ## In Progress
 
 * `ACTIVE MILESTONE: M4`。
 * 正在把已验证的 AEE/CHA 字段语义固化为窄 contracts、normalized historical
   records、page completeness、data-quality evidence 和确定性统计边界。
-* 正在把 `RealtimeViewEvent` 的已完成应用层 finalization contract 连接到未来
-  可演练的 PostgreSQL repository；当前不启用生产 sink。
+* 正在为已完成的 DeviceStatus、DeviceLocation、MediaFile、RealtimeView 和
+  Alarm 应用层 contracts 规划可演练的 PostgreSQL repository；当前不启用生产
+  sink，也不以 SQLite 或未执行 SQL 代替 PostgreSQL 验收。
 * 正在补齐 AEE HTTP Token-only sufficiency/lifecycle、device online status
   map、alarm lifecycle/code maps/retention、media code maps 和用户活动数据证据。
 * 正在准备 PostgreSQL repository/migration 的隔离运行条件；当前尚未开始
@@ -1191,19 +1210,19 @@ M4 Done Criteria：
 
 ## Next
 
-1. 使用服务端临时内存 Token 完成最小、只读、脱敏的 token-only 请求验证，
-   确认是否还依赖 Cookie、401 行为和登录/刷新频率；不得输出或持久化 Token。
-2. 捕获 `/api/v1/DevOnlineList` 脱敏 raw response，验证非 1 status map、
+1. 捕获 `/api/v1/DevOnlineList` 脱敏 raw response，验证非 1 status map、
    ordering、duplicate、retention、分页和查询边界。
-3. 继续完成 AlarmList alarm/status/deal code map、生命周期、删除语义和
+2. 继续完成 AlarmList alarm/status/deal code map、生命周期、删除语义和
    retention 取证；当前 raw-code contract 已完成，但不能标记语义 VERIFIED。
-4. 确认 RecordFileList `id` 唯一性范围、
+3. 确认 RecordFileList `id` 唯一性范围、
    `source/upLoadStatus` 完整 code map 和 channel/storage 可用性。
-5. 获得隔离 PostgreSQL runtime 和 `pg_dump`/`pg_restore` 工具后，再增加
+4. 获得隔离 PostgreSQL runtime 和 `pg_dump`/`pg_restore` 工具后，再增加
    migration/repository，并执行 forward、rollback、backup、restore rehearsal。
-6. 调查 AEE 是否提供合法的用户 login/session/view history；如果不存在，明确
+5. 调查 AEE 是否提供合法的用户 login/session/view history；如果不存在，明确
    标记 `NOT_AVAILABLE`。CHA 已具备前向 `RealtimeViewEvent` finalization
    contract，但 durable repository 必须等待隔离 PostgreSQL rehearsal。
+6. 在不依赖 AEE 未知语义和数据库的前提下，继续设计 location freshness/
+   coverage 的确定性统计边界；不得自行设定 stale threshold 或 coordinate system。
 7. 保持 Production Realtime、Audio、Control、AccountPool 关闭。
 
 ## Blocked

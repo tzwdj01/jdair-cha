@@ -216,12 +216,13 @@ Proposed table: `device_location_events`
 | `latitude`, `longitude` | validated coordinates |
 | `gps_occurred_at` | source GPS time |
 | `observed_at` | CHA retrieval time |
-| `speed` | nullable, unit documented |
-| `direction` | nullable |
-| `accuracy` | nullable |
-| `battery` | nullable raw/normalized value |
-| `gps_type` | nullable source code |
-| `network_type` | nullable source code |
+| `ingested_at` | durable write time |
+| `speed_value` | nullable; source unit remains unverified |
+| `direction_value` | nullable; source unit remains unverified |
+| `accuracy_value` | nullable; source unit remains unverified |
+| `battery_value` | nullable numeric source value; semantics unverified |
+| `gps_type_code` | nullable source code; map unknown |
+| `network_type_code` | nullable source code; map unknown |
 | `city_code/name` | derived using a versioned mapping |
 | `location_source` | live GPS, historical GPS, record coordinate, etc. |
 | `quality_status/flags` | invalid, stale, impossible jump, missing accuracy |
@@ -231,6 +232,17 @@ Deduplication candidate:
 `device_id + gps_occurred_at + rounded coordinate + source_system`
 
 Retention and sampling must be decided after measuring source volume.
+
+Current implementation boundary:
+
+* `normalize_device_location_events` implements the application contract for
+  the verified Legacy `/api/GetGpsModelList` per-device query shape.
+* Missing optional measurements remain null; the Legacy UI's zero defaults are
+  not copied into historical truth.
+* Coordinates are marked restricted, and no free-text address is retained.
+* Coordinate system, units, code maps, stale threshold, correction behavior,
+  sampling and retention remain unverified.
+* No repository, migration, scheduler, API or production wiring exists yet.
 
 ## 6. MediaFile
 

@@ -311,7 +311,16 @@ Current CHA contract:
 | Current CHA use | GPS track and recent-city derivation |
 | AEE page usage | `AEE VERIFICATION REQUIRED` |
 | Sensitivity | location data; restricted operational data |
-| Recommendation | minimize scope, audit access, normalize event/observation time |
+| Recommendation | conservative application normalizer implemented for the Legacy query shape; keep scope per device, restrict access, and defer durable ingestion until PostgreSQL rehearsal |
+
+Implementation note:
+
+* V2 now validates the same global coordinate bounds and zero-coordinate
+  sentinel used by Legacy, while keeping missing optional measurements null.
+* Source, observation and ingestion times are separate.
+* Coordinate system, measurement units, code maps, source-ID scope, retention
+  and AEE page usage remain unverified.
+* This does not add an AEE runtime dependency or enable a production data path.
 
 ### Record-file list
 
