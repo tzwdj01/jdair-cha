@@ -413,7 +413,10 @@ Verification:
   unverified-selector values;
 * six Alarm normalization tests cover required identity/time, raw codes,
   restricted-field minimization, push-status aliasing and malformed values;
-* the current complete V2 backend suite passes `131 tests`.
+* seven event-metric tests cover Realtime user/device totals, duration
+  recalculation, duplicate/conflict handling, Alarm update collapse and
+  unknown raw-status preservation;
+* the current complete V2 backend suite passes `138 tests`.
 
 Implemented read-only transport boundary:
 
@@ -466,6 +469,21 @@ Implemented normalized historical contracts:
   * leaves handled state and level unknown rather than inventing labels;
   * omits handler, handling time and free-text deal description by default;
   * exposes source-ID, lifecycle and deletion uncertainty explicitly.
+
+Implemented deterministic event metrics:
+
+* Realtime:
+  * exact supplied-scope totals and user/device groupings;
+  * connection/view duration and first-frame latency recalculated from event
+    timestamps;
+  * played/result/error distributions;
+  * duplicate removal, conflicting-stream exclusion and incomplete-scope
+    flags.
+* Alarms:
+  * unique alarm counts by device and raw alarm type;
+  * raw alarm-status and deal-status distributions;
+  * mutable alarm rows collapsed to the latest observation;
+  * duplicate/conflict/missing-status and incomplete-scope flags.
 
 Not implemented by this foundation:
 

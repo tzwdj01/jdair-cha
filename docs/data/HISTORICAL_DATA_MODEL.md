@@ -43,7 +43,9 @@ Implemented and covered by unit tests:
 * a normalized, immutable `RealtimeViewEvent` finalization contract and an
   opt-in session-manager sink boundary for forward-only CHA viewing evidence;
 * an `AlarmEvent` normalization contract that requires evidenced identity,
-  device, type and source time while preserving all incomplete code maps.
+  device, type and source time while preserving all incomplete code maps;
+* deterministic Realtime and Alarm aggregations over normalized final events,
+  with duplicate/conflict handling and explicit incomplete-input flags.
 
 Normalization safety rules already enforced:
 
@@ -79,6 +81,7 @@ The implementation is in:
 * `mature-modernization/v2/tests/test_data_normalization.py`.
 * `mature-modernization/v2/tests/test_realtime_view_events.py`.
 * `mature-modernization/v2/tests/test_alarm_normalization.py`.
+* `mature-modernization/v2/tests/test_event_metrics.py`.
 
 Not yet implemented:
 
@@ -319,6 +322,12 @@ Minimum fields required by M4:
 * failure-reason distribution;
 * current active sessions remain a runtime gauge, not a database query.
 
+The application aggregation contract now implements these metrics over the
+exact supplied event scope. It recalculates durations from timestamps, removes
+exact duplicate streams, excludes conflicting/invalid streams and marks
+incomplete input. Time-window selection remains a future repository/query
+responsibility; the function does not invent a report window.
+
 ## 8. AlarmEvent
 
 Proposed table: `alarm_events`
@@ -351,6 +360,11 @@ Candidate fields:
 * source and quality metadata.
 
 Do not infer alarm history from a current device `alarm` code.
+
+The current deterministic Alarm aggregation counts unique source alarm
+identities in the supplied scope, collapses mutable rows to the latest
+observation, excludes equal-time conflicts and groups only by raw device/type/
+status/deal-status codes. It does not derive severity or handled-state labels.
 
 ## 9. Flight/task dimensions and relationships
 

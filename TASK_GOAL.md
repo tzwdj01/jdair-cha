@@ -138,7 +138,11 @@ Last updated: 2026-08-15
 * 已增加 `/api/v1/AlarmList` endpoint contract 和 conservative
   `AlarmEvent` normalization：raw code 保留、handled 不猜测、handler/time/free
   text 默认省略。
-* 当前全量 V2 自动化回归为 `131 tests PASS`。
+* 已增加 deterministic Realtime/Alarm event aggregation：
+  user/device viewing totals、duration/latency、result/error distribution，
+  以及 raw alarm device/type/status/deal-status counts；duplicate、conflict 和
+  incomplete scope 不会被静默吞掉。
+* 当前全量 V2 自动化回归为 `138 tests PASS`。
 * 当前开发机没有 Docker、PostgreSQL client/server、`pg_dump` 或
   `pg_restore`。因此不能在此环境宣称 PostgreSQL migration、backup 或 restore
   rehearsal 已完成。
@@ -706,6 +710,12 @@ Commit 应按逻辑阶段组织。
   * alarm/status/deal codes 原样保留并标注 map partial；
   * handled/level 不推断，restricted handling fields 默认省略；
   * 当前尚未持久化，也没有 ingestion scheduler 或 Dashboard API。
+* 已增加 normalized final-event 的确定性统计：
+  * Realtime duration 由事件 timestamp 重算，不信任预计算值；
+  * exact duplicate stream 去重，conflicting/invalid stream 排除并标记 partial；
+  * Alarm mutable rows 按 latest observation 折叠；
+  * 同时刻冲突 Alarm 排除，missing raw status 保持 unknown 而不是 0；
+  * 当前函数只聚合调用方提供的明确 scope，不自行猜测“今日”或 retention 范围。
 
 ## M4 AEE Evidence
 
@@ -1164,7 +1174,8 @@ M4 Done Criteria：
 * 已实现并测试 `RealtimeViewEvent` contract 和 Realtime lifecycle sink：
   `mature-modernization/v2/app/data/realtime_views.py`；
 * 已实现并测试 AlarmList Adapter contract 和 `AlarmEvent` normalization；
-* 当前全量 V2 回归 `131 tests PASS`。
+* 已实现并测试 Realtime/Alarm deterministic event metrics；
+* 当前全量 V2 回归 `138 tests PASS`。
 
 ## In Progress
 

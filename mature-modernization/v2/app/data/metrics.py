@@ -5,6 +5,9 @@ from collections import defaultdict
 from dataclasses import dataclass
 from typing import Any, Iterable, Mapping
 
+from .normalization import AlarmEvent
+from .realtime_views import RealtimeViewEvent
+
 
 UTC = dt.timezone.utc
 
@@ -53,6 +56,61 @@ class MediaAggregationResult:
     fetched_count: int
     records_total: int | None
     invalid_row_count: int
+    partial: bool
+    quality_flags: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class RealtimeViewDimensionMetric:
+    dimension_id: str
+    view_count: int
+    played_count: int
+    first_frame_count: int
+    connection_duration_seconds: float
+    view_duration_seconds: float
+    first_frame_latency_seconds: float
+    result_counts: tuple[tuple[str, int], ...]
+
+
+@dataclass(frozen=True, slots=True)
+class RealtimeViewAggregationResult:
+    users: tuple[RealtimeViewDimensionMetric, ...]
+    devices: tuple[RealtimeViewDimensionMetric, ...]
+    event_count: int
+    duplicate_event_count: int
+    conflicting_stream_count: int
+    invalid_event_count: int
+    played_count: int
+    first_frame_count: int
+    connection_duration_seconds: float
+    view_duration_seconds: float
+    first_frame_latency_seconds: float
+    average_first_frame_latency_seconds: float | None
+    result_counts: tuple[tuple[str, int], ...]
+    error_counts: tuple[tuple[str, int], ...]
+    partial: bool
+    quality_flags: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class AlarmDeviceMetric:
+    device_id: str
+    alarm_count: int
+    alarm_type_counts: tuple[tuple[int, int], ...]
+
+
+@dataclass(frozen=True, slots=True)
+class AlarmAggregationResult:
+    devices: tuple[AlarmDeviceMetric, ...]
+    alarm_count: int
+    duplicate_row_count: int
+    updated_record_count: int
+    conflicting_record_count: int
+    alarm_type_counts: tuple[tuple[int, int], ...]
+    alarm_status_counts: tuple[tuple[int, int], ...]
+    deal_status_counts: tuple[tuple[int, int], ...]
+    missing_alarm_status_count: int
+    missing_deal_status_count: int
     partial: bool
     quality_flags: tuple[str, ...]
 
@@ -299,6 +357,304 @@ def aggregate_media_files(
         partial=partial,
         quality_flags=tuple(sorted(quality_flags)),
     )
+
+
+def aggregate_realtime_views(
+    events: Iterable[RealtimeViewEvent],
+    *,
+    complete: bool = True,
+) -> RealtimeViewAggregationResult:
+    source_events = list(events)
+    grouped: dict[str, list[RealtimeViewEvent]] = defaultdict(list)
+    for event in source_events:
+        grouped[event.stream_id].append(event)
+
+    accepted: list[RealtimeViewEvent] = []
+    duplicate_event_count = 0
+    conflicting_stream_count = 0
+    for stream_id, stream_events in grouped.items():
+        del stream_id
+        unique = list(dict.fromkeys(stream_events))
+        duplicate_event_count += len(stream_events) - len(unique)
+        if len(unique) > 1:
+            conflicting_stream_count += 1
+            continue
+        accepted.append(unique[0])
+
+    result_counts: dict[str, int] = defaultdict(int)
+    error_counts: dict[str, int] = defaultdict(int)
+    user_groups: dict[str, list[RealtimeViewEvent]] = defaultdict(list)
+    device_groups: dict[str, list[RealtimeViewEvent]] = defaultdict(list)
+    connection_duration = 0.0
+    view_duration = 0.0
+    first_frame_latency = 0.0
+    first_frame_count = 0
+    played_count = 0
+    invalid_event_count = 0
+    flags: set[str] = set()
+
+    for event in accepted:
+        calculated_connection = (
+            event.closed_at - event.opened_at
+        ).total_seconds()
+        if calculated_connection < 0:
+            flags.add("negative_connection_duration_event_excluded")
+            invalid_event_count += 1
+            continue
+
+        calculated_view: float | None = None
+        calculated_latency: float | None = None
+        if event.first_frame_at is not None:
+            calculated_view = (
+                event.closed_at - event.first_frame_at
+            ).total_seconds()
+            calculated_latency = (
+                event.first_frame_at - event.opened_at
+            ).total_seconds()
+            if calculated_view < 0 or calculated_latency < 0:
+                flags.add("invalid_first_frame_event_excluded")
+                invalid_event_count += 1
+                continue
+
+        connection_duration += calculated_connection
+        if abs(
+            calculated_connection - event.connection_duration_seconds
+        ) > 0.001:
+            flags.add("connection_duration_mismatch_recalculated")
+        if calculated_view is not None and calculated_latency is not None:
+            first_frame_count += 1
+            view_duration += calculated_view
+            first_frame_latency += calculated_latency
+            if (
+                event.view_duration_seconds is None
+                or abs(
+                    calculated_view - event.view_duration_seconds
+                )
+                > 0.001
+            ):
+                flags.add("view_duration_mismatch_recalculated")
+        elif event.view_duration_seconds is not None:
+            flags.add("view_duration_without_first_frame_ignored")
+
+        result_counts[event.result] += 1
+        if event.result == "played":
+            played_count += 1
+        elif event.result not in {
+            "abnormal_disconnect",
+            "cancelled",
+            "failed",
+            "timeout",
+        }:
+            flags.add("unknown_realtime_result")
+        if event.error_code:
+            error_counts[event.error_code] += 1
+        if event.quality_flags:
+            flags.add("source_event_quality_flags_present")
+        user_groups[event.username].append(event)
+        device_groups[event.device_id].append(event)
+
+    if duplicate_event_count:
+        flags.add("duplicate_events_removed")
+    if conflicting_stream_count:
+        flags.add("conflicting_streams_excluded")
+    if not complete:
+        flags.add("input_scope_incomplete")
+
+    average_latency = (
+        first_frame_latency / first_frame_count
+        if first_frame_count
+        else None
+    )
+    return RealtimeViewAggregationResult(
+        users=_aggregate_view_dimensions(user_groups),
+        devices=_aggregate_view_dimensions(device_groups),
+        event_count=sum(result_counts.values()),
+        duplicate_event_count=duplicate_event_count,
+        conflicting_stream_count=conflicting_stream_count,
+        invalid_event_count=invalid_event_count,
+        played_count=played_count,
+        first_frame_count=first_frame_count,
+        connection_duration_seconds=round(connection_duration, 3),
+        view_duration_seconds=round(view_duration, 3),
+        first_frame_latency_seconds=round(first_frame_latency, 3),
+        average_first_frame_latency_seconds=(
+            round(average_latency, 3)
+            if average_latency is not None
+            else None
+        ),
+        result_counts=tuple(sorted(result_counts.items())),
+        error_counts=tuple(sorted(error_counts.items())),
+        partial=(
+            not complete
+            or bool(conflicting_stream_count)
+            or bool(invalid_event_count)
+        ),
+        quality_flags=tuple(sorted(flags)),
+    )
+
+
+def aggregate_alarm_events(
+    events: Iterable[AlarmEvent],
+    *,
+    complete: bool = True,
+) -> AlarmAggregationResult:
+    source_events = list(events)
+    grouped: dict[
+        tuple[str, str, str],
+        list[AlarmEvent],
+    ] = defaultdict(list)
+    for event in source_events:
+        identity = (
+            event.source_system,
+            event.source_record_id,
+            event.device_id,
+        )
+        grouped[identity].append(event)
+
+    selected: list[AlarmEvent] = []
+    duplicate_row_count = 0
+    updated_record_count = 0
+    conflicting_record_count = 0
+    for identity_events in grouped.values():
+        unique = list(dict.fromkeys(identity_events))
+        duplicate_row_count += len(identity_events) - len(unique)
+        if len(unique) == 1:
+            selected.append(unique[0])
+            continue
+        latest_time = max(
+            (event.observed_at, event.ingested_at)
+            for event in unique
+        )
+        latest = [
+            event
+            for event in unique
+            if (event.observed_at, event.ingested_at) == latest_time
+        ]
+        if len(latest) != 1:
+            conflicting_record_count += 1
+            continue
+        updated_record_count += 1
+        selected.append(latest[0])
+
+    type_counts: dict[int, int] = defaultdict(int)
+    status_counts: dict[int, int] = defaultdict(int)
+    deal_status_counts: dict[int, int] = defaultdict(int)
+    device_groups: dict[str, list[AlarmEvent]] = defaultdict(list)
+    missing_alarm_status_count = 0
+    missing_deal_status_count = 0
+    flags: set[str] = set()
+
+    for event in selected:
+        type_counts[event.alarm_type_code] += 1
+        device_groups[event.device_id].append(event)
+        if event.alarm_status_code is None:
+            missing_alarm_status_count += 1
+        else:
+            status_counts[event.alarm_status_code] += 1
+        if event.deal_status_code is None:
+            missing_deal_status_count += 1
+        else:
+            deal_status_counts[event.deal_status_code] += 1
+        if event.quality_flags:
+            flags.add("source_event_quality_flags_present")
+
+    if duplicate_row_count:
+        flags.add("duplicate_rows_removed")
+    if updated_record_count:
+        flags.add("alarm_updates_collapsed_to_latest_observation")
+    if conflicting_record_count:
+        flags.add("conflicting_alarm_records_excluded")
+    if missing_alarm_status_count:
+        flags.add("alarm_status_missing")
+    if missing_deal_status_count:
+        flags.add("deal_status_missing")
+    if not complete:
+        flags.add("input_scope_incomplete")
+
+    device_metrics = []
+    for device_id, device_events in device_groups.items():
+        device_type_counts: dict[int, int] = defaultdict(int)
+        for event in device_events:
+            device_type_counts[event.alarm_type_code] += 1
+        device_metrics.append(
+            AlarmDeviceMetric(
+                device_id=device_id,
+                alarm_count=len(device_events),
+                alarm_type_counts=tuple(
+                    sorted(device_type_counts.items())
+                ),
+            )
+        )
+
+    return AlarmAggregationResult(
+        devices=tuple(
+            sorted(device_metrics, key=lambda item: item.device_id)
+        ),
+        alarm_count=len(selected),
+        duplicate_row_count=duplicate_row_count,
+        updated_record_count=updated_record_count,
+        conflicting_record_count=conflicting_record_count,
+        alarm_type_counts=tuple(sorted(type_counts.items())),
+        alarm_status_counts=tuple(sorted(status_counts.items())),
+        deal_status_counts=tuple(sorted(deal_status_counts.items())),
+        missing_alarm_status_count=missing_alarm_status_count,
+        missing_deal_status_count=missing_deal_status_count,
+        partial=not complete or bool(conflicting_record_count),
+        quality_flags=tuple(sorted(flags)),
+    )
+
+
+def _aggregate_view_dimensions(
+    groups: Mapping[str, list[RealtimeViewEvent]],
+) -> tuple[RealtimeViewDimensionMetric, ...]:
+    metrics = []
+    for dimension_id, events in groups.items():
+        result_counts: dict[str, int] = defaultdict(int)
+        connection_duration = 0.0
+        view_duration = 0.0
+        first_frame_latency = 0.0
+        first_frame_count = 0
+        played_count = 0
+        for event in events:
+            result_counts[event.result] += 1
+            played_count += event.result == "played"
+            connection_duration += max(
+                0.0,
+                (event.closed_at - event.opened_at).total_seconds(),
+            )
+            if event.first_frame_at is not None:
+                first_frame_count += 1
+                view_duration += max(
+                    0.0,
+                    (
+                        event.closed_at - event.first_frame_at
+                    ).total_seconds(),
+                )
+                first_frame_latency += max(
+                    0.0,
+                    (
+                        event.first_frame_at - event.opened_at
+                    ).total_seconds(),
+                )
+        metrics.append(
+            RealtimeViewDimensionMetric(
+                dimension_id=dimension_id,
+                view_count=len(events),
+                played_count=played_count,
+                first_frame_count=first_frame_count,
+                connection_duration_seconds=round(
+                    connection_duration,
+                    3,
+                ),
+                view_duration_seconds=round(view_duration, 3),
+                first_frame_latency_seconds=round(
+                    first_frame_latency,
+                    3,
+                ),
+                result_counts=tuple(sorted(result_counts.items())),
+            )
+        )
+    return tuple(sorted(metrics, key=lambda item: item.dimension_id))
 
 
 def _deduplicate_online_events(

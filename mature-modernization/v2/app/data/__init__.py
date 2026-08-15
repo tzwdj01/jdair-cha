@@ -3,12 +3,18 @@
 from .aee_adapter import AEEPageResult, AEEReadOnlyDataAdapter
 from .aee_http import AEEDataHTTPClient, AEEDataHTTPError
 from .metrics import (
+    AlarmAggregationResult,
+    AlarmDeviceMetric,
     DeviceUptimeAggregationResult,
     DeviceUptimeMetric,
     MediaAggregationResult,
     MediaDeviceMetric,
+    RealtimeViewAggregationResult,
+    RealtimeViewDimensionMetric,
+    aggregate_alarm_events,
     aggregate_device_uptime,
     aggregate_media_files,
+    aggregate_realtime_views,
 )
 from .normalization import (
     AlarmEvent,
@@ -35,6 +41,12 @@ __all__ = [
     "MediaDeviceMetric",
     "aggregate_device_uptime",
     "aggregate_media_files",
+    "RealtimeViewDimensionMetric",
+    "RealtimeViewAggregationResult",
+    "aggregate_realtime_views",
+    "AlarmDeviceMetric",
+    "AlarmAggregationResult",
+    "aggregate_alarm_events",
     "DeviceStatusEvent",
     "DeviceStatusNormalizationResult",
     "MediaFile",

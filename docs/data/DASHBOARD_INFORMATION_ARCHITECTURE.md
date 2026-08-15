@@ -36,10 +36,10 @@ Candidate cards:
 | today upload count | media record query/index | AVAILABLE, completeness required |
 | 7/30-day upload trend | daily record counts/index | AVAILABLE, completeness required |
 | current realtime sessions | runtime telemetry | AVAILABLE when feature enabled |
-| today realtime views | finalized `RealtimeViewEvent` contract | DERIVABLE after persistence |
+| today realtime views | finalized event + deterministic aggregation | DERIVABLE after persistence |
 | long-time offline | future status history | DERIVABLE |
 | long-time no upload | future media index | DERIVABLE |
-| alarm count | normalized AEE `AlarmEvent` | DERIVABLE after complete ingestion |
+| alarm count | normalized event + deterministic aggregation | DERIVABLE after complete ingestion |
 | flight/task video coverage | normalized relations | DERIVABLE |
 
 Unknown metrics must display “数据源未接入/待验证”, not zero.

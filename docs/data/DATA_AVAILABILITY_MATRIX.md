@@ -108,11 +108,11 @@ the required source events. It does not mean the value already exists.
 | duration seconds | DERIVABLE | opened/first-frame/closed timestamps | no | connection and post-first-frame semantics implemented |
 | result | DERIVABLE | first frame, close reason and bounded error | no | normalized outcome implemented |
 | error code | AVAILABLE | runtime stream error | no | safe CHA code preserved in event |
-| watching count by user | DERIVABLE | `RealtimeViewEvent` | no | aggregate after persistence |
-| watching duration by user | DERIVABLE | `RealtimeViewEvent` | no | aggregate after persistence |
-| device viewed count/duration | DERIVABLE | `RealtimeViewEvent` | no | aggregate after persistence |
-| first-frame success rate | DERIVABLE | persisted view results | process counter only | durable numerator/denominator |
-| failure distribution | DERIVABLE | persisted error code | process counter/detail only | durable aggregation |
+| watching count by user | DERIVABLE | `RealtimeViewEvent` | no | deterministic aggregator implemented; persistence/query scope TODO |
+| watching duration by user | DERIVABLE | `RealtimeViewEvent` | no | deterministic timestamp-based aggregator implemented |
+| device viewed count/duration | DERIVABLE | `RealtimeViewEvent` | no | deterministic device grouping implemented |
+| first-frame success rate | DERIVABLE | persisted view results | process counter only | numerator/latency aggregation implemented; durable scope TODO |
+| failure distribution | DERIVABLE | persisted error code | process counter/detail only | result/error aggregation implemented; durable scope TODO |
 
 ## 6. User activity outside Realtime
 
@@ -144,6 +144,8 @@ CHA can begin collecting its own explicitly scoped events prospectively.
 | handler | RESTRICTED | AEE `dealUser` | omitted by default; require business need and authorization |
 | deal type | AVAILABLE | AEE `dealType` | raw code normalized; labels remain partial |
 | description | RESTRICTED | AEE `dealDesc` | omitted by default; free-text retention policy required |
+| alarm counts by device/type | DERIVABLE | normalized `AlarmEvent` | deterministic raw-code aggregation implemented; persistence scope TODO |
+| alarm status/deal status distribution | DERIVABLE | normalized raw codes | deterministic aggregation implemented; labels remain unverified |
 | current offline exception | AVAILABLE | current device status | not an alarm-history substitute |
 | stale location exception | DERIVABLE | current GPS age | define threshold and missing-data policy |
 | long-time no upload | DERIVABLE | media latest-upload time | requires media index |
