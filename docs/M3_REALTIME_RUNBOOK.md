@@ -180,14 +180,31 @@ CHA_V2_AEE_PASSWORD
    `configured=true`，此检查不得主动登录 AEE。
 4. 使用非 Canary 登录验证页面、API 和三个 WebSocket 均被拒绝。
 5. 验证 liveness、readiness、realtime health 和 diagnostics。
-6. 经审批后只开启 realtime；最大路数保持 6，不测试 9 路。
-7. 视频稳定后再单独审批 audio Canary。
-8. 观察 session/stream、Gateway/Media、first-frame、release、login latency。
+6. 对每个候选设备先在 AEE 原生页面执行最小媒体 precheck：
+   `mediaMonitor=opened → newConsumer → track/Canvas → first frame`。
+   `online=1` 只表示设备树状态，不等于媒体可用。
+7. AEE 原生 `mediaMonitor` 失败的设备标记为 `MEDIA_UNAVAILABLE` 并跳过；
+   不计为 CHA failure，也不得围绕它增加 workaround。
+8. 经审批后只开启 realtime，先执行 1 路，再执行 4 路；不测试 9 路。
+9. 四路验证必须覆盖首帧、分辨率、track live、selective close、survivor、
+   reopen、fullscreen、screenshot、session close 和完整资源释放。
+10. 只有至少 6 台设备通过 AEE-native precheck 时才顺带执行 6 路生产验证。
+    否则记录：
+    `6-stream production verification: NOT EXECUTED — INSUFFICIENT HEALTHY MEDIA DEVICES`，
+    该 evidence waiver 不阻塞 M3 首发。
+11. 若 1 路和 4 路均 PASS、但 6 路未执行，则生产首发最大路数建议为 4；
+    保留开发环境已验证的 6 路代码能力，未来单独完成 6 路生产容量验证后再提升。
+12. 视频稳定后再单独审批 audio Canary。
+13. 观察 session/stream、Gateway/Media、first-frame、release、login latency。
 
 以下任一情况立即中止：资源不能释放；Gateway/Media 持续增长；首帧超时或
 AEE 登录异常明显增长；页面持续错误；明确内存泄漏；owner 隔离失败；Token
 泄漏；旧系统受影响；业务设备异常。中止时先关闭 feature flag，再执行既定
 回滚。
+
+单个设备在 AEE 原生页面同样返回 `devices is offline` 不构成平台级中止条件；
+应关闭该设备 tile、确认资源释放、标记 `MEDIA_UNAVAILABLE` 后选择下一个已通过
+AEE precheck 的设备。
 
 ## 13. 发布脚本
 

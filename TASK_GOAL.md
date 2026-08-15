@@ -54,8 +54,8 @@ Last updated: 2026-08-14
 当前事实摘要：
 
 * 当前 Git branch：`codex/m3-release-fix-20260814`。
-* 当前治理基线提交：`a303821`；当前分支相对远端 ahead 4，工作树在本轮
-  证据文档修改前为 clean。
+* 当前 Git HEAD：`40deff8`，与
+  `origin/codex/m3-release-fix-20260814` 一致；本轮修改前工作树 clean。
 * 当前生产 V2 release：
   `/opt/jdair-cha/v2/releases/0.8.0-m3-final-rc-release-fix`。
 * 当前生产 Realtime、Audio、Control、AccountPool feature flag 均为
@@ -63,7 +63,9 @@ Last updated: 2026-08-14
 * 当前生产 AEE 和 Canary 配置存在于受保护的生产环境中，不进入 Git。
 * 最新生产回滚备份：
   `/opt/jdair-cha/backups/jdair-cha-before-m3-realtime-20260814-173601.tar.gz`。
-* 最新 Production Canary 因 `WXB358` 首帧失败中止；生产 Realtime 已关闭。
+* 上一次 Production Canary 因选择了 AEE Media 当前不可用的 `WXB358` 而中止；
+  该设备现归类为已知 upstream/device media availability exception，不再作为
+  M3 Production Gate 硬性设备。
 * `2026-08-14 19:57 CST` 最新生产只读复核确认：
   * liveness、readiness、Legacy dependency 均为 healthy；
   * 生产版本 `0.8.0`、build `m3-final-rc`；
@@ -72,6 +74,14 @@ Last updated: 2026-08-14
   * AEE Secret 和 Canary allowlist 均显示 configured；
   * health 未主动探测或登录 AEE。
 * 当前 HEAD 加本轮工作树修改的全量 V2 自动化回归：`73 tests PASS`。
+* `2026-08-15 18:32 CST` 生产只读复核确认：
+  * current 仍为 `0.8.0-m3-final-rc-release-fix`；
+  * service active，active since `2026-08-14 17:53:06 CST`；
+  * liveness、readiness、Legacy dependency 均 healthy；
+  * Realtime、Audio、Control、AccountPool 均为 `false`；
+  * AEE Secret 7/7 configured，Canary allowlist configured；
+  * 生产 env 权限 `0600 root:root`；
+  * Legacy local HTTP 为 200。
 
 ---
 
@@ -138,7 +148,7 @@ Last updated: 2026-08-14
 * 账号健康管理；
 * 会话健康管理。
 
-整体状态：`BLOCKED`
+整体状态：`IN PROGRESS / PRODUCTION CANARY VALIDATION`
 
 已完成并验证：
 
@@ -161,7 +171,8 @@ Last updated: 2026-08-14
 
 已实现但当前生产未完成验收：
 
-* `COMPLETED / UNVERIFIED`：当前生产 release 的完整 1 → 4 → 6 Canary。
+* `COMPLETED / UNVERIFIED`：当前生产 release 的 1 → 4 路 Canary；6 路仅在
+  至少 6 台设备通过 AEE-native media precheck 时顺带执行。
 * `COMPLETED / UNVERIFIED`：生产环境 authenticated non-Canary 的页面、API 和三个
   WebSocket 负向验证。
 
@@ -175,14 +186,16 @@ Last updated: 2026-08-14
 AccountPool 和生产 Audio 开放排除在当前首发范围之外。重新进入这些能力必须由后续
 明确任务授权，并更新本文件中的 M3 执行计划。
 
-当前 blocker：
+当前设备例外：
 
-* `BLOCKED`：生产 Canary 设备 `WXB358` 两次无法产生首帧。
-* `BLOCKED`：授权 AEE 对照中，`WXB358` 虽在 DevTree 中为 online，但 AEE
-  Media 服务拒绝 `mediaMonitor` 并返回 `devices is offline`，当前无法取得
-  device-specific codec/RTP 证据。
-* `AEE VERIFICATION REQUIRED`：需要在 AEE Media 再次接受 `WXB358` 时确认
-  实际 codec/profile，以及是否进入已确认的 H.265 fallback。
+* `KNOWN UPSTREAM/DEVICE MEDIA AVAILABILITY EXCEPTION`：`WXB358` 虽在
+  DevTree 中为 online，但 AEE 原生 `mediaMonitor` 稳定返回
+  `devices is offline`，且不产生 `newConsumer`。
+* `WXB358` 不再作为 M3 Production Canary 硬性验收设备，也不再构成项目级
+  blocker。
+* 其 H.265、lowercase `openvideo`、WASM/Canvas 和 `/mediaStream` 调查证据
+  保留但暂停。只有未来 AEE `mediaMonitor=opened` 且产生 `newConsumer` 后，
+  才作为独立 compatibility issue 恢复调查。
 
 主要证据：
 
@@ -262,12 +275,13 @@ AccountPool 和生产 Audio 开放排除在当前首发范围之外。重新进�
 `ACTIVE MILESTONE: M3`
 
 当前状态：
-`IN PROGRESS (evidence) / BLOCKED (WXB358 AEE Media offline) / AEE VERIFICATION REQUIRED`
+`IN PROGRESS / PRODUCTION CANARY VALIDATION`
 
-当前只执行 M3 Production Canary 的证据恢复、最小必要修复、回归和受控验收。
+当前只执行 M3 Production Canary 的候选设备 precheck、1 路、4 路受控验收、
+资源释放检查和发布结论。
 
-不得在该 blocker 未解决时自动开发 M4，不得顺手扩展 9 路、AccountPool、Audio
-生产开放、PTZ、对讲或录像。
+不得自动开发 M4，不得顺手扩展 9 路、AccountPool、Audio 生产开放、PTZ、对讲
+或录像。
 
 当当前 Milestone 达到 Done Criteria 后：
 
@@ -308,16 +322,19 @@ AccountPool 和生产 Audio 开放排除在当前首发范围之外。重新进�
 
 然后才能决定修复方案。
 
-当前 `WXB358` 项必须记录：
+候选 Canary 设备必须先执行最小 AEE native playback precheck，并记录：
 
-* Question；
 * Device；
 * Scenario；
-* Expected Observation；
-* Required Network Evidence；
-* Required WebSocket Evidence；
-* Required SDK Evidence；
-* Required Media Evidence。
+* `mediaMonitor` 是否 `opened`；
+* 是否产生 `newConsumer`；
+* codec；
+* track/Canvas；
+* first frame；
+* close/release。
+
+若 AEE 原生 `mediaMonitor` 失败，应标记为 `MEDIA_UNAVAILABLE` 并跳过；不得计为
+CHA failure，也不得围绕该设备开发 workaround。
 
 ---
 
@@ -452,8 +469,9 @@ Commit 应按逻辑阶段组织。
 当前 Git 约束：
 
 * 治理文件提交与未来媒体修复提交保持分离。
-* 当前治理提交尚未推送远端。
-* 任何 `WXB358` 修复应建立独立、最小范围的修复提交或分支。
+* 当前治理、AEE 证据和 `DEVICE_MEDIA_OFFLINE` 修复均已提交并推送远端。
+* `WXB358` compatibility 调查暂停；未来恢复时应建立独立、最小范围的
+  compatibility issue/提交。
 * 未通过验证前不更新生产 `current`，不创建 release tag，不自动 merge。
 
 ---
@@ -465,7 +483,7 @@ Commit 应按逻辑阶段组织。
 Production Canary 中 `WXB358` 无法产生首帧；首次测试中 `WXB353` 成功播放后，
 增加 `WXB358` 失败；第二次将 `WXB358` 作为第一路单独打开仍失败。
 
-状态：`BLOCKED / AEE VERIFICATION REQUIRED`
+状态：`KNOWN UPSTREAM/DEVICE MEDIA AVAILABILITY EXCEPTION`
 
 ## CHA Evidence
 
@@ -577,7 +595,7 @@ Production Canary 中 `WXB358` 无法产生首帧；首次测试中 `WXB353` 成
   * 因目标遥测没有恢复，本次没有再次触发已实证的三秒 `mediaMonitor` 失败循环，
     避免无新增证据的上游请求负载。
 
-尚未确认：
+尚未确认但不阻塞当前 M3 Production Gate：
 
 * AEE Media 服务再次接受 `WXB358` 时的实际 codec/profile；
 * AEE 是否能在该设备媒体可用时产生 WebRTC track 或 Canvas 首帧；
@@ -585,8 +603,8 @@ Production Canary 中 `WXB358` 无法产生首帧；首次测试中 `WXB353` 成
 * 是否存在有文档或服务端支持的 MCS8 原生 H.264 stream/profile 选择，可避免
   H.265 fallback；当前 public SDK 静态表面未发现该 selector。
 
-必须在当前合法授权 AEE 会话或同等授权环境中，等 AEE Media 再次接受
-`WXB358` 后验证：
+只有未来 AEE Media 自然再次接受 `WXB358` 且产生 `newConsumer` 时，才恢复
+以下独立 compatibility 调查：
 
 * AEE Media 是否接受并打开 `WXB358`；
 * AEE 实际 SDK 方法名称、大小写、参数和返回值；
@@ -616,7 +634,7 @@ VERIFIED。
 
 ## Decision
 
-* 保持生产 Realtime 关闭。
+* 在新的受控 Canary 开始前保持生产 Realtime 关闭。
 * 当前不修改 CHA 媒体协议或 SDK Adapter；授权 AEE 当前也无法打开
   `WXB358`，没有证据支持 CHA-only 修复。
 * 不增加 blind `openvideo` shim，不复制 AEE token-bearing page glue。
@@ -625,10 +643,15 @@ VERIFIED。
     `DEVICE_MEDIA_OFFLINE`，不向用户暴露原始 AEE 错误；
   * `openVideo` rejection 后执行补偿性 `closeVideo`，对称清理 monitor 状态；
   * 不改变 `streamType`、codec、AEE Adapter 协议或生产开关。
-* 先恢复或等待 `WXB358` 被 AEE Media 服务识别为可用，再重复同设备对照。
-* 只有成功取得 `newConsumer` 并确认 CHA 与 AEE 的最小 Class B 差异后，才允许
-  提出最小修复。
-* 修复后必须重新执行自动化回归和受控 1 → 4 → 6 Production Canary。
+* 不再等待、轮询或重复打开 `WXB358`；其当前分类为已知 upstream/device media
+  availability exception。
+* Production Canary 改用 AEE 原生页面已确认 `mediaMonitor=opened`、产生
+  `newConsumer` 和首帧的健康设备。
+* 当前 Production Gate 为 1 → 4 路。若不足 6 台健康媒体设备，则记录
+  `6-stream production verification: NOT EXECUTED — INSUFFICIENT HEALTHY MEDIA DEVICES`，
+  不阻塞 M3 首发。
+* 若 1 路和 4 路 Production Canary PASS，生产首发最大路数建议设为 4；保留
+  development validated limit 6，未来单独完成 6 路生产容量验证后再提升。
 
 ## Rejected Alternatives
 
@@ -669,15 +692,22 @@ Active Milestone 只有同时满足以下条件才能完成：
 
 M3 当前额外 Done Criteria：
 
-* `WXB358` 已形成完整 AEE vs CHA Evidence 并完成 Class A/B/C/D 分类。
-* 当前生产 release 的 1 → 4 → 6 Canary 通过。
+* 至少 1 个 AEE-native 正常设备完成 AEE/CHA 同设备对照 PASS。
+* 当前生产 release 的 1 路 Production Canary PASS。
+* 当前生产 release 的 4 路 Production Canary PASS，四路首帧均正常。
 * authenticated non-Canary 页面/API/WebSocket 拒绝通过。
-* 首帧、分辨率、track live、截图、全屏、重连均有实际证据。
+* 首帧、分辨率、track live、截图和全屏均有实际证据。
 * selective close、survivor 和 reopen 通过。
 * Session/Stream/Gateway/Media active counters 全部回到 0。
+* `realtime_release_failure_total` 在本轮 Canary 中无新增。
 * Legacy 与 V2 服务健康，无 release 引入的 5xx/restart。
+* Realtime 仍受 Canary 用户限制；Audio、Control、AccountPool 保持关闭。
 * AEE 长期凭据继续只保留在服务端生产配置。
 * 生产启用或继续关闭的决定有明确记录。
+* `WXB358` 明确登记为非阻塞的已知 upstream/device media availability
+  exception。
+* 若不足 6 台 AEE-native 健康媒体设备，6 路生产验证可以 evidence waiver：
+  `NOT EXECUTED — INSUFFICIENT HEALTHY MEDIA DEVICES`，不阻塞 M3。
 
 未满足以上条件：
 
@@ -708,55 +738,36 @@ M3 当前额外 Done Criteria：
 
 ## In Progress
 
-* 当前最小 Class C 业务修复已实现并测试，尚未发布到生产。
 * Active Milestone 保持 M3。
-* AEE 静态 SDK/runtime 对照、live-vs-vendored bundle 差异和设备状态证据已完成。
-* AEE 授权和控制设备媒体取证已完成；等待 `WXB358` 被 AEE Media 服务识别为
-  可用，以取得 device-specific codec/RTP 证据。
+* 当前进入 `PRODUCTION CANARY VALIDATION`。
+* 正在从当前在线设备中执行 AEE native playback precheck，选择至少 4 台
+  `mediaMonitor=opened`、有 `newConsumer` 和首帧的健康设备。
 
 ## Next
 
-1. 确认或恢复 `WXB358` 的 AEE Media 可用性；DevTree online 不能替代
-   `mediaMonitor` 成功。
-2. 当 `mediaMonitor` 成功后，捕获 device-specific
-   `newConsumer.rtpParameters`、codec/profile、stream profile、lowercase
-   `openvideo` 调用、`/mediaStream` 生命周期、首帧和关闭。
-3. 完成 `WXB358` 最终 Class A/B/C/D 根因分类，并判断历史 Canary 与当前
-   upstream 状态的关系。
-4. 从成功的 AEE 会话或上游协议文档验证 MCS8 是否存在原生 H.264
-   stream/profile 选择；不得猜测其它 `streamType`。如确认 CHA gap，才创建
-   最小修复并运行现有 M3 测试。
-5. 申请新的受控 Production Canary 窗口并执行完整验收。
+1. 使用 `WXB353` 和其它 GPS 正常更新设备执行最小 AEE native playback
+   precheck；AEE Media unavailable 的候选设备立即记录并跳过。
+2. 用已确认健康设备执行 1 路 Production Canary。
+3. 用 4 台已确认健康设备执行 4 路 Production Canary，完成 selective close、
+   survivor、reopen、fullscreen、screenshot 和 session close。
+4. 确认 active session/stream/Gateway/Media 回到 0，release failure 无新增，
+   Legacy/V2/Canary 隔离无回归。
+5. 若不足 6 台健康设备，登记 6 路生产验证 evidence waiver，并将生产首发建议
+   最大路数设为 4。
 
 ## Blocked
 
-* `openvideo is not defined` 的 SDK 调用来源已确认；当前 AEE 播放结果已确认在
-  `mediaMonitor` 阶段因 Media 判定 offline 而失败，但 `WXB358` 实际 codec/
-  profile 仍未确认。
-* 合法授权问题已解除；当前 blocker 改为 `WXB358` 的 AEE Media 服务状态。
-  AEE DevTree 报 online，但两个授权观察窗口内 `mediaMonitor` 均稳定返回
-  `devices is offline`；随后两次被动检查中目标 `gpsTime` 也持续停留在
-  `20:22:14`。
-* 当前 Production Canary 未完成 1 → 4 → 6。
-* 在 blocker 解决前，生产 Realtime 保持关闭。
+* 当前没有由单个媒体不可用设备造成的项目级 blocker。
+* 只有以下情况阻塞本轮：
+  * 没有任何 AEE-native 可实时播放设备；
+  * AEE 正常而 CHA 对同设备失败；
+  * Production Realtime 出现资源泄漏；
+  * 安全边界或 Canary 隔离失败；
+  * Legacy/V2 回归。
 
 ## AEE Verification Required
 
-* Question：当 AEE Media 服务再次接受 `WXB358` 时，其实际 codec/profile
-  是否进入已确认的 H.265 fallback？
-* Device：`WXB358`，控制设备 `WXB353`。
-* Required User / Permission：已具备合法 `VIDEOMONITOR` 权限。
-* Current Observation：`WXB353` H.264 控制通过；`WXB358` 在
-  `20:25–20:35` 和 `20:59–21:00 CST` 两个授权观察窗口内均在
-  `mediaMonitor` 阶段被 Media 服务判定 offline。
-* Scenario：设备媒体可用后，AEE 单路播放 `WXB358`，关闭并确认释放；以已完成
-  的 `WXB353` H.264 控制证据对照。
-* Expected Observation：取得 `WXB358` 的首个 `newConsumer`，确认 codec 和
-  track/Canvas 路径。
-* Required Network Evidence：Media 可用状态、请求结果、时序、设备 capability。
-* Required WebSocket Evidence：Gateway/Media 生命周期；如进入 H.265 fallback，
-  记录脱敏后的 `/mediaStream` 建立、消息和关闭顺序。
-* Required SDK Evidence：`newConsumer.rtpParameters`、方法名/大小写、安全参数、
-  返回值、callback 和错误来源。
-* Required Media Evidence：SDP/ICE/DTLS、RTP、codec/profile、stream profile、
-  resolution、track 或 Canvas、first-frame 和资源释放。
+* `WXB358` compatibility 调查：`NON-BLOCKING / PAUSED`。
+* 未来触发条件：AEE 原生 `mediaMonitor=opened` 且产生 `newConsumer`。
+* 在触发条件出现前，禁止轮询、反复 `mediaMonitor`、猜 codec/streamType、
+  实现 H.265 workaround、复制 WASM/`/mediaStream` 或引入 decoder/FFmpeg/SFU。

@@ -4,7 +4,8 @@
 
 - [ ] `VERSION`、`BUILD` 与 RC 计划一致
 - [ ] Model A 未改变
-- [ ] 最大 streams 为真实验证值 6
+- [ ] 代码保留 development validated stream limit 6
+- [ ] 本轮 Production Gate 为 1 路和 4 路
 - [ ] 有 1/4/6 路入口且没有 9 路入口
 - [ ] `realtime_audio=false`
 - [ ] `realtime_control=false`
@@ -68,8 +69,12 @@
 - [ ] liveness PASS
 - [ ] application readiness PASS
 - [ ] realtime health PASS
-- [ ] 真实 4 路 × 600 秒证据仍有效
-- [ ] 真实短时 6 路、survivor、reopen、释放证据 PASS
+- [ ] Canary 候选设备先通过 AEE-native
+      `mediaMonitor=opened/newConsumer/first frame` precheck
+- [ ] 1 路 Production Canary PASS
+- [ ] 4 路 Production Canary 首帧、survivor、reopen、截图、全屏和释放 PASS
+- [ ] 若不足 6 台健康媒体设备，记录 6 路 evidence waiver，而不是使用异常设备
+- [ ] 若 6 路未执行，生产首发最大路数建议为 4
 - [ ] 9 路明确标记 NOT TESTED 且 UI 不显示
 - [ ] 若 Adapter/relay 有行为修改，完成必要短回归
 
