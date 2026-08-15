@@ -10,6 +10,14 @@ from .metrics import (
     aggregate_device_uptime,
     aggregate_media_files,
 )
+from .normalization import (
+    DeviceStatusEvent,
+    DeviceStatusNormalizationResult,
+    MediaFile,
+    MediaFileNormalizationResult,
+    normalize_device_status_events,
+    normalize_media_files,
+)
 from .pagination import AEEPageCollection, collect_aee_pages
 
 __all__ = [
@@ -23,6 +31,12 @@ __all__ = [
     "MediaDeviceMetric",
     "aggregate_device_uptime",
     "aggregate_media_files",
+    "DeviceStatusEvent",
+    "DeviceStatusNormalizationResult",
+    "MediaFile",
+    "MediaFileNormalizationResult",
+    "normalize_device_status_events",
+    "normalize_media_files",
     "AEEPageCollection",
     "collect_aee_pages",
 ]

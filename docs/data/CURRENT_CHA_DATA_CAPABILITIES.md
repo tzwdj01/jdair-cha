@@ -2,7 +2,7 @@
 
 Last reviewed: `2026-08-15`
 
-Status: `M4 BASELINE / CODE-AUDITED / AGGREGATION FOUNDATION IMPLEMENTED`
+Status: `M4 BASELINE / CODE-AUDITED / DATA FOUNDATION IMPLEMENTED`
 
 ## 1. Scope and evidence
 
@@ -400,7 +400,10 @@ Verification:
 * nine collection tests cover known/unknown totals, short-page completion,
   max-page/max-record limits, empty pages, changing totals, duplicate source
   IDs and invalid source rows;
-* the current complete V2 backend suite passes `103 tests`.
+* ten normalization tests cover source/observation/ingestion time separation,
+  non-1 status uncertainty, field aliases, raw units, partial code maps,
+  restricted-field minimization and malformed values;
+* the current complete V2 backend suite passes `113 tests`.
 
 Implemented read-only transport boundary:
 
@@ -422,6 +425,21 @@ Implemented read-only transport boundary:
   and never converts a truncated or unstable result set into a complete one.
 * duplicate upstream `id` values are reported but preserved until uniqueness
   scope is verified.
+
+Implemented normalized historical contracts:
+
+* `DeviceStatusEvent`
+  * preserves source ID, device/group/type and raw status code;
+  * normalizes source event time, observation time and ingestion time to UTC;
+  * maps only verified `status==1` to `online=true`;
+  * leaves non-1 status online state unknown until the status map is verified.
+* `MediaFile`
+  * normalizes verified device/title/time/size/duration/type aliases;
+  * preserves raw list/source/upload/deletion codes with quality flags;
+  * keeps file size in bytes and video duration in seconds;
+  * omits personnel number/name and free-text description by default;
+  * records the unverified upstream ID scope rather than claiming global
+    uniqueness.
 
 Not implemented by this foundation:
 

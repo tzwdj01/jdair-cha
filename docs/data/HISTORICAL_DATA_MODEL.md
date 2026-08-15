@@ -2,7 +2,7 @@
 
 Last reviewed: `2026-08-15`
 
-Status: `DESIGN / DETERMINISTIC AGGREGATION FOUNDATION IMPLEMENTED`
+Status: `DESIGN / NORMALIZATION AND AGGREGATION FOUNDATION IMPLEMENTED`
 
 ## 1. Principles
 
@@ -36,7 +36,22 @@ Implemented and covered by unit tests:
   explicit source timezone, range/pagination validation and page
   completeness metadata;
 * deterministic multi-page collection with explicit truncation, unknown-total,
-  changing-total, empty-page, duplicate-ID and invalid-row quality flags.
+  changing-total, empty-page, duplicate-ID and invalid-row quality flags;
+* normalized `DeviceStatusEvent` and `MediaFile` application contracts with
+  explicit `occurred_at`/source-time, `observed_at` and `ingested_at`
+  separation.
+
+Normalization safety rules already enforced:
+
+* non-1 DevOnlineList statuses remain `online=null` until the full code map is
+  verified;
+* upstream media ID scope remains flagged as unverified;
+* raw source/upload/deletion codes are preserved without inventing lifecycle
+  labels;
+* file sizes remain bytes and video durations remain seconds;
+* restricted personnel and free-text fields are omitted by default;
+* lifecycle timestamps must be timezone-aware and ingestion cannot precede
+  observation.
 
 The implementation is in:
 
@@ -44,10 +59,12 @@ The implementation is in:
 * `mature-modernization/v2/app/data/aee_http.py`;
 * `mature-modernization/v2/app/data/aee_adapter.py`;
 * `mature-modernization/v2/app/data/pagination.py`;
+* `mature-modernization/v2/app/data/normalization.py`;
 * `mature-modernization/v2/tests/test_data_metrics.py`.
 * `mature-modernization/v2/tests/test_aee_data_http.py`.
 * `mature-modernization/v2/tests/test_aee_data_adapter.py`.
 * `mature-modernization/v2/tests/test_aee_data_pagination.py`.
+* `mature-modernization/v2/tests/test_data_normalization.py`.
 
 Not yet implemented:
 

@@ -129,7 +129,10 @@ Last updated: 2026-08-15
   page-envelope completeness metadata。
 * 已增加 deterministic multi-page collection：不静默吞掉 max page/record
   截断、unknown/changing total、empty page、duplicate source ID 或 invalid row。
-* 当前全量 V2 自动化回归为 `103 tests PASS`。
+* 已增加 normalized `DeviceStatusEvent` 和 `MediaFile` contracts：
+  source/observation/ingestion 时间分离、原始 code 保留、非 1 status 不猜测为
+  offline、敏感人员/备注字段默认省略。
+* 当前全量 V2 自动化回归为 `113 tests PASS`。
 * 当前开发机没有 Docker、PostgreSQL client/server、`pg_dump` 或
   `pg_restore`。因此不能在此环境宣称 PostgreSQL migration、backup 或 restore
   rehearsal 已完成。
@@ -681,6 +684,8 @@ Commit 应按逻辑阶段组织。
   未稳定的 Alarm lifecycle。
 * 已增加分页完整性 collector；source ID duplicate 只记录、不删除，直到其唯一性
   范围完成 AEE 验证。
+* 已增加历史模型 normalization layer；当前尚未持久化，也没有 API、scheduler
+  或生产 wiring。
 
 ## M4 AEE Evidence
 
@@ -1134,13 +1139,15 @@ M4 Done Criteria：
   `mature-modernization/v2/app/data/aee_adapter.py`；
 * 已实现并测试 deterministic pagination/completeness collector：
   `mature-modernization/v2/app/data/pagination.py`；
-* 当前全量 V2 回归 `103 tests PASS`。
+* 已实现并测试 `DeviceStatusEvent` / `MediaFile` normalization：
+  `mature-modernization/v2/app/data/normalization.py`；
+* 当前全量 V2 回归 `113 tests PASS`。
 
 ## In Progress
 
 * `ACTIVE MILESTONE: M4`。
-* 正在把已验证的 AEE/CHA 字段语义固化为窄 contracts、page completeness、
-  data-quality evidence 和确定性统计边界。
+* 正在把已验证的 AEE/CHA 字段语义固化为窄 contracts、normalized historical
+  records、page completeness、data-quality evidence 和确定性统计边界。
 * 正在补齐 AEE HTTP Token-only sufficiency/lifecycle、device online status
   map、alarm lifecycle、media code maps 和用户活动数据证据。
 * 正在准备 PostgreSQL repository/migration 的隔离运行条件；当前尚未开始

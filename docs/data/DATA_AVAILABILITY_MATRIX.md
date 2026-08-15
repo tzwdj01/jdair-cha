@@ -24,7 +24,7 @@ the required source events. It does not mean the value already exists.
 | group | AVAILABLE | MCS8 catalog | `groupName` | no | catalog exact group identifiers |
 | department | DERIVABLE | group ID/name mapping | maintenance filter exists | no | create governed department mapping |
 | online | AVAILABLE | DeviceStatus/catalog | current boolean | no | store status observations/events |
-| status code | AVAILABLE | observed AEE DevTree/DeviceStatus | not normalized in V2 | no | catalog values and semantics |
+| status code | AVAILABLE | observed AEE DevTree/DeviceStatus | normalized application contract; not persisted/API wired | no | preserve raw code; non-1 semantics remain unknown |
 | alarm code | AVAILABLE | observed AEE DevTree | not normalized in CHA | no | AEE field semantics still require cataloging |
 | GPS time | AVAILABLE | GPS/catalog | `gpsTime` | GPS query available | normalize timezone and event-time semantics |
 | latitude | AVAILABLE | GPS/catalog | current `lat` | GPS query available | store only valid coordinates |
@@ -58,24 +58,24 @@ the required source events. It does not mean the value already exists.
 
 | Expected field | Status | Current source | CHA today | Required action / caveat |
 | --- | --- | --- | --- | --- |
-| stable media ID | AVAILABLE | AEE `RecordFileList.id` / MCS8 record row | raw row only | verify uniqueness scope before using as a sole database key |
-| device ID | AVAILABLE | record row | normalized `devId` | dimension FK |
+| stable media ID | AVAILABLE | AEE `RecordFileList.id` / MCS8 record row | normalized as `source_record_id`; scope flagged unverified | verify uniqueness scope before using as a sole database key |
+| device ID | AVAILABLE | record row | normalized application contract | dimension FK |
 | device name | AVAILABLE | row/catalog | normalized where possible | do not use name as identity |
-| upload time | AVAILABLE | `uploadTime/upLoadTime/endTime` | raw/UI fallback | verify semantics |
-| create/shoot time | AVAILABLE | `startTime/fileTime/beginTime` or filename | partial helper | record derivation source |
-| duration | AVAILABLE | `duration/videoTime` | UI only | normalize unit |
-| size | AVAILABLE | `fileSize/fileLen/size` | aggregate/UI only | normalize bytes |
-| file type | AVAILABLE | AEE `fType`/`lType` | not normalized | `fType` 1/2/3 maps to image/audio/video and 4 to GPS/device file; exclude code 4 from media counts |
-| media kind: image/audio/video | AVAILABLE | AEE `fType` | not normalized | preserve raw code and catalog version |
-| list/import type | AVAILABLE | AEE `lType` | not normalized | 0=normal, 1=import in current static source |
-| upload/status state | AVAILABLE | AEE `source` + `upLoadStatus` | not normalized | partial semantics only; full code map remains unknown |
+| upload time | AVAILABLE | `uploadTime/upLoadTime/endTime` | normalized UTC contract; not persisted | verify exact source semantics |
+| create/shoot time | AVAILABLE | `startTime/fileTime/beginTime` or filename | verified field aliases normalized; no filename inference in M4 contract | record derivation source if filename fallback is later used |
+| duration | AVAILABLE | `duration/videoTime` | normalized as seconds for video only | preserve raw seconds |
+| size | AVAILABLE | `fileSize/fileLen/size` | normalized as bytes | no display-unit rounding in storage |
+| file type | AVAILABLE | AEE `fType`/`lType` | raw code normalized in application contract | `fType` 1/2/3 maps to image/audio/video and 4 to GPS/device file; exclude code 4 from media counts |
+| media kind: image/audio/video | AVAILABLE | AEE `fType` | verified mapping implemented; unknown codes preserved | preserve raw code and catalog version |
+| list/import type | AVAILABLE | AEE `lType` | raw code normalized; unknown values flagged | 0=normal, 1=import in current static source |
+| upload/status state | AVAILABLE | AEE `source` + `upLoadStatus` | raw codes normalized with partial-map flags | full code map remains unknown |
 | storage backend | UNKNOWN | no verified logical storage field | not normalized | never infer from signed URLs or private object paths |
-| source | AVAILABLE | AEE `source` / Legacy query-level `platform` | query-level or raw only | raw code and platform/device/import semantics require normalization |
+| source | AVAILABLE | AEE `source` / Legacy query-level `platform` | raw code normalized with partial-map flag | platform/device/import semantics require verification |
 | channel | UNKNOWN | raw record field | not normalized | verify source field |
-| work number | AVAILABLE | AEE `workNo` | not normalized | operational/user-related; define access and retention |
-| personnel number | RESTRICTED | AEE `peopleNo` | not normalized | user-sensitive; only expose for approved need |
-| personnel name | RESTRICTED | AEE `peopleName` filter/possible row | not normalized | live row presence and permission require verification |
-| remark/description | RESTRICTED | AEE `des` | not normalized | free text; minimize collection and display |
+| work number | AVAILABLE | AEE `workNo` | normalized application field; not persisted | operational/user-related; define access and retention |
+| personnel number | RESTRICTED | AEE `peopleNo` | omitted by default; explicit opt-in only | user-sensitive; only expose for approved need |
+| personnel name | RESTRICTED | AEE `peopleName` filter/possible row | omitted by default; explicit opt-in only | live row presence and permission require verification |
+| remark/description | RESTRICTED | AEE `des` | omitted by default; explicit opt-in only | free text; minimize collection and display |
 | codec/resolution | DERIVABLE | bounded metadata inspection | on-demand video-info only | avoid bulk FFmpeg; use existing metadata when justified |
 | checksum | NOT_AVAILABLE | no current source | no | add only if source provides or ingestion computes it |
 

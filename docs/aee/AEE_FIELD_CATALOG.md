@@ -121,6 +121,20 @@ recent uploaded-file activity for a device does not prove that its current
 Realtime Media service is available. File ingestion and realtime monitoring
 must remain separate dimensions.
 
+Current CHA normalization boundary:
+
+* verified aliases are normalized into the M4 `MediaFile` contract;
+* `fileLen/fileSize/size` remains bytes and video duration remains seconds;
+* `fType` maps only to the verified image/audio/video/device-file values;
+* `source`, `upLoadStatus` and deletion markers are preserved as raw codes with
+  partial/unverified-semantics flags;
+* `id` is preserved as `source_record_id` with
+  `source_id_scope_unverified`;
+* `peopleNo`, `peopleName` and `des` are omitted by default and require an
+  explicit restricted-data decision to enter the normalized object;
+* normalization is implemented and tested but is not yet persisted, exposed
+  through an API or connected to production ingestion.
+
 ## 5. Realtime fields
 
 These are CHA-owned fields derived from the existing M3 session manager, not
@@ -212,6 +226,12 @@ Important quality caveats:
 
 CHA must ingest raw rows, sort/deduplicate them and clip calculations to the
 requested reporting window. It must not copy the page algorithm blindly.
+
+Current CHA normalization preserves every valid `status` as `status_code`.
+Only `status==1` is normalized to `online=true`; all non-1 values keep
+`online=null` plus `non_online_status_map_partial` and
+`online_state_unknown`. This prevents an unverified code map from becoming a
+false historical offline event.
 
 ## 8. Field governance
 
