@@ -107,6 +107,12 @@ Last updated: 2026-08-15
   `M3 CLOSED / ACCEPTED WITH EVIDENCE WAIVER`。
 * Fullscreen 保持 `COMPLETED / UNVERIFIED`，作为
   `POST-M3 OPERATIONAL FOLLOW-UP`；不得标记为 PASS，也不再阻塞 M3 或 M4。
+* `2026-08-15` 已启动新的长期 Goal：
+  `M4 — Inspection Data Center & AEE Data Capability Integration`。
+* 当前 M4 Git branch：
+  `codex/m4-inspection-data-center-20260815`。
+* M4 的核心从媒体并发扩展转为监察数据调查、标准化、历史沉淀、关联分析、
+  多页面 Dashboard 和业务下钻。
 
 ---
 
@@ -261,29 +267,82 @@ Realtime 产品范围冻结：
 
 ---
 
-## M4 — Integration and High Concurrency
+## M4 — Inspection Data Center & AEE Data Capability Integration
 
-状态：`TODO`
+状态：`IN PROGRESS`
 
-目标能力：
+名称：
 
-* 最高 16 路的按需实时视频下钻；
-* 自适应码流；
-* 地图联动；
-* 调度状态联动；
-* 异常选播；
-* 实时与历史视频联动。
+`CHA 监察数据中心与 AEE 数据能力整合`
 
-范围约束：
+Primary Product Goal：
 
-* 16 路是近期 Realtime Video 产品最大范围，不代表已批准立即开发。
-* 32 路及更高并发：`DEFERRED`。
-* Realtime Video 是监察数据平台的基础下钻能力，M4 应优先围绕数据、地图、调度、
-  异常和历史记录联动，而不是继续以媒体并发为主要研发方向。
+系统调查、获取、标准化、沉淀和关联 AEE、MCS8、CHA Legacy、航班、例行任务和
+Realtime 所能提供的监察数据，形成 CHA 自己的长期监察数据资产，并基于真实可获得
+的数据建设多页面监察数据中心。
 
-不得自动开始，除非：
+核心业务问题：
 
-`ACTIVE MILESTONE = M4`
+* 设备运行怎么样；
+* 用户如何使用系统；
+* 视频和文件上传怎么样；
+* 哪里存在异常；
+* 航班和任务的视频覆盖怎么样；
+* 哪些对象需要监察人员优先关注。
+
+战略原则：
+
+1. 数据能力优先于媒体并发能力。
+2. 16 路 Realtime 满足近期最大产品范围，但不代表已完成容量验证或批准立即开发。
+3. 32 路及更高并发：`DEFERRED`。
+4. Dashboard 可以由多个专题页面组成，不要求所有数据堆在一张大屏。
+5. AEE 是上游能力参考实现，不是 UI 克隆目标或生产运行时依赖。
+6. CHA 的最终价值是形成独有、可追溯、可验证的监察数据资产。
+7. Realtime Video 仅作为监察数据平台的业务下钻入口，不再作为 M4 主要研发方向。
+
+M4 工作流：
+
+1. 审计当前 CHA 数据能力：
+   `DashboardService`、`LegacyClient`、`trend_store`、Realtime telemetry、
+   Realtime session manager、设备、video stats、records、flights 和 routine tasks。
+2. 使用合法权限调查 AEE 数据能力，建立 capability/interface/field catalogs。
+3. 对每个期望字段标记：
+   `AVAILABLE`、`DERIVABLE`、`RESTRICTED`、`NOT_AVAILABLE` 或 `UNKNOWN`。
+4. 只对具有明确来源和业务价值的数据设计历史模型：
+   `DeviceStatusEvent`、`DeviceLocationEvent`、`MediaFile`、
+   `RealtimeViewEvent`、`AlarmEvent`。
+5. PostgreSQL 只用于设备状态历史、监察使用历史、必要的视频元数据索引、告警历史
+   和统计指标；WebRTC runtime 临时状态不得写入 PostgreSQL。
+6. 第一版 Dashboard 页面：
+   * `/dashboard` 监察总览；
+   * `/dashboard/devices` 设备运行分析；
+   * `/dashboard/media` 视频与文件分析；
+   * `/dashboard/realtime` 监察使用分析。
+7. Drill-down：
+   总览 → 城市/部门 → 设备 → 时间线 → 实时视频/历史视频/位置/航班任务/异常。
+
+M4 允许：
+
+* 调查和只读接口取证；
+* Backend Adapter；
+* 有来源的数据模型和数据库 migration；
+* 统计服务和 Dashboard API；
+* 多页面 Dashboard 和测试。
+
+M4 禁止：
+
+* 32 路或更高并发；
+* 为并发引入复杂 AccountPool；
+* PTZ、Talkback、设备控制；
+* H.265 workaround；
+* FFmpeg、SFU、Transcoding；
+* 无真实数据支持的假 Dashboard；
+* 大规模重写现有系统。
+
+生产数据库约束：
+
+* 任何 production DB migration 前必须完成 migration rehearsal、backup 和 rollback。
+* 未经明确授权不得修改 production database。
 
 ---
 
@@ -330,16 +389,23 @@ Realtime 产品范围冻结：
 
 当前只允许存在一个：
 
-`ACTIVE MILESTONE: M3`
+`ACTIVE MILESTONE: M4`
 
 当前状态：
-`CLOSED / ACCEPTED WITH EVIDENCE WAIVER`
+`IN PROGRESS`
 
-M3 已完成关账。Fullscreen 保持 `COMPLETED / UNVERIFIED`，其普通用户操作证据
-移动到 `POST-M3 OPERATIONAL FOLLOW-UP`，不再重复自动化复核，也不阻塞 M4。
+Milestone Name：
 
-不得自动进入 M4。不得顺手扩展 9 路、16 路、32 路、AccountPool、Audio 生产开放、
-PTZ、对讲、录像或媒体基础设施。
+`Inspection Data Center & AEE Data Capability Integration`
+
+当前只执行 M4 数据能力审计、AEE 合法取证、字段可用性矩阵、历史数据模型、
+PostgreSQL rehearsal、统计服务、多页面 Dashboard 和 Drill-down。
+
+M3 已关账。Fullscreen 保持 `COMPLETED / UNVERIFIED` 并属于
+`POST-M3 OPERATIONAL FOLLOW-UP`，不得重新成为 M4 主线。
+
+不得顺手扩展 9 路、16 路、32 路、AccountPool、Audio 生产开放、PTZ、对讲、录像
+或媒体基础设施。16 路只是近期 Realtime 产品上限，不是当前实施任务。
 
 当当前 Milestone 达到 Done Criteria 后：
 
@@ -495,6 +561,21 @@ M3 Closure：
   real-user activation 导致；没有确认的 CHA 产品缺陷。该项移至
   `POST-M3 OPERATIONAL FOLLOW-UP`。
 
+M4 Verification Requirements：
+
+* 每个 Dashboard 指标必须记录字段来源、刷新频率、数据新鲜度、历史范围、可信度、
+  持久化位置和异常处理。
+* AEE 字段和接口必须来自合法观察证据；无法确认的字段标记 `UNKNOWN` 或
+  `AEE VERIFICATION REQUIRED`。
+* 不得为 Dashboard 猜测字段或伪造统计。
+* `AVAILABLE`、`DERIVABLE`、`RESTRICTED`、`NOT_AVAILABLE`、`UNKNOWN`
+  必须逐字段使用，不能用模糊描述代替。
+* 历史趋势必须来自事件、快照或明确可重建的数据源；当前状态不得直接冒充历史。
+* production DB migration 必须在独立环境完成 rehearsal、backup、rollback 和
+  migration tests，且需另行获得生产修改授权。
+* Dashboard 必须至少覆盖总览、设备运行、视频数据和实时监察运营，并提供业务
+  Drill-down。
+
 已完成：
 
 * 4 台候选设备的 AEE-native playback precheck；
@@ -544,6 +625,81 @@ Commit 应按逻辑阶段组织。
 ---
 
 # 11. Evidence / Decision Log
+
+## M4 Issue
+
+监察数据中心必须基于可验证的 AEE、MCS8、CHA Legacy、AMRO 和 CHA Realtime
+数据源，不能为了 Dashboard 指标而猜测字段、把当前状态冒充历史，或让 CHA 前端
+直接依赖 AEE 页面私有实现。
+
+状态：`IN PROGRESS / INITIAL DATA EVIDENCE CAPTURED`
+
+## M4 CHA Evidence
+
+* 已完成当前 `DashboardService`、`LegacyClient`、`trend_store`、
+  Realtime telemetry/session manager、设备、记录、航班和例行任务代码审计。
+* 当前 V2 Dashboard 仍依赖 Legacy 的设备、视频统计、记录、航班和例行任务接口。
+* 当前设备趋势仅为按需采样的聚合 JSON 快照，不是逐设备上线/离线事件历史。
+* 当前 Realtime telemetry 为进程内运行态；尚无持久化
+  `RealtimeViewEvent`。
+* 当前 V2 尚未启用 PostgreSQL 监察数据资产；任何 production migration 仍受
+  rehearsal、backup、rollback 和明确授权约束。
+* 已建立初始数据能力、字段可用性、历史模型和 Dashboard 信息架构文档。
+
+## M4 AEE Evidence
+
+状态：`LIVE+STATIC PARTIAL / LAWFUL READ-ONLY`
+
+* 授权 AEE 会话已确认 `/api/v1/ext/DevTree` 为设备/分组树接口。
+* 当前设备树可提供设备/分组标识、online/status、当前 alarm、GPS 时间/位置、
+  network/storage 等投影字段；字段 code map 和刷新语义仍为部分证据。
+* 授权 Statistics/Online 页面已确认 `/api/v1/DevOnlineList`、完整查询过滤和
+  非空分页设备在线时长结果。当前 AEE 页面使用 `devId/status/time` transition
+  rows 在浏览器端计算时长。
+* 当前 AEE 算法会把未关闭的 online interval 延伸到浏览器当前时间；CHA 不复制
+  该边界行为，必须保存 raw transition、显式排序/去重并按查询 end 截断。
+* 授权 Server Files 页面已确认 `/api/v1/RecordFileList`、查询过滤和分页，
+  并获得非空结果。字段覆盖设备、标题、媒体类型、大小、时长、文件时间、上传时间、
+  来源/上传状态及工作/人员参考字段。
+* 授权 File Num、Video Duration、File Size 统计页均已获得非空结果；三者不是
+  独立 aggregate API，而是在浏览器按设备聚合最多 10,000 条
+  `RecordFileList` rows。
+* 当前 AEE 文件统计按 `fType` 统计图片/音频/视频数量，video `duration/60`
+  显示分钟，`fileLen/1048576` 显示 MB。CHA 必须从 raw rows 进行可复现聚合并
+  显示 truncation/partial-data 状态。
+* 已确认上传文件活动与 Realtime Media 可用性必须分开建模；前者不能证明当前
+  `mediaMonitor` 可以打开。
+* 授权 Alarm 页面已确认 `/api/v1/AlarmList`、查询参数、可见列和非空分页结果；
+  脱敏可见行包含低电量告警、百分比描述和 Waiting 处理状态。完整 raw code map、
+  lifecycle、删除语义和 retention 仍需验证。
+* 当前静态产品代码确认 `AlarmUpload` 推送、`/api/v1/AlarmUpdateDeal`、
+  `/api/v1/DevOnlineList`、`/api/v1/TaskList` 和
+  `/api/v1/JobLineByRecordId`。
+* `/api/v1/DevOnlineList` 已证明可提供 transition-like 数据和在线时长来源；
+  但完整非 1 status map、ordering、duplicate、retention 和边界语义仍需验证，
+  因此当前不得直接照搬 AEE 浏览器算法。
+* 上述证据均未记录 Cookie、Authorization、密码、可复用 Token、私有媒体 URL
+  或未脱敏业务行。
+
+## M4 Classification
+
+* DevTree、RecordFileList、AlarmList、DevOnlineList：`Class A`。
+* Realtime media open/close/consumer：`Class B`，M4 仅作为业务下钻。
+* 历史事件、数据质量、统计、Dashboard 和业务关联：`Class C`。
+* AEE 页面状态、路由、UI glue 和用户配置：`Class D`。
+
+## M4 Decision
+
+* 先稳定 capability/interface/field catalogs 和 availability matrix，再实现
+  PostgreSQL ingestion、统计 API 和 Dashboard。
+* 当前不启动 production DB migration，不修改 production feature flag、Nginx、
+  systemd、`current` 或 AEE Secret。
+* 不引入 FFmpeg、SFU、transcoding、custom decoder 或复杂 AccountPool。
+* 下一优先证据为：
+  `/api/v1/DevOnlineList` raw response/status map/retention、AlarmList code
+  map/lifecycle、media ID/状态语义和用户活动接口是否存在。
+
+---
 
 ## Issue
 
@@ -852,6 +1008,26 @@ M3 Closure Exception：
   证据满足，因此 M3 最终状态为
   `CLOSED / ACCEPTED WITH EVIDENCE WAIVER`。
 
+M4 Done Criteria：
+
+1. 完成 AEE 能获得的数据能力清单，并记录合法取证证据。
+2. 完成 CHA 当前数据能力清单和 Legacy 依赖审计。
+3. 所有目标字段均被分类为
+   `AVAILABLE`、`DERIVABLE`、`RESTRICTED`、`NOT_AVAILABLE` 或 `UNKNOWN`。
+4. 明确哪些数据开始形成历史沉淀及其来源、时间语义和保留策略。
+5. 每一个 Dashboard 指标都有明确数据来源、刷新频率、数据新鲜度和异常处理。
+6. 建立并验证必要的历史模型；不持久化 WebRTC runtime 临时状态。
+7. PostgreSQL migration 在隔离环境完成 rehearsal、backup 和 rollback；
+   未经授权不修改 production database。
+8. 第一版多页面 Dashboard 至少包含：
+   监察总览、设备运行、视频数据、实时监察运营。
+9. Drill-down 至少支持：
+   总览 → 部门/城市 → 设备 → 时间线，并能进入已有实时或历史业务入口。
+10. 自动化测试、前端 build、后端 health、数据质量和回归检查通过。
+11. Remaining Data Gaps 和 `AEE VERIFICATION REQUIRED` 明确登记。
+12. 没有 secrets、虚假指标、无来源字段或未经批准的媒体架构升级。
+13. 形成 M4 Completion Report，但不得自动进入 M5。
+
 ---
 
 # 13. Current Execution Plan
@@ -880,30 +1056,68 @@ M3 Closure Exception：
 * 已完成 authenticated non-Canary 页面、API 和三个 WebSocket 生产拒绝验证。
 * Canary 结束后 Realtime 已恢复关闭；Legacy/V2 health PASS，
   `NRestarts=0`。
+* M3 已按项目负责人决策
+  `CLOSED / ACCEPTED WITH EVIDENCE WAIVER`。
+* Fullscreen 保持 `COMPLETED / UNVERIFIED`，移动到
+  `POST-M3 OPERATIONAL FOLLOW-UP`。
+* 已创建 M4 独立 Git branch：
+  `codex/m4-inspection-data-center-20260815`。
+* 已完成初始 CHA 数据能力代码审计。
+* 已创建：
+  * `docs/data/CURRENT_CHA_DATA_CAPABILITIES.md`；
+  * `docs/data/DATA_AVAILABILITY_MATRIX.md`；
+  * `docs/data/HISTORICAL_DATA_MODEL.md`；
+  * `docs/data/DASHBOARD_INFORMATION_ARCHITECTURE.md`；
+  * `docs/aee/AEE_CAPABILITY_MATRIX.md`；
+  * `docs/aee/AEE_INTERFACE_CATALOG.md`；
+  * `docs/aee/AEE_FIELD_CATALOG.md`。
+* 已完成 AEE DevTree、Server Files 和 Alarm 页的第一轮合法只读接口取证。
 
 ## In Progress
 
-* 无 M3 产品开发或 Production Canary 工作处于进行中。
-* 当前仅执行 M3 closure 文档与 Git 收口。
+* `ACTIVE MILESTONE: M4`。
+* 正在校准 AEE capability/interface/field catalog 和字段可用性矩阵。
+* 正在补齐 device online history、alarm lifecycle、media code maps 和用户活动
+  数据证据。
 
 ## Next
 
-1. 保持 Production Realtime、Audio、Control、AccountPool 关闭。
-2. 在未来正常人工使用窗口中补充 Fullscreen operational evidence；不得把未验证项
-   标记为 PASS，也不得为此重复自动化 Canary。
-3. 不自动进入 M4；等待项目负责人明确激活下一 Milestone。
-4. 若未来激活 M4，优先推进监察数据平台联动，Realtime 仅作为基础下钻能力，近期
-   最大范围为 16 路，32 路保持 `DEFERRED`。
+1. 捕获 `/api/v1/DevOnlineList` 脱敏 raw response，验证非 1 status map、
+   ordering、duplicate、retention、分页和查询边界。
+2. 完成 AlarmList alarm/status/deal code map、生命周期、删除语义和 retention
+   取证。
+3. 确认 RecordFileList `id` 唯一性范围、
+   `source/upLoadStatus` 完整 code map 和 channel/storage 可用性。
+4. 调查 AEE 是否提供合法的用户 login/session/view history；如果不存在，明确
+   标记 `NOT_AVAILABLE`，并只前向收集 CHA `RealtimeViewEvent`。
+5. 在 catalogs 稳定后选择第一批历史模型，先完成隔离 PostgreSQL migration
+   rehearsal；未经授权不修改 production database。
+6. 保持 Production Realtime、Audio、Control、AccountPool 关闭。
 
 ## Blocked
 
-* 无 M3 closure blocker。
-* Fullscreen 的人工证据缺口已由项目负责人批准为非阻塞 evidence waiver。
-* `WXB358` 是 upstream/device media availability exception，不是 M3 blocker。
+* 当前无 M4 项目级 blocker。
+* 无法从合法 AEE 会话确认的接口和字段必须标记
+  `AEE VERIFICATION REQUIRED` 或 `UNKNOWN`，但不阻塞无依赖的 CHA 审计和模型设计。
+* production DB migration 在没有 rehearsal、backup、rollback 和明确授权前
+  `BLOCKED`。
 
 ## AEE Verification Required
 
-* `WXB358` compatibility 调查：`NON-BLOCKING / PAUSED`。
-* 未来触发条件：AEE 原生 `mediaMonitor=opened` 且产生 `newConsumer`。
-* 在触发条件出现前，禁止轮询、反复 `mediaMonitor`、猜 codec/streamType、
-  实现 H.265 workaround、复制 WASM/`/mediaStream` 或引入 decoder/FFmpeg/SFU。
+* AEE 设备运行字段：
+  `last_online`、`last_offline`、`last_seen`、login/startup time、network state、
+  battery、media availability、device model。
+* `/api/v1/DevOnlineList`：
+  raw response、完整 status map、ordering、duplicate、时间精度、分页、
+  retention 和 query-boundary 行为。
+* AEE 文件剩余语义：
+  stable ID scope、完整 upload status/source code map、storage/channel，
+  以及按用户/组织查询的权限边界。
+* AEE 用户使用数据：
+  login/logout、session、last active、访问设备、Realtime 监察记录和观看时长。
+* AEE 告警剩余语义：
+  alarm/status/deal code map、level、lifecycle、删除语义、retention、pagination、
+  handler/description 权限边界。
+* 对每个未知项必须记录所需页面、用户权限、HTTP/WebSocket/SDK 证据、刷新频率和
+  敏感等级；不得猜测。
+* `WXB358` compatibility 调查仍为 `NON-BLOCKING / PAUSED`，不属于 M4 数据主线。
