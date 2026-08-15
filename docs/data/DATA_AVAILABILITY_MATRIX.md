@@ -1,8 +1,8 @@
 # M4 Data Availability Matrix
 
-Last reviewed: `2026-08-15`
+Last reviewed: `2026-08-16`
 
-Status: `INITIAL / CODE-AUDITED / LIVE VERIFICATION PARTIAL`
+Status: `CODE-AUDITED / LIVE VERIFIED (2026-08-16) — DevOnlineList, RecordFileList, AlarmList`
 
 Allowed values:
 
@@ -30,8 +30,8 @@ the required source events. It does not mean the value already exists.
 | latitude | AVAILABLE | GPS/catalog | current `lat`; validated application contract | GPS query available; not persisted | global range and zero sentinel validated; restricted data |
 | longitude | AVAILABLE | GPS/catalog | current `lng`; validated application contract | GPS query available; not persisted | global range and zero sentinel validated; restricted data |
 | last seen | AVAILABLE | log/GPS/catalog fallback | `lastOnlineTime` proxy | no durable history | rename/normalize; do not call it last online |
-| last online at | DERIVABLE | AEE `DevOnlineList` / future CHA status events | not available | upstream query only | verify status map/order, then derive transition |
-| last offline at | DERIVABLE | AEE `DevOnlineList` / future CHA status events | not available | upstream query only | verify non-1 status map/order, then derive transition |
+| last online at | DERIVABLE | AEE `DevOnlineList` / future CHA status events | not available | upstream query only | LIVE VERIFIED source: transition rows with `status=1` (e.g. `WXB301` `1 → 0 → 1`); derive transition after ordering/retention confirmation |
+| last offline at | DERIVABLE | AEE `DevOnlineList` / future CHA status events | not available | upstream query only | LIVE VERIFIED source: transition rows with `status=0`; derive transition after ordering/retention confirmation |
 | login/startup time | UNKNOWN | AEE/MCS8 investigation required | no | no | identify supported source or mark not available |
 | network state | AVAILABLE | GPS history `netWorkType` | raw code normalized with unknown-map flag | raw historical points; not persisted | catalog semantics and freshness |
 | battery | AVAILABLE | GPS/AEE observed fields | nullable numeric value with unknown-semantics flag | raw GPS points possible; not persisted | units and alarm relation require verification |
@@ -44,10 +44,10 @@ the required source events. It does not mean the value already exists.
 
 | Metric | Status | Required source | Current state |
 | --- | --- | --- | --- |
-| today first online time | DERIVABLE | AEE `DevOnlineList` → `DeviceStatusEvent` | upstream transition query exists; not persisted |
-| today last offline time | DERIVABLE | AEE `DevOnlineList` → `DeviceStatusEvent` | non-1 status map still partial |
-| online duration | DERIVABLE | ordered, range-clipped transition events | AEE page computes it, but CHA has no durable/reproducible metric |
-| daily online rate | DERIVABLE | status intervals and day boundaries | raw source exists; sampled snapshot remains insufficient |
+| today first online time | DERIVABLE | AEE `DevOnlineList` → `DeviceStatusEvent` | upstream transition rows live-verified (1696 rows); not persisted |
+| today last offline time | DERIVABLE | AEE `DevOnlineList` → `DeviceStatusEvent` | `status=0` live-verified as offline; not persisted |
+| online duration | DERIVABLE | ordered, range-clipped transition events | AEE page computes it, but CHA has no durable/reproducible metric; page display (`Hour/Min`) did not match naive interval sum for `WXB310`, so CHA must not copy it |
+| daily online rate | DERIVABLE | status intervals and day boundaries | raw transition source live-verified; sampled snapshot remains insufficient |
 | offline count | DERIVABLE | closed online intervals/status transitions | AEE page computes a close count but does not display it |
 | longest offline duration | DERIVABLE | complete ordered status intervals | upstream retention/initial-boundary rules require verification |
 | 7-day online rate | DERIVABLE | AEE transition rows persisted in CHA | not implemented |
@@ -58,16 +58,16 @@ the required source events. It does not mean the value already exists.
 
 | Expected field | Status | Current source | CHA today | Required action / caveat |
 | --- | --- | --- | --- | --- |
-| stable media ID | AVAILABLE | AEE `RecordFileList.id` / MCS8 record row | normalized as `source_record_id`; scope flagged unverified | verify uniqueness scope before using as a sole database key |
+| stable media ID | AVAILABLE | AEE `RecordFileList.id` / MCS8 record row | normalized as `source_record_id` | LIVE VERIFIED: globally unique across a 711-row 3-day window; still confirm cross-window/long-range scope |
 | device ID | AVAILABLE | record row | normalized application contract | dimension FK |
 | device name | AVAILABLE | row/catalog | normalized where possible | do not use name as identity |
-| upload time | AVAILABLE | `uploadTime/upLoadTime/endTime` | normalized UTC contract; not persisted | verify exact source semantics |
-| create/shoot time | AVAILABLE | `startTime/fileTime/beginTime` or filename | verified field aliases normalized; no filename inference in M4 contract | record derivation source if filename fallback is later used |
-| duration | AVAILABLE | `duration/videoTime` | normalized as seconds for video only | preserve raw seconds |
-| size | AVAILABLE | `fileSize/fileLen/size` | normalized as bytes | no display-unit rounding in storage |
-| file type | AVAILABLE | AEE `fType`/`lType` | raw code normalized in application contract | `fType` 1/2/3 maps to image/audio/video and 4 to GPS/device file; exclude code 4 from media counts |
-| media kind: image/audio/video | AVAILABLE | AEE `fType` | verified mapping implemented; unknown codes preserved | preserve raw code and catalog version |
-| list/import type | AVAILABLE | AEE `lType` | raw code normalized; unknown values flagged | 0=normal, 1=import in current static source |
+| upload time | AVAILABLE | `uploadTime/upLoadTime/endTime` | normalized UTC contract; not persisted | LIVE VERIFIED: `upLoadTime` non-null, observed minutes after capture (upload lag) |
+| create/shoot time | AVAILABLE | `startTime/fileTime/beginTime` or filename | verified field aliases normalized; no filename inference in M4 contract | LIVE VERIFIED: `startTime/fileTime` non-null and equal in observed rows |
+| duration | AVAILABLE | `duration/videoTime` | normalized as seconds for video only | LIVE VERIFIED: raw value is seconds (e.g. 301 video, 18 audio); preserve raw seconds |
+| size | AVAILABLE | `fileSize/fileLen/size` | normalized as bytes | LIVE VERIFIED: `fileLen` is bytes (e.g. 187109839); no display-unit rounding in storage |
+| file type | AVAILABLE | AEE `fType`/`lType` | raw code normalized in application contract | LIVE VERIFIED: `fType` 1/2/3 = image/audio/video (16/6/689 in window); code 4 remains static-only |
+| media kind: image/audio/video | AVAILABLE | AEE `fType` | verified mapping implemented; unknown codes preserved | LIVE VERIFIED mapping; preserve raw code and catalog version |
+| list/import type | AVAILABLE | AEE `lType` | raw code normalized; unknown values flagged | LIVE VERIFIED: 0=708, 1=3 in observed window |
 | upload/status state | AVAILABLE | AEE `source` + `upLoadStatus` | raw codes normalized with partial-map flags | full code map remains unknown |
 | storage backend | UNKNOWN | no verified logical storage field | not normalized | never infer from signed URLs or private object paths |
 | source | AVAILABLE | AEE `source` / Legacy query-level `platform` | raw code normalized with partial-map flag | platform/device/import semantics require verification |
@@ -133,16 +133,16 @@ CHA can begin collecting its own explicitly scoped events prospectively.
 
 | Expected field | Status | Current source | Required action |
 | --- | --- | --- | --- |
-| alarm ID | AVAILABLE | AEE static AlarmList `id` | normalized with source-ID-scope flag; verify live uniqueness/retention |
-| device ID | AVAILABLE | AEE AlarmList/device alarm context | normalized event dimension |
-| alarm type/code | AVAILABLE | AEE `alarmType` / current device `alarm` | raw event code normalized; current projection remains separate |
+| alarm ID | AVAILABLE | AEE AlarmList `id` | normalized with source-ID-scope flag | LIVE VERIFIED: present in a 41-row 3-day window; retention still to confirm |
+| device ID | AVAILABLE | AEE AlarmList/device alarm context | normalized event dimension | LIVE VERIFIED: `devId` present in AlarmList rows |
+| alarm type/code | AVAILABLE | AEE `alarmType` / current device `alarm` | raw event code normalized; current projection remains separate | LIVE VERIFIED: 205 (40) and 206 (1) observed |
 | level | UNKNOWN | not cataloged | verify |
-| created at | AVAILABLE | AEE `alarmTime` | timezone-aware normalization implemented; event semantics still partial |
-| status | AVAILABLE | AEE query `alarmStatus` / push `status` | raw code normalized; alias and lifecycle uncertainty flagged |
+| created at | AVAILABLE | AEE `alarmTime` | timezone-aware normalization implemented; event semantics still partial | LIVE VERIFIED: non-null business-local times |
+| status | AVAILABLE | AEE query `alarmStatus` / push `status` | raw code normalized; alias and lifecycle uncertainty flagged | LIVE VERIFIED: **AlarmList rows carry no `alarmStatus` field — the status column is `status`** (null in observed sample); normalizer accepts `status` alias |
 | handled | DERIVABLE | AEE `dealStatus` | remains null until the complete map is verified |
 | handled at | AVAILABLE | AEE `dealTime` | omitted by default; restricted opt-in only |
 | handler | RESTRICTED | AEE `dealUser` | omitted by default; require business need and authorization |
-| deal type | AVAILABLE | AEE `dealType` | raw code normalized; labels remain partial |
+| deal type | AVAILABLE | AEE `dealType` | raw code normalized; labels remain partial | LIVE VERIFIED: `dealType=0` across observed sample |
 | description | RESTRICTED | AEE `dealDesc` | omitted by default; free-text retention policy required |
 | alarm counts by device/type | DERIVABLE | normalized `AlarmEvent` | deterministic raw-code aggregation implemented; persistence scope TODO |
 | alarm status/deal status distribution | DERIVABLE | normalized raw codes | deterministic aggregation implemented; labels remain unverified |
@@ -176,9 +176,10 @@ CHA can begin collecting its own explicitly scoped events prospectively.
 3. Media records are queryable, but their schema is only partially normalized.
 4. Realtime usage history is `DERIVABLE` from current runtime events but is not
    persisted.
-5. AEE alarm query capability, endpoint contract and raw-code normalization are
-   now available, but code maps, lifecycle/deletion semantics, retention and
-   durable persistence remain partially unverified. AEE user activity remains
-   `UNKNOWN`.
+5. AEE alarm query capability, endpoint contract (`AlarmList`,
+   `error=200`, 41 rows) and raw-code normalization are now LIVE VERIFIED,
+   but code maps (only 205/206 observed), lifecycle/deletion semantics,
+   retention and durable persistence remain partially unverified. AEE user
+   activity remains `UNKNOWN`.
 6. Missing values remain unknown/null. They must not be converted to zero for
    visual convenience.

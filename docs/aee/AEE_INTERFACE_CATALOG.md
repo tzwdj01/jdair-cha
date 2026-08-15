@@ -1,8 +1,8 @@
 # AEE / MCS8 Interface Catalog
 
-Last reviewed: `2026-08-15`
+Last reviewed: `2026-08-16`
 
-Status: `INITIAL / SANITIZED / LIVE+STATIC EVIDENCE`
+Status: `SANITIZED / LIVE+STATIC EVIDENCE (2026-08-16)`
 
 No credential, reusable token, Cookie, Authorization value or private media URL
 is recorded here.
@@ -39,7 +39,7 @@ Current sanitized evidence:
 | Live correlation | authorized DevTree, RecordFileList, AlarmList and DevOnlineList page requests succeeded through the same helper |
 | 401 behavior | the current page has bounded HTTP error handling; an explicit token-refresh contract was not found |
 | Token lifetime | `AEE VERIFICATION REQUIRED` |
-| Cookie dependency | same-origin browser requests may also carry browser session state; token-only server integration is not yet live-isolated |
+| Cookie dependency | live evidence: a same-origin `fetch` without the page-injected `token` header returns `error=333` (HTTP 200, empty data) — the data API is **TOKEN_REQUIRED**; the Cookie alone is not sufficient. Token-only server integration is not yet live-isolated |
 
 Security conclusion:
 
@@ -96,10 +96,10 @@ CHA implementation status:
 | Observed query fields | `devId`, `groupId`, `groupWithChild`, `isDeleted`, `page`, `pagesize`, `timeSelector`, `timeType`, `st`, `et`, cache-buster `_` |
 | Additional static query fields | `fType`, `lType`, `title`, `workNo`, `peopleNo`, `peopleName`, `des` |
 | Response envelope | rows under `data`; total under `recordsTotal` |
-| Live result | read-only search returned hundreds of records with device, file title, media type, size, duration, capture time, upload time and personnel/work references |
+| Live result | `2026-08-16` authorized 3-day read-only search returned `recordsTotal=711`, `pageCount=1`, `length=1000` (`error=200`); full 55-field row schema captured; `fType` 1/2/3 = image/audio/video live-confirmed; `fileLen`=bytes, `duration`=seconds; `id` globally unique (711/711); all capture/end/file/upload times non-null |
 | Permission | authenticated file-query access; exact permission name not yet isolated |
 | Refresh | user-initiated search/pagination |
-| Evidence | endpoint and basic table schema `LIVE VERIFIED`; expanded filters and code branches `STATIC VERIFIED` |
+| Evidence | endpoint, request shape (no `enterId`/`keywords`; `devId`/`timeSelector`/`timeType`/`groupId`/`groupWithChild`/`isDeleted`/`page`/`pagesize`/`st`/`et`) and basic table schema `LIVE VERIFIED`; expanded filters and code branches `STATIC VERIFIED` |
 | Sensitivity | media metadata; `workNo`, `peopleNo`, names and descriptions may be user-sensitive |
 | Classification | Class A |
 | CHA recommendation | normalize metadata only; do not persist signed playback URLs, tokens or private storage connection material |
@@ -127,10 +127,10 @@ CHA implementation status:
 | Live query fields | `devId`, `alarmType`, `alarmStatus`, `dealType`, `dealStatus`, `s5`, `keywords`, `page`, `pagesize`, `groupId`, `groupWithChild`, `timeType`, `st`, `et`, cache-buster `_` |
 | Live table columns | device name, group name, time, alarm, alarm description, deal status, deal user, deal time, deal description, action |
 | Static row fields | `id`, `devId`, `alarmType`, `alarmTime`, `dealStatus`; display/detail branches also use handling fields |
-| Live result | selected authorized lookback returned non-empty, paginated rows including alarm label, alarm description and unprocessed/waiting handling state |
+| Live result | `2026-08-16` authorized 3-day lookback returned `recordsTotal=41`, `length=1000` (`error=200`); row schema `id, enterId, groupId, devId, alarmTime, alarmType, status, alarmDesc, dealType, dealStatus, dealUser, dealTime, dealDesc, gpsModel, code, ex, keywords, peopleNo, workNo`; `alarmType` 205/206 observed; `dealStatus=0` across the sample; no `alarmStatus` field exists in rows — alarm status is carried by `status` |
 | Permission | authenticated alarm-page access; handling actions require separate authorization and are outside the current read-only investigation |
 | Refresh | user search plus alarm push through the existing Gateway session |
-| Evidence | endpoint, query fields and visible schema `LIVE VERIFIED`; row/handling code paths `STATIC VERIFIED` |
+| Evidence | endpoint, query fields (`devId`, `alarmType=-1` sentinel for unset, `alarmStatus`, `dealType`, `dealStatus`, `s5`, `keywords`, `page`, `pagesize`, `groupId`, `groupWithChild`, `timeType`, `st`, `et`) and row schema `LIVE VERIFIED`; row/handling code paths `STATIC VERIFIED` |
 | Sensitivity | operational alarms; handler identity and free text are restricted |
 | Classification | Class A for query; alarm push is an upstream event source |
 | CHA implementation | narrow `list_alarms` Adapter contract exists with explicit time/group selectors and only live-evidenced query fields; `AlarmEvent` normalization preserves raw codes and omits restricted handling fields by default |
@@ -160,10 +160,10 @@ CHA implementation status:
 | Live query fields | `st`, `et`, `enterId`, `groupId`, `devId`, `keywords`, `page`, `pagesize` |
 | Response fields used by current page | `id`, `devId`, `groupId`, `devType`, `status`, `time` |
 | Current page derivation | groups rows by `devId`; `status==1` opens/continues an online interval, other statuses close it; sums seconds and counts close transitions |
-| Live result | authorized page returned a non-empty, paginated device list with computed online duration |
-| Evidence | endpoint/query/UI `LIVE VERIFIED`; aggregation algorithm and row fields `STATIC VERIFIED` |
-| Remaining unknowns | upstream event generation, ordering guarantee, exact non-1 status map, retention, duplicate behavior and pagination/rate limits |
-| Important caveat | the current page extends an unclosed online interval to browser current time; this algorithm must not be copied without clipping to the requested range and testing boundary conditions |
+| Live result | `2026-08-16` authorized Statistics/Online 3-day window returned `recordsTotal=1696`, `pageCount=1`, `length=10000` (`error=200`); row fields `id, enterId, enterName, groupId, groupName, devId, devType, devName, status, time, lat, lng, addr, remarks, storeType, network, battery, totalSize, useSize, version, hardware`; `id` unique 1696/1696; `time` non-null business-local time; `status=1` (849) and `status=0` (847); transition rows observed (e.g. `WXB301` `1 → 0 → 1`) |
+| Evidence | endpoint/query/UI and raw transition row schema `LIVE VERIFIED`; aggregation algorithm and row fields `STATIC VERIFIED` |
+| Remaining unknowns | full non-0/non-1 status map (only 0/1 observed), upstream event generation and ordering guarantee, retention boundary, duplicate behavior across long windows, pagination/rate limits |
+| Important caveat | the current page extends an unclosed online interval to browser current time; this algorithm must not be copied without clipping to the requested range and testing boundary conditions. The page's `Hour/Min` duration display did not exactly match a naive range-clipped interval sum for `WXB310` (~32h vs 12Hour), so the display column is recorded as an unverified projection; CHA computes its own deterministic intervals |
 | Classification | Class A |
 | CHA recommendation | ingest raw transition rows, sort and deduplicate explicitly, preserve source status/time, and compute reproducible range-clipped metrics in CHA |
 
@@ -343,9 +343,9 @@ Implementation note:
 | group tree | device navigation | stable group IDs, parent relation, rename/deletion behavior | PARTIAL LIVE EVIDENCE |
 | current device status | device tree/detail | exact semantics for `status`, `online`, alarm and GPS freshness | PARTIAL LIVE EVIDENCE |
 | device detail/model | device detail | live `getDeviceInfo` response, permission, model/firmware/network/battery/capability semantics | STATIC PARTIAL / AEE VERIFICATION REQUIRED |
-| device online history | statistics/device-online page | sanitized raw response, non-1 status map, ordering, retention, duplicates and pagination limits | LIVE+STATIC PARTIAL |
-| media/file search | server files | stable ID uniqueness, code maps, status/storage/channel semantics | LIVE+STATIC PARTIAL |
-| alarm list | alarm page | complete lifecycle/code maps, retention, deletion semantics and pagination limits | LIVE+STATIC PARTIAL |
+| device online history | statistics/device-online page | full non-0/non-1 status map, long-range ordering/retention/duplicates, query-boundary behavior | LIVE VERIFIED (window observed) / full map PARTIAL |
+| media/file search | server files | full `source`/`upLoadStatus`/`lType` code maps, storage/channel semantics, retention | LIVE VERIFIED (schema) / code maps PARTIAL |
+| alarm list | alarm page | complete lifecycle/code maps (only 205/206 observed), retention, deletion semantics and pagination limits | LIVE VERIFIED (schema) / lifecycle PARTIAL |
 | user sessions | administration/audit page, if authorized | endpoint, retention, privacy restrictions | AEE VERIFICATION REQUIRED |
 | viewing audit | monitoring/audit page, if provided | device/user/session/duration fields | AEE VERIFICATION REQUIRED |
 

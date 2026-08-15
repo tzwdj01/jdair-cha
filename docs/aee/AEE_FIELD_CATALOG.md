@@ -1,8 +1,8 @@
 # AEE Field Catalog
 
-Last reviewed: `2026-08-15`
+Last reviewed: `2026-08-16`
 
-Status: `INITIAL / PARTIAL LIVE EVIDENCE`
+Status: `LIVE VERIFIED (2026-08-16) / PARTIAL`
 
 This file catalogs sanitized field semantics. Unknown semantics remain
 `UNKNOWN`; field names alone are not treated as proof.
@@ -79,16 +79,16 @@ listed below.
 
 | Raw field alternatives | Logical field | Status | Evidence note |
 | --- | --- | --- | --- |
-| `id` | upstream record ID | AVAILABLE | live/static page schema; uniqueness scope still requires verification |
+| `id` | upstream record ID | AVAILABLE | LIVE VERIFIED: globally unique across a 711-row 3-day window (not merely page-unique) |
 | `devId`, `DevId`, `szIDNO` | device ID | AVAILABLE | normalized by Legacy |
 | `deviceName`, `devName` | device name | AVAILABLE | may be filled from catalog |
 | `title`, `fileName`, `name`, `fileTitle` | file title | AVAILABLE | AEE page uses `title`; Legacy has fallbacks |
-| `startTime`, `fileTime`, `beginTime` | create/shoot time | AVAILABLE | exact semantics per source need verification |
-| `uploadTime`, `upLoadTime`, `endTime` | upload/end time | AVAILABLE | exact semantics need verification |
-| `fileSize`, `fileLen`, `size` | size | AVAILABLE | AEE Server Files treats `fileLen` as bytes for KB/MB display |
-| `duration`, `videoTime` | duration | AVAILABLE | AEE Server Files treats the raw value as seconds and divides by 60 for minute display |
-| `fType` | media kind code | AVAILABLE | current Server Files map: 1=image, 2=audio, 3=video, 4=GPS/device file |
-| `lType` | list/import type | AVAILABLE | static map: 0=normal, 1=import |
+| `startTime`, `fileTime`, `beginTime` | create/shoot time | AVAILABLE | LIVE VERIFIED non-null business-local times; `startTime/fileTime` equal in observed rows |
+| `uploadTime`, `upLoadTime`, `endTime` | upload/end time | AVAILABLE | LIVE VERIFIED non-null; `upLoadTime` observed minutes after capture (upload lag) |
+| `fileSize`, `fileLen`, `size` | size | AVAILABLE | LIVE VERIFIED: `fileLen` is bytes (e.g. 187109839 for a 301s video) |
+| `duration`, `videoTime` | duration | AVAILABLE | LIVE VERIFIED: raw value is seconds for video (e.g. 301) and audio (e.g. 18); non-video duration treated as N/A |
+| `fType` | media kind code | AVAILABLE | LIVE VERIFIED 3-day distribution: 1=image (16), 2=audio (6), 3=video (689); code 4 remains static-only |
+| `lType` | list/import type | AVAILABLE | LIVE VERIFIED: 0=708, 1=3 in the observed window |
 | `source` | source code | AVAILABLE | raw code; only the observed upload branch semantics are known |
 | `upLoadStatus` | upload status code | AVAILABLE | when `source==2` and status is not `3`, page treats upload as incomplete/unavailable; full code map unknown |
 | `workNo` | work number | AVAILABLE | user/operations-sensitive |
@@ -100,9 +100,23 @@ listed below.
 | object key/playback alternatives | storage/playback key | UNKNOWN | identify safe stable field; do not record signed URL |
 | channel | channel | UNKNOWN | sanitized AEE/MCS8 row required |
 
-Server Files live table evidence confirms file title, type, MB, duration,
-capture/file time, upload time, work number, personnel number and remark
-columns. A live read-only search returned a non-empty, paginated result.
+Server Files live table evidence (2026-08-16, authorized account, 3-day
+window) confirms file title, type, MB, duration, capture/file time, upload
+time, work number, personnel number and remark columns. A live read-only
+search returned `recordsTotal=711` rows in one page (`pageCount=1`,
+`length=1000`, `error=200`) with a 55-field schema including
+`GId, bType, category, dasDevId, dasFileTime, dasIp, delTime, des, devId,
+duration, enableSsl, endTime, enterId, fType, fileLen, fileName, fileTime,
+firstFramePath, firstFrameStatus, gbDevId, groupId, id, ip, isDeleted,
+keywords, lType, lat, lng, ossBucket, ossId, ossObjctName, ossType, path,
+peopleNo, port, shortVideo, signType, source, startTime, storeType,
+sttError, sttProvider, sttRaw, sttStatus, sttTaskId, sttText, sttTime,
+taskNo, timeline, title, upLoadInfoStatus, upLoadStatus, upLoadTime,
+vieoCode, webUrl, webUrlExpires, workNo`. `id` was globally unique across
+all 711 rows; `isDeleted=false`, `source=0` and `upLoadStatus=0` across the
+sample. Sensitive fields (`path`, `oss*`, `lat/lng`, `ip/port`,
+`firstFramePath`, `webUrl*`, `peopleNo`, `workNo`, `dasIp`, `des`) are
+recorded in the catalog only as field names and are not persisted by CHA.
 
 The AEE File Num, Video Duration and File Size reports were also live-verified.
 Their current browser aggregation:
@@ -159,21 +173,25 @@ These fields define the minimum future `RealtimeViewEvent`.
 
 | Target field | Status | Required evidence |
 | --- | --- | --- |
-| `alarm_id` (`id`) | AVAILABLE | static AlarmList row; live uniqueness/retention still requires verification |
+| `alarm_id` (`id`) | AVAILABLE | LIVE VERIFIED: AlarmList row `id` present in a 41-row 3-day window |
 | `device_id` (`devId`) | AVAILABLE | live page/static row and device alarm context |
-| `alarm_type` (`alarmType`) | AVAILABLE | raw code; human label/code map still partial |
+| `alarm_type` (`alarmType`) | AVAILABLE | LIVE VERIFIED: raw codes 205 (40 rows) and 206 (1 row) observed; human label/code map still partial |
 | `level` | UNKNOWN | source code/label |
-| `created_at` (`alarmTime`) | AVAILABLE | static AlarmList row; timezone semantics require verification |
-| alarm status (`alarmStatus`/push `status`) | AVAILABLE | raw query/push code; full lifecycle map unknown |
-| `deal_status` (`dealStatus`) | AVAILABLE | raw code; static logic treats 0 as unprocessed and values greater than 0 as handled |
+| `created_at` (`alarmTime`) | AVAILABLE | LIVE VERIFIED: non-null business-local times in AlarmList rows |
+| alarm status (`alarmStatus`/push `status`) | AVAILABLE | LIVE VERIFIED: **AlarmList rows carry no `alarmStatus` field**; alarm status is the `status` column (null in the observed sample; push contract uses it too) |
+| `deal_status` (`dealStatus`) | AVAILABLE | LIVE VERIFIED: raw code present; 0 observed across the sample; static logic treats 0 as unprocessed and values greater than 0 as handled |
 | `handled` | DERIVABLE | `dealStatus` after code-map confirmation |
 | `handled_at` (`dealTime`) | AVAILABLE | restricted handling metadata |
 | `handler` (`dealUser`) | RESTRICTED | user-related field; requires business need and authorization |
 | `deal_type` (`dealType`) | AVAILABLE | raw code; UI includes manual confirmation, system processing and other |
 | `description` (`dealDesc`/alarm description) | RESTRICTED | free text or mapped description; retention and display scope required |
 
-Live alarm page evidence confirms the query endpoint, visible columns and
-non-empty paginated rows. Sanitized rows showed a low-battery alarm label,
+Live alarm page evidence (2026-08-16) confirms the query endpoint, visible
+columns and non-empty paginated rows (`recordsTotal=41`, `length=1000`,
+`error=200`). Row schema:
+`id, enterId, groupId, devId, alarmTime, alarmType, status, alarmDesc,
+dealType, dealStatus, dealUser, dealTime, dealDesc, gpsModel, code, ex,
+keywords, peopleNo, workNo`. Sanitized rows showed a low-battery alarm label,
 percentage description and `Waiting` deal-state label. The raw alarm/deal code
 maps, deletion semantics and complete lifecycle remain partial evidence.
 
@@ -222,7 +240,21 @@ The current online-statistics page uses `/api/v1/DevOnlineList` with:
 * query fields:
   `st`, `et`, `enterId`, `groupId`, `devId`, `keywords`, `page`, `pagesize`;
 * row fields used by the page:
-  `id`, `devId`, `groupId`, `devType`, `status`, `time`.
+  `id`, `devId`, `groupId`, `devType`, `status`, `time`; the full live row
+  schema also includes `enterId, enterName, groupName, devName, lat, lng,
+  addr, remarks, storeType, network, battery, totalSize, useSize, version,
+  hardware`.
+
+Live verification on `2026-08-16` (authorized account, Statistics/Online
+page, 3-day window, `error=200`) returned `recordsTotal=1696`,
+`pageCount=1`, `length=10000`. `id` was unique across all 1696 rows and
+`time` was non-null business-local time (`"2026-08-13 00:31:11"` style).
+`status` distribution was `1=849` and `0=847`; `devType` was `1=1249` and
+`2=447`; `storeType`, `network` and `battery` were almost uniformly `0`.
+Transition rows were observed: the same device can appear with `status=0`
+and `status=1` at the same second (e.g. `WXB312`), and `WXB301` showed
+`1 → 0 → 1` across minutes — these are online/offline transition rows, not
+deduplicated snapshots.
 
 The static page algorithm interprets `status==1` as online and another status
 as closing the online interval. It groups by `devId`, sums interval seconds and
@@ -241,7 +273,8 @@ CHA must ingest raw rows, sort/deduplicate them and clip calculations to the
 requested reporting window. It must not copy the page algorithm blindly.
 
 Current CHA normalization preserves every valid `status` as `status_code`.
-Only `status==1` is normalized to `online=true`; all non-1 values keep
+`status==1` is normalized to `online=true` and `status==0` is normalized to
+`online=false` (live-verified in the observed dataset). Any other value keeps
 `online=null` plus `non_online_status_map_partial` and
 `online_state_unknown`. This prevents an unverified code map from becoming a
 false historical offline event.

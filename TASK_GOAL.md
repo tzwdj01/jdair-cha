@@ -1,6 +1,6 @@
 # CHA Video Record System Optimization — Active Task Goal
 
-Last updated: 2026-08-15
+Last updated: 2026-08-16
 
 ## 1. Overall Objective
 
@@ -216,6 +216,39 @@ Last updated: 2026-08-15
 * 当前开发机没有 Docker、PostgreSQL client/server、`pg_dump` 或
   `pg_restore`。因此不能在此环境宣称 PostgreSQL migration、backup 或 restore
   rehearsal 已完成。
+* `2026-08-16` 已使用合法授权测试账号（具备
+  `VIDEOMONITOR` 权限）在真实 Chrome 中按
+  `docs/aee/AEE_DATA_VERIFICATION_RUNBOOK.md` 完成 P0 数据能力取证，全部只读，
+  未写入任何生产数据。密码/Token/Cookie 未进入任何文件、日志或 Git。
+* `DevOnlineList` LIVE VERIFIED：
+  `error=200` envelope，3 天窗口 `recordsTotal=1696, pageCount=1,
+  length=10000`；行字段 `id, enterId, enterName, groupId, groupName, devId,
+  devType, devName, status, time, lat, lng, addr, remarks, storeType,
+  network, battery, totalSize, useSize, version, hardware`；`id` 1696 行唯一，
+  `time` 为非空业务本地时间；`status=1`（849）与 `status=0`（847）；
+  同设备可见 transition 行（如 `WXB301` `1 → 0 → 1`）。
+* `RecordFileList` LIVE VERIFIED：
+  `error=200` envelope，3 天窗口 `recordsTotal=711, pageCount=1,
+  length=1000`；55 字段行 schema；`fType` 1/2/3=image/audio/video
+  （16/6/689）；`fileLen` 为字节、`duration` 为秒；`id` 711 行全局唯一；
+  capture/end/file/upload 时间全部非空；窗口内未观察到跨页截断。
+* `AlarmList` LIVE VERIFIED：
+  `error=200` envelope，`recordsTotal=41, length=1000`；行 schema 含
+  `id, enterId, groupId, devId, alarmTime, alarmType, status, alarmDesc,
+  dealType, dealStatus, dealUser, dealTime, dealDesc, gpsModel, code, ex,
+  keywords, peopleNo, workNo`；`alarmType` 205/206；**行内无
+  `alarmStatus` 字段，告警状态由 `status` 字段承载**（已由
+  `AlarmEvent` normalizer 以别名接受）。
+* 认证依赖 LIVE VERIFIED：同源 `fetch` 不带页面注入的 `token` header 时返回
+  `error=333`（HTTP 200 无数据）——数据 API 为 **TOKEN_REQUIRED**，仅 Cookie
+  不足；长期 Token 生命周期/刷新仍待服务端集成验证。
+* 页面“在线时长”`Hour/Min` 列与朴素区间截断求和不一致（如 `WXB310`
+  ~32h vs 12Hour），记录为未验证的展示投影；CHA 必须自己计算确定性的
+  区间截断在线时长。
+* 已将脱敏 live 样本固化为确定性 fixture 与回归测试，并完成 ONE SHOT
+  INGESTION 一致性验证（source rows 5/3/4 = accepted = stored rows，
+  invalid=0，重复摄入幂等）。
+* 当前全量 V2 自动化回归为 `209 tests PASS`。
 
 ---
 
@@ -372,7 +405,10 @@ Realtime 产品范围冻结：
 
 ## M4 — Inspection Data Center & AEE Data Capability Integration
 
-状态：`IN PROGRESS`
+状态：`M4 ACTIVE / DATA ACQUISITION VERIFIED`
+
+（不得宣布 M4 COMPLETE；仅确认 P0 数据能力获取已在授权 AEE 会话下完成
+live 验证。）
 
 名称：
 
@@ -1361,11 +1397,30 @@ M4 Done Criteria：
   与调度协议升级（`CollectedSource` + `ScheduledIngestion`）；
 * 已完成 Legacy media/business-reference heuristic code audit，并将 active
   routine-task candidate 与 dormant flight code 明确区分；
-* 当前全量 V2 回归 `201 tests PASS`。
+* `2026-08-16` 已在授权 AEE 会话下完成 P0 数据能力 live 取证：
+  * `DevOnlineList`：`error=200`、1696 行、status 0/1 双值、transition 行、
+    `id` 唯一、`time` 非空业务本地时间；
+  * `RecordFileList`：`error=200`、711 行、55 字段 schema、`fType`
+    1/2/3=image/audio/video、`fileLen`=字节、`duration`=秒、`id` 全局唯一；
+  * `AlarmList`：`error=200`、41 行、`alarmType` 205/206、行内无
+    `alarmStatus` 字段、`status` 承载告警状态；
+  * 认证：数据 API 为 `TOKEN_REQUIRED`（无 token header 时 `error=333`）。
+* 已将 live 脱敏样本固化为确定性 fixture（`tests/fixtures/aee_*.json`）与
+  `tests/test_aee_live_fixtures.py` 回归测试，覆盖 normalize、error 200/333
+  envelope、ONE SHOT INGESTION（source/accepted/invalid/stored 一致 + 幂等）。
+* 已按 live 证据修正 Adapter/Collector/Normalizer：
+  `_parse_page_result` 使用 `error==200`；`list_record_files` 使用 live
+  请求 shape（无 `enterId/keywords`，新增 `timeType/groupWithChild/isDeleted/
+  timeSelector`）；`list_alarms` 未选过滤器用 `-1` sentinel 并加 `s5`；
+  `AEEInspectionCollector` 强制 `time_type/group_with_child`、`include_alarms`
+  显式开关；`status=0 → online=False`（DevOnlineList 最新状态与 status
+  event 均已 live 确认）。
+* 当前全量 V2 回归 `209 tests PASS`。
 
 ## In Progress
 
 * `ACTIVE MILESTONE: M4`。
+* 状态：`M4 ACTIVE / DATA ACQUISITION VERIFIED`（不宣布 M4 COMPLETE）。
 * 正在把已验证的 AEE/CHA 字段语义固化为窄 contracts、normalized historical
   records、page completeness、data-quality evidence 和确定性统计边界。
 * 正在为已完成的 DeviceStatus、DeviceLocation、MediaFile、RealtimeView 和
@@ -1381,19 +1436,19 @@ M4 Done Criteria：
 
 ## Next
 
-1. `P0`：固化 `DeviceStatusEvent` / `MediaFile` 标准 contract（已实现并测试；
-   保持窄 scope 和 raw code/quality flag 语义）。
-2. `P0`：在合法、安全条件允许时捕获 `/api/v1/DevOnlineList` 和
-   `/api/v1/RecordFileList` 脱敏 raw response，验证字段、时间语义、分页、
-   retention 和 stable identity；不记录 Cookie/Token/密码。
-3. `P0`：在合法、安全条件允许时验证 AEE 数据接口 token-only sufficiency、
-   Cookie 依赖、失效与刷新行为；只记录脱敏结论。
-4. `P1`：继续 Alarm 只读取证 alarm/status/deal code map、生命周期、删除语义和
-   retention；不能标记语义 VERIFIED 的保持 `UNKNOWN`。
-5. `PostgreSQL`：编写 5 张历史表的 schema/migration files 和
+1. `P0`（已完成本轮）：`DeviceStatusEvent` / `MediaFile` 标准 contract 已固化
+   并测试；`DevOnlineList` / `RecordFileList` / `AlarmList` 已在授权 AEE
+   会话下 live 验证字段、时间语义、分页和 stable identity；token-header
+   依赖（`TOKEN_REQUIRED`）已确认。
+2. `P0` 剩余：AEE 长期 Token 的服务端最小暴露与生命周期/刷新验证（不记录
+   Token/Cookie/密码）。
+3. `P1`：继续 Alarm 只读取证完整 alarm/status/deal code map、生命周期、删除
+   语义和 retention；不能标记语义 VERIFIED 的保持 `UNKNOWN`。
+4. `PostgreSQL`：编写 5 张历史表的 schema/migration files 和
    driver-agnostic repository 抽象 + 单元测试；获得隔离 PostgreSQL 后再执行
    forward、rollback、backup、restore rehearsal。
-6. 保持 Production Realtime、Audio、Control、AccountPool 关闭。
+5. 保持 Production Realtime、Audio、Control、AccountPool 关闭；不开启
+   inspection/ingestion 生产开关。
 
 ## Blocked
 
@@ -1405,9 +1460,11 @@ M4 Done Criteria：
 * 当前开发机缺少 Docker/PostgreSQL、`psql`、`pg_dump` 和 `pg_restore`；
   因此隔离 PostgreSQL migration/backup/restore rehearsal 在该环境
   `BLOCKED`。这不阻塞纯 contracts、normalizer、fixture 和无数据库单元测试。
-* 正式 AEE 数据 Adapter 的登录所有权、Token-only live sufficiency、生命周期
-  和刷新策略在形成合法证据前 `BLOCKED`。只读 HTTP transport 和无网络
-  normalizer 不受此阻塞；不得猜测 Bearer header 或让浏览器长期持有 AEE 凭据。
+* 正式 AEE 数据 Adapter 的登录所有权和**服务端** Token-only sufficiency、
+  生命周期、刷新策略在形成合法服务端证据前 `BLOCKED`。浏览器 live 证据已
+  确认数据 API 为 `TOKEN_REQUIRED`（无 `token` header 返回 `error=333`）；
+  只读 HTTP transport 和无网络 normalizer 不受此阻塞；不得猜测 Bearer
+  header、不得让浏览器长期持有 AEE 凭据、不得记录 Token/Cookie/密码。
 * media-to-flight/task 自动关系和 coverage rate 在缺少 AMRO 脱敏字段样例、
   stable identity/time code map、分页完整性和已确认正负样本前 `BLOCKED`。
   该方向已降级为 `P2`，不阻塞 P0/P1 和 PostgreSQL contract 工作。
@@ -1416,23 +1473,29 @@ M4 Done Criteria：
 
 * AEE 设备运行字段：
   `last_online`、`last_offline`、`last_seen`、login/startup time、network state、
-  battery、media availability、device model。
+  battery、media availability、device model。`DevOnlineList` 的 `status`
+  0/1 已 live 确认（transition 行）；`last_online/last_offline` 仍需要
+  ordering/retention 边界确认后才能导出。
 * `/api/v1/DevOnlineList`：
-  raw response、完整 status map、ordering、duplicate、时间精度、分页、
-  retention 和 query-boundary 行为。
+  raw response（1696 行、`error=200`、status 0/1、`id` 唯一、业务本地时间）
+  已 live 确认；剩余：完整非 0/1 status map、长窗口 ordering/duplicate、
+  retention 边界和 query-boundary 行为。
 * AEE 文件剩余语义：
-  stable ID scope、完整 upload status/source code map、storage/channel，
-  以及按用户/组织查询的权限边界。
+  stable ID scope（711 行窗口内全局唯一已 live 确认）、完整
+  `source`/`upLoadStatus`/`lType` code map、storage/channel，以及按用户/
+  组织查询的权限边界。
 * AEE 用户使用数据：
   login/logout、session、last active、访问设备、Realtime 监察记录和观看时长。
 * AEE `/api/v1/*` 数据 API 认证边界：
-  custom `token` header 已静态确认；仍需确认 token-only live sufficiency、
-  是否还依赖 Cookie、是否与 Realtime access token 完全同源、有效期、刷新方式、
-  服务端最小暴露方案，以及失败时的状态码/错误模型。只记录脱敏结论，不记录
-  Cookie、Authorization、密码或可复用 Token。
+  custom `token` header 已 live 确认（无 header → `error=333`，
+  `TOKEN_REQUIRED`）；仍需确认服务端 token-only 访问、是否还依赖 Cookie、
+  是否与 Realtime access token 完全同源、有效期、刷新方式、服务端最小暴露
+  方案，以及失败时的状态码/错误模型。只记录脱敏结论，不记录 Cookie、
+  Authorization、密码或可复用 Token。
 * AEE 告警剩余语义：
-  alarm/status/deal code map、level、lifecycle、删除语义、retention、pagination、
-  handler/description 权限边界。
+  `alarmType` 205/206 与 `status` 字段承载已 live 确认；剩余：完整
+  alarm/status/deal code map、level、lifecycle、删除语义、retention、
+  pagination、handler/description 权限边界。
 * 对每个未知项必须记录所需页面、用户权限、HTTP/WebSocket/SDK 证据、刷新频率和
   敏感等级；不得猜测。
 * `WXB358` compatibility 调查仍为 `NON-BLOCKING / PAUSED`，不属于 M4 数据主线。

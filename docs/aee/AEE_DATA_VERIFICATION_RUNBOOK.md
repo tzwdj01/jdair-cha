@@ -2,7 +2,18 @@
 
 Last reviewed: `2026-08-16`
 
-Status: `READY TO EXECUTE / AWAITS AUTHORIZED AEE SESSION`
+Status: `EXECUTED 2026-08-16 (authorized VIDEOMONITOR account) / PARTIAL`
+
+Execution note: this runbook was executed on `2026-08-16` with an authorized
+test account (sufficient `VIDEOMONITOR` permission) in a real Chrome session.
+DevOnlineList, RecordFileList and AlarmList live evidence was
+captured and the sanitized conclusions were written to
+`AEE_CAPABILITY_MATRIX.md`, `AEE_INTERFACE_CATALOG.md`,
+`AEE_FIELD_CATALOG.md` and `DATA_AVAILABILITY_MATRIX.md`. Deterministic
+fixtures derived from the sanitized samples were added under
+`mature-modernization/v2/tests/fixtures/` with regression coverage in
+`tests/test_aee_live_fixtures.py`. No credential, Cookie or reusable token was
+recorded. Server-side token-lifecycle verification remains the next step.
 
 This runbook turns the P0 `AEE VERIFICATION REQUIRED` items into concrete,
 lawful observation steps. It only observes the authorized AEE session that the
