@@ -1,6 +1,6 @@
 # CHA Video Record System Optimization — Active Task Goal
 
-Last updated: 2026-08-14
+Last updated: 2026-08-15
 
 ## 1. Overall Objective
 
@@ -54,15 +54,17 @@ Last updated: 2026-08-14
 当前事实摘要：
 
 * 当前 Git branch：`codex/m3-release-fix-20260814`。
-* 当前 Git HEAD：`40deff8`，与
-  `origin/codex/m3-release-fix-20260814` 一致；本轮修改前工作树 clean。
+* 本轮 Production Canary 开始前 Git HEAD：`42d39a5`，当时与
+  `origin/codex/m3-release-fix-20260814` 一致且工作树 clean。
 * 当前生产 V2 release：
-  `/opt/jdair-cha/v2/releases/0.8.0-m3-final-rc-release-fix`。
+  `/opt/jdair-cha/v2/releases/0.8.0-m3-final-rc-media-offline-fix-20260815`。
 * 当前生产 Realtime、Audio、Control、AccountPool feature flag 均为
   `false`。
 * 当前生产 AEE 和 Canary 配置存在于受保护的生产环境中，不进入 Git。
 * 最新生产回滚备份：
-  `/opt/jdair-cha/backups/jdair-cha-before-m3-realtime-20260814-173601.tar.gz`。
+  `/opt/jdair-cha/backups/jdair-cha-before-m3-realtime-20260815-184923.tar.gz`，
+  SHA-256：
+  `239bde1e3104d2744a969808631baaf29cf1c8193fa3944f75108167f101b2cb`。
 * 上一次 Production Canary 因选择了 AEE Media 当前不可用的 `WXB358` 而中止；
   该设备现归类为已知 upstream/device media availability exception，不再作为
   M3 Production Gate 硬性设备。
@@ -82,6 +84,17 @@ Last updated: 2026-08-14
   * AEE Secret 7/7 configured，Canary allowlist configured；
   * 生产 env 权限 `0600 root:root`；
   * Legacy local HTTP 为 200。
+* `2026-08-15 18:49–18:53 CST`：
+  * 已完成新的完整增量备份、release dry-run 和 isolated release rehearsal；
+  * production venv 解包测试 `73 tests PASS`；
+  * 已部署带 `DEVICE_MEDIA_OFFLINE` 和补偿性 close 修复的新 release；
+  * 切换后 service active、`NRestarts=0`、Legacy/V2 health PASS。
+* `2026-08-15 18:53–19:21 CST`：
+  * 仅对既有 Canary allowlist 临时启用 Realtime；
+  * 使用 4 台 AEE-native media available 设备完成生产 1 路和 4 路验证；
+  * Canary 完成后已恢复 `realtime_readonly=false`；
+  * Audio、Control、AccountPool 全程保持关闭；
+  * 生产 `current` 未回退，Nginx 和数据库未修改。
 
 ---
 
@@ -169,12 +182,26 @@ Last updated: 2026-08-14
   `DEVICE_MEDIA_OFFLINE`；`openVideo` rejection 会执行补偿性 `closeVideo`，
   JavaScript runtime test 和全量 V2 回归通过。
 
-已实现但当前生产未完成验收：
+当前生产验收状态：
 
-* `COMPLETED / UNVERIFIED`：当前生产 release 的 1 → 4 路 Canary；6 路仅在
-  至少 6 台设备通过 AEE-native media precheck 时顺带执行。
-* `COMPLETED / UNVERIFIED`：生产环境 authenticated non-Canary 的页面、API 和三个
-  WebSocket 负向验证。
+* `COMPLETED / VERIFIED`：当前生产 release 的 1 路 Canary：
+  `WXB353` 首帧、1920 × 1080、Track live、heartbeat、单路关闭、同会话 reopen
+  和 session close 均通过。
+* `COMPLETED / VERIFIED`：当前生产 release 的 4 路 Canary：
+  `WXB309`、`WXB312`、`WXB353`、`WXB364` 四路均获得首帧并进入
+  `PLAYING`；selective close、survivor、reopen、screenshot 和 session close
+  均通过。
+* `COMPLETED / VERIFIED`：生产环境 authenticated non-Canary 页面、两个
+  Realtime API 和三个 WebSocket endpoint 均被拒绝。
+* `COMPLETED / VERIFIED`：Canary 结束后
+  active session/stream/Gateway/Media 均回到 0，
+  `realtime_release_failure_total=0`。
+* `COMPLETED / UNVERIFIED`：生产全屏按钮已触发正确 Fullscreen API 路径，但当前
+  受控 Chrome 自动化环境拒绝进入全屏并显示“浏览器未允许进入全屏”；仍需一次普通
+  用户操作的生产浏览器手工验证。
+* `NOT EXECUTED — INSUFFICIENT HEALTHY MEDIA DEVICES`：生产 6 路验证；
+  当前观察窗口仅有 4 台 AEE-native media available 视频设备，按已批准 evidence
+  waiver 不阻塞 4 路首发容量结论。
 
 未实现或未进入当前已批准 release 范围：
 
@@ -277,8 +304,8 @@ AccountPool 和生产 Audio 开放排除在当前首发范围之外。重新进�
 当前状态：
 `IN PROGRESS / PRODUCTION CANARY VALIDATION`
 
-当前只执行 M3 Production Canary 的候选设备 precheck、1 路、4 路受控验收、
-资源释放检查和发布结论。
+当前只执行 M3 Production Canary 的最终证据收口、普通用户操作的生产全屏验证、
+文档/Git 结论和首发容量配置建议。
 
 不得自动开发 M4，不得顺手扩展 9 路、AccountPool、Audio 生产开放、PTZ、对讲
 或录像。
@@ -390,7 +417,7 @@ Existing MCS8/AEE capability
 
 当前生产安全约束：
 
-* 保持 `CHA_V2_FEATURE_REALTIME_READONLY=false`，直至新 Canary 获得批准。
+* Canary 已结束并恢复 `CHA_V2_FEATURE_REALTIME_READONLY=false`。
 * 保持 Audio、Control 和 AccountPool 为 `false`。
 * 使用现有 Canary allowlist，空 allowlist 不得代表全部用户。
 * AEE 长期凭据仅允许存在于生产环境变量或 Secret 管理中。
@@ -428,14 +455,21 @@ Existing MCS8/AEE capability
 
 M3 当前剩余关键验收：
 
-* AEE 与 CHA 在 `WXB358` 上的同设备、同场景证据。
-* `openvideo is not defined` 的来源和影响。
-* 当前生产 release 的单路、四路、六路首帧和 live track。
-* 四路和六路 selective close、survivor、reopen。
-* 现有截图、全屏和重连行为。
-* authenticated non-Canary 生产拒绝。
-* Session/Stream/Gateway/Media active counters 最终全部回到 0。
-* Legacy/V2 health、Nginx、restart count、5xx 和结构化错误日志。
+* 在普通用户操作的生产 Chrome 中点击任一正在播放 tile 的全屏按钮，确认：
+  * tile 实际进入全屏；
+  * 退出全屏后其它 stream 继续 `PLAYING`；
+  * session close 后资源计数仍回到 0。
+* 更新最终 Production Canary report、Runbook/TASK_GOAL 结论并完成 Git
+  commit/push。
+
+已完成：
+
+* 4 台候选设备的 AEE-native playback precheck；
+* 生产 1 路、4 路首帧、live track、分辨率、heartbeat；
+* selective close、survivor、reopen、screenshot 和 session close；
+* authenticated non-Canary 页面/API/三个 WebSocket 拒绝；
+* Session/Stream/Gateway/Media active counters 归零；
+* Legacy/V2 health、restart count 和 feature flags 复核。
 
 ---
 
@@ -653,6 +687,60 @@ VERIFIED。
 * 若 1 路和 4 路 Production Canary PASS，生产首发最大路数建议设为 4；保留
   development validated limit 6，未来单独完成 6 路生产容量验证后再提升。
 
+## Production Canary Evidence — 2026-08-15
+
+### AEE-native precheck
+
+同一合法 `VIDEOMONITOR` 用户、同一 Chrome/网络观察窗口：
+
+* `WXB309`：`mediaMonitor=opened`、`newConsumer`、H.264
+  `profile-level-id=42e01f`、1920 × 1080、首帧 PASS、关闭 PASS。
+* `WXB312`：`mediaMonitor=opened`、`newConsumer`、H.264
+  `profile-level-id=42e01f`、1280 × 720、首帧 PASS、关闭 PASS。
+* `WXB353`：`mediaMonitor=opened`、`newConsumer`、H.264
+  `profile-level-id=42e01f`、1920 × 1080、首帧 PASS、关闭 PASS。
+* `WXB364`：`mediaMonitor=opened`、`newConsumer`、H.264
+  `profile-level-id=42e01f`、1920 × 1080、首帧 PASS、关闭 PASS。
+
+### CHA Production Canary
+
+* 单路 `WXB353`：
+  * first frame `19:02:30 CST`；
+  * 1920 × 1080、Track live、heartbeat PASS；
+  * selective close 约 `991.85 ms`；
+  * 同 session reopen first frame `19:04:01 CST`；
+  * session close 约 `1076.35 ms`。
+* 四路：
+  * `WXB312` first frame `19:05:39`，1280 × 720；
+  * `WXB309` first frame `19:05:40`，1920 × 1080；
+  * `WXB364` first frame `19:05:42`，1920 × 1080；
+  * `WXB353` first frame `19:05:44`，1920 × 1080；
+  * 四路均 `PLAYING` / Track live；
+  * `WXB309` screenshot PASS；
+  * selective close `WXB312` 约 `991.855 ms`，其它三路继续播放；
+  * `WXB312` reopen first frame `19:07:40`；
+  * session close 约 `2508.81 ms`。
+* 关闭后 diagnostics：
+  * active sessions `0`；
+  * active streams `0`；
+  * Gateway connections `0`；
+  * Media connections `0`；
+  * release failures `0`；
+  * first-frame timeouts `0`；
+  * screenshot success `1`、screenshot failure `0`。
+* authenticated non-Canary：
+  * 页面显示“当前登录用户不在受控 Canary 范围内”；
+  * diagnostics 和 create-session API 均 `403 canary_forbidden`；
+  * control/gateway/media WebSocket 均 `403`。
+* 浏览器全屏：
+  * button/event handler 和错误反馈路径已在生产触发；
+  * 自动化 Chrome 返回“浏览器未允许进入全屏”；
+  * 当前状态为 `COMPLETED / UNVERIFIED`，需要普通用户操作复核。
+
+详细脱敏证据见：
+
+`docs/M3_PRODUCTION_CANARY_20260815.md`
+
 ## Rejected Alternatives
 
 当前拒绝：
@@ -721,7 +809,7 @@ M3 当前额外 Done Criteria：
 
 * M0、M1、M2 已发布并验证。
 * M3.1、M3.2A、M3.2B、M3.2C 和 M3 Final 当前首发范围代码已完成。
-* Release-fix、生产备份、独立 release 部署和关闭状态 health 已完成。
+* Release-fix、2026-08-15 生产备份、独立 release 部署和 health 已完成。
 * 两次失败 Canary 的 Session/Gateway/Media 资源均已释放。
 * 项目治理文件和 AEE Reference 原则已接入。
 * 已使用具备有效 `VIDEOMONITOR` 权限的合法 AEE 登录完成 `WXB353` 控制播放：
@@ -735,29 +823,33 @@ M3 当前额外 Done Criteria：
   因果证明。
 * 已完成最小 Class C 修复：`DEVICE_MEDIA_OFFLINE` 错误归一化和
   open-rejection 补偿性 close；Node runtime test 与全量 `73 tests` 通过。
+* 已完成 `WXB309/WXB312/WXB353/WXB364` AEE-native precheck。
+* 已完成生产 1 路和 4 路 Canary、截图、selective close、survivor、reopen、
+  session close 和资源计数归零。
+* 已完成 authenticated non-Canary 页面、API 和三个 WebSocket 生产拒绝验证。
+* Canary 结束后 Realtime 已恢复关闭；Legacy/V2 health PASS，
+  `NRestarts=0`。
 
 ## In Progress
 
 * Active Milestone 保持 M3。
-* 当前进入 `PRODUCTION CANARY VALIDATION`。
-* 正在从当前在线设备中执行 AEE native playback precheck，选择至少 4 台
-  `mediaMonitor=opened`、有 `newConsumer` 和首帧的健康设备。
+* 当前仍为 `PRODUCTION CANARY VALIDATION`，但只剩全屏的普通用户操作验证和
+  最终证据/Git 收口。
 
 ## Next
 
-1. 使用 `WXB353` 和其它 GPS 正常更新设备执行最小 AEE native playback
-   precheck；AEE Media unavailable 的候选设备立即记录并跳过。
-2. 用已确认健康设备执行 1 路 Production Canary。
-3. 用 4 台已确认健康设备执行 4 路 Production Canary，完成 selective close、
-   survivor、reopen、fullscreen、screenshot 和 session close。
-4. 确认 active session/stream/Gateway/Media 回到 0，release failure 无新增，
-   Legacy/V2/Canary 隔离无回归。
-5. 若不足 6 台健康设备，登记 6 路生产验证 evidence waiver，并将生产首发建议
-   最大路数设为 4。
+1. 在普通用户操作的 Chrome 中，以 Canary 用户打开 1 台已确认健康设备，手工点击
+   tile 全屏按钮并退出全屏。
+2. 复核其它 stream/session 不受影响并再次确认资源计数归零。
+3. 将全屏结果更新到 Production Canary report 和本文件。
+4. 若手工全屏 PASS，形成 M3 Milestone Completion Report；生产首发建议
+   `max_streams=4`，Realtime 保持关闭等待下一次明确激活授权。
 
 ## Blocked
 
 * 当前没有由单个媒体不可用设备造成的项目级 blocker。
+* 当前唯一验收缺口是自动化浏览器不提供 Fullscreen API 用户激活，导致生产全屏
+  只能标记为 `COMPLETED / UNVERIFIED`；这不是已确认的产品代码故障。
 * 只有以下情况阻塞本轮：
   * 没有任何 AEE-native 可实时播放设备；
   * AEE 正常而 CHA 对同设备失败；
