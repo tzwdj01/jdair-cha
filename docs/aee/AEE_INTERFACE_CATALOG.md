@@ -57,6 +57,9 @@ CHA implementation status:
 * `AEEDataHTTPClient` now provides an exact GET allowlist, injected in-memory
   token provider, bounded CHA error codes and one retry after a 401-driven
   token invalidation;
+* `AEEReadOnlyDataAdapter` now provides endpoint-specific, read-only contracts
+  for DevTree, DevOnlineList and RecordFileList, with explicit source timezone,
+  range and pagination validation plus bounded page-envelope parsing;
 * it contains no username/password login logic and is not connected to an API,
   scheduler, database or production configuration;
 * login ownership, token lifetime and refresh remain separate evidence-gated
@@ -159,6 +162,15 @@ CHA implementation status:
 | Important caveat | the current page extends an unclosed online interval to browser current time; this algorithm must not be copied without clipping to the requested range and testing boundary conditions |
 | Classification | Class A |
 | CHA recommendation | ingest raw transition rows, sort and deduplicate explicitly, preserve source status/time, and compute reproducible range-clipped metrics in CHA |
+
+Current CHA contract:
+
+* start/end must be timezone-aware and are formatted in an explicitly supplied
+  source timezone;
+* `enterprise_id` is required;
+* page numbers are positive and page size is bounded to 10,000;
+* malformed rows and unknown totals are retained as data-quality flags rather
+  than silently treated as complete data.
 
 ### AEE task list
 

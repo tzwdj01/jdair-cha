@@ -1,5 +1,6 @@
 """M4 normalized inspection-data contracts and deterministic aggregations."""
 
+from .aee_adapter import AEEPageResult, AEEReadOnlyDataAdapter
 from .aee_http import AEEDataHTTPClient, AEEDataHTTPError
 from .metrics import (
     DeviceUptimeAggregationResult,
@@ -13,6 +14,8 @@ from .metrics import (
 __all__ = [
     "AEEDataHTTPClient",
     "AEEDataHTTPError",
+    "AEEPageResult",
+    "AEEReadOnlyDataAdapter",
     "DeviceUptimeMetric",
     "DeviceUptimeAggregationResult",
     "MediaAggregationResult",

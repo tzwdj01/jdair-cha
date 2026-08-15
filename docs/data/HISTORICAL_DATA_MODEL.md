@@ -31,14 +31,19 @@ Implemented and covered by unit tests:
   result sets;
 * a narrow, server-side, read-only AEE HTTP transport using the static-evidenced
   custom `token` header, exact endpoint allowlisting, bounded errors and one
-  401-driven token invalidation/retry.
+  401-driven token invalidation/retry;
+* endpoint-specific DevTree, DevOnlineList and RecordFileList contracts with
+  explicit source timezone, range/pagination validation and page
+  completeness metadata.
 
 The implementation is in:
 
 * `mature-modernization/v2/app/data/metrics.py`;
 * `mature-modernization/v2/app/data/aee_http.py`;
+* `mature-modernization/v2/app/data/aee_adapter.py`;
 * `mature-modernization/v2/tests/test_data_metrics.py`.
 * `mature-modernization/v2/tests/test_aee_data_http.py`.
+* `mature-modernization/v2/tests/test_aee_data_adapter.py`.
 
 Not yet implemented:
 

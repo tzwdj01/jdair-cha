@@ -394,7 +394,10 @@ Verification:
 * six focused transport tests cover the exact GET allowlist, custom `token`
   header, query encoding, bounded 401 retry, 403 handling, token redaction,
   response validation and base-URL hardening;
-* the current complete V2 backend suite passes `88 tests`.
+* six endpoint-contract tests cover timezone conversion, exact query
+  parameters, pagination/`has_more`, invalid-row handling, unknown totals,
+  range validation and bounded upstream errors;
+* the current complete V2 backend suite passes `94 tests`.
 
 Implemented read-only transport boundary:
 
@@ -404,6 +407,14 @@ Implemented read-only transport boundary:
 * 403 and transport/JSON failures are mapped to bounded CHA-owned errors;
 * no username, password, Cookie, token value or browser storage is read by the
   transport.
+* `AEEReadOnlyDataAdapter` currently supports only:
+  * `/api/v1/ext/DevTree`;
+  * `/api/v1/DevOnlineList`;
+  * `/api/v1/RecordFileList`.
+* ranged queries require explicit source timezone, required enterprise scope
+  and bounded pagination;
+* page envelopes expose `records_total`, `has_more`, invalid-row count and
+  quality flags.
 
 Not implemented by this foundation:
 
