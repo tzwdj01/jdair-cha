@@ -1,0 +1,314 @@
+from __future__ import annotations
+
+import datetime as dt
+import json
+import os
+import unittest
+from typing import Any
+from unittest.mock import patch
+
+from fastapi import FastAPI
+from fastapi.responses import JSONResponse
+
+from app.api.inspection import create_inspection_router
+from app.config import Settings
+from app.data.normalization import (
+    normalize_device_status_events,
+    normalize_media_files,
+)
+from app.data.realtime_views import build_realtime_view_event
+from app.data.store import MemoryInspectionStore
+from app.services.inspection import InspectionDataService
+
+
+UTC = dt.timezone.utc
+
+
+class _ASGIResponse:
+    def __init__(self, status_code: int, body: bytes) -> None:
+        self.status_code = status_code
+        self.body = body
+
+    @property
+    def text(self) -> str:
+        return self.body.decode("utf-8")
+
+    def json(self) -> dict[str, Any]:
+        return json.loads(self.body)
+
+
+async def _request(app, path: str) -> _ASGIResponse:
+    path_without_query = path.split("?")[0]
+    query = path.split("?", 1)[1] if "?" in path else ""
+    scope = {
+        "type": "http",
+        "asgi": {"version": "3.0", "spec_version": "2.3"},
+        "http_version": "1.1",
+        "method": "GET",
+        "scheme": "http",
+        "path": path_without_query,
+        "raw_path": path_without_query.encode("ascii"),
+        "query_string": query.encode("ascii"),
+        "root_path": "",
+        "headers": [(b"host", b"testserver")],
+        "client": ("127.0.0.1", 12345),
+        "server": ("testserver", 80),
+        "state": {},
+    }
+    sent = False
+    messages: list[dict[str, Any]] = []
+
+    async def receive() -> dict[str, Any]:
+        nonlocal sent
+        if not sent:
+            sent = True
+            return {"type": "http.request", "body": b"", "more_body": False}
+        return {"type": "http.disconnect"}
+
+    async def send(message: dict[str, Any]) -> None:
+        messages.append(message)
+
+    await app(scope, receive, send)
+    start = next(
+        message
+        for message in messages
+        if message["type"] == "http.response.start"
+    )
+    body = b"".join(
+        message.get("body", b"")
+        for message in messages
+        if message["type"] == "http.response.body"
+    )
+    return _ASGIResponse(status_code=start["status"], body=body)
+
+
+def _settings(feature: bool) -> Settings:
+    with patch.dict(
+        os.environ,
+        {
+            "CHA_V2_FEATURE_INSPECTION_V2": (
+                "true" if feature else ""
+            )
+        },
+        clear=False,
+    ):
+        return Settings.from_env()
+
+
+def _envelope(
+    request,
+    data,
+    *,
+    ok: bool = True,
+    status_code: int = 200,
+) -> JSONResponse:
+    del request
+    return JSONResponse(
+        status_code=status_code,
+        content={
+            "ok": ok,
+            "data": data,
+            "meta": {
+                "request_id": "test-1",
+                "generated_at": "2026-08-15T00:00:00Z",
+            },
+        },
+    )
+
+
+def _app(
+    settings: Settings,
+    service: InspectionDataService | None,
+) -> FastAPI:
+    app = FastAPI()
+    app.include_router(create_inspection_router(settings, service, _envelope))
+    return app
+
+
+async def _seeded_service() -> InspectionDataService:
+    store = MemoryInspectionStore()
+    await store.upsert_device_status_events(
+        normalize_device_status_events(
+            [
+                {
+                    "id": "s-1",
+                    "devId": "WX1",
+                    "status": 1,
+                    "time": "2026-08-15 00:10:00+00:00",
+                },
+                {
+                    "id": "s-2",
+                    "devId": "WX2",
+                    "status": 2,
+                    "time": "2026-08-15 00:20:00+00:00",
+                },
+            ],
+            source_timezone=UTC,
+            observed_at=dt.datetime(2026, 8, 15, 1, tzinfo=UTC),
+            ingested_at=dt.datetime(2026, 8, 15, 1, 0, 1, tzinfo=UTC),
+        ).events
+    )
+    await store.upsert_media_files(
+        normalize_media_files(
+            [
+                {
+                    "id": "file-1",
+                    "devId": "WX1",
+                    "fType": 3,
+                    "fileSize": 4096,
+                    "duration": 125,
+                    "startTime": "2026-08-15 00:10:00+00:00",
+                    "uploadTime": "2026-08-15 00:15:00+00:00",
+                }
+            ],
+            source_timezone=UTC,
+            observed_at=dt.datetime(2026, 8, 15, 1, tzinfo=UTC),
+            ingested_at=dt.datetime(
+                2026,
+                8,
+                15,
+                1,
+                0,
+                1,
+                tzinfo=UTC,
+            ),
+        ).files
+    )
+    await store.upsert_realtime_view_events(
+        (
+            build_realtime_view_event(
+                username="alice",
+                user_id=None,
+                device_id="WX1",
+                session_id="session-1",
+                stream_id="stream-1",
+                opened_at=dt.datetime(
+                    2026,
+                    8,
+                    15,
+                    0,
+                    0,
+                    tzinfo=UTC,
+                ),
+                first_frame_at=dt.datetime(
+                    2026,
+                    8,
+                    15,
+                    0,
+                    0,
+                    2,
+                    tzinfo=UTC,
+                ),
+                closed_at=dt.datetime(
+                    2026,
+                    8,
+                    15,
+                    0,
+                    1,
+                    tzinfo=UTC,
+                ),
+                error_code=None,
+                width=1920,
+                height=1080,
+                track_state="live",
+                close_reason="session_close",
+                release_mode="session_disconnect",
+            ),
+        )
+    )
+    return InspectionDataService(store)
+
+
+class InspectionAPITests(unittest.IsolatedAsyncioTestCase):
+    async def test_feature_disabled_returns_404(self) -> None:
+        app = _app(_settings(feature=False), None)
+        response = await _request(app, "/api/v2/inspection/devices")
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(
+            response.json()["data"]["code"],
+            "feature_disabled",
+        )
+
+    async def test_no_store_returns_503(self) -> None:
+        app = _app(_settings(feature=True), None)
+        response = await _request(app, "/api/v2/inspection/devices")
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(
+            response.json()["data"]["code"],
+            "store_not_configured",
+        )
+
+    async def test_device_endpoint_returns_computed_overview(self) -> None:
+        app = _app(_settings(feature=True), await _seeded_service())
+        response = await _request(
+            app,
+            (
+                "/api/v2/inspection/devices"
+                "?start=2026-08-15T00:00:00%2B00:00"
+                "&end=2026-08-15T01:00:00%2B00:00&days=1"
+            ),
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["data"]["store_configured"])
+        overview = payload["data"]["overview"]
+        self.assertEqual(overview["current_online_count"], 1)
+        self.assertEqual(overview["current_unknown_count"], 1)
+        self.assertEqual(
+            overview["uptime"]["devices"][0]["device_id"],
+            "WX1",
+        )
+
+    async def test_media_and_realtime_endpoints(self) -> None:
+        app = _app(_settings(feature=True), await _seeded_service())
+        media = await _request(
+            app,
+            (
+                "/api/v2/inspection/media"
+                "?start=2026-08-15T00:00:00%2B00:00"
+                "&end=2026-08-15T01:00:00%2B00:00"
+            ),
+        )
+        self.assertEqual(media.status_code, 200)
+        media_overview = media.json()["data"]["overview"]["media"]
+        self.assertEqual(media_overview["devices"][0]["video_count"], 1)
+        self.assertEqual(
+            media_overview["devices"][0]["video_duration_seconds"],
+            125,
+        )
+
+        realtime = await _request(
+            app,
+            (
+                "/api/v2/inspection/realtime"
+                "?start=2026-08-15T00:00:00%2B00:00"
+                "&end=2026-08-15T01:00:00%2B00:00"
+            ),
+        )
+        self.assertEqual(realtime.status_code, 200)
+        aggregation = realtime.json()["data"]["overview"]["aggregation"]
+        self.assertEqual(aggregation["event_count"], 1)
+        self.assertEqual(aggregation["played_count"], 1)
+
+    async def test_invalid_scope_returns_400(self) -> None:
+        app = _app(_settings(feature=True), await _seeded_service())
+        bad_time = await _request(
+            app,
+            "/api/v2/inspection/devices?start=not-a-date",
+        )
+        self.assertEqual(bad_time.status_code, 400)
+        self.assertEqual(bad_time.json()["data"]["code"], "invalid_scope")
+
+        reversed_scope = await _request(
+            app,
+            (
+                "/api/v2/inspection/devices"
+                "?start=2026-08-15T02:00:00%2B00:00"
+                "&end=2026-08-15T01:00:00%2B00:00"
+            ),
+        )
+        self.assertEqual(reversed_scope.status_code, 400)
+
+
+if __name__ == "__main__":
+    unittest.main()

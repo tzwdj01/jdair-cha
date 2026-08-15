@@ -12,6 +12,7 @@ from fastapi import FastAPI, Query, Request
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
 
+from .api.inspection import create_inspection_router
 from .config import Settings
 from .realtime.api import create_realtime_router
 from .realtime.session_manager import RealtimeSessionManager
@@ -39,6 +40,11 @@ dashboard_template_path = (
     Path(__file__).resolve().parent / "templates" / "m2_dashboard.html"
 )
 realtime_manager = RealtimeSessionManager(settings)
+# No durable InspectionStore is wired in this release. The inspection API is
+# registered so its availability state is explicit: feature flag off returns
+# feature_disabled, flag on returns store_not_configured until a durable store
+# (or an explicitly approved development store) is provided.
+inspection_service = None
 
 
 def iso_now() -> str:
@@ -118,6 +124,13 @@ app.include_router(
         settings,
         legacy_client,
         realtime_manager,
+        envelope,
+    )
+)
+app.include_router(
+    create_inspection_router(
+        settings,
+        inspection_service,
         envelope,
     )
 )

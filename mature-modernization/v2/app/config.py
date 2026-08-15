@@ -118,6 +118,7 @@ class Settings:
     feature_realtime_control: bool
     feature_account_pool_v2: bool
     feature_records_v2: bool
+    feature_inspection_v2: bool
 
     def realtime_aee_is_configured(self) -> bool:
         return bool(
@@ -310,6 +311,9 @@ class Settings:
                 "CHA_V2_FEATURE_ACCOUNT_POOL_V2"
             ),
             feature_records_v2=env_bool("CHA_V2_FEATURE_RECORDS_V2"),
+            feature_inspection_v2=env_bool(
+                "CHA_V2_FEATURE_INSPECTION_V2"
+            ),
         )
 
     def public_features(self) -> dict[str, bool]:
@@ -320,6 +324,7 @@ class Settings:
             "realtime_control": self.feature_realtime_control,
             "account_pool_v2": self.feature_account_pool_v2,
             "records_v2": self.feature_records_v2,
+            "inspection_v2": self.feature_inspection_v2,
         }
 
     def legacy_is_required(self) -> bool:

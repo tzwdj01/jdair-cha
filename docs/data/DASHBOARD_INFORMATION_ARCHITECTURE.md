@@ -196,6 +196,21 @@ stale-location classifications because governed thresholds do not exist yet.
 Raw coverage/age values are exposed instead. API routes and pages are not yet
 wired.
 
+### 5.2 Read-only inspection API
+
+`app/api/inspection.py` exposes the service over HTTP under
+`/api/v2/inspection/{devices,media,realtime,alarms,locations}`.
+
+Availability is explicit:
+
+* feature flag `CHA_V2_FEATURE_INSPECTION_V2` off → `404 feature_disabled`;
+* flag on but no store wired → `503 store_not_configured`;
+* store wired → computed metrics with `source: inspection_store`, the requested
+  scope and JSON-safe serialization.
+
+The API is registered in the V2 app but the feature flag defaults to off, so
+production behavior is unchanged. Dashboard pages are not wired yet.
+
 ## 6. Data-source labels
 
 Every page must distinguish:

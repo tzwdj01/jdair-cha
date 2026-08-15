@@ -578,9 +578,13 @@ Implemented durable store seam:
   rows and deterministic aggregation, and threshold classifications
   (long-time offline/upload, stale location) remain explicitly un-produced
   until a governed threshold exists;
-* fifteen repository/sink/service tests cover roundtrip, scope filtering,
+* read-only inspection API (`app/api/inspection.py`) exposes the service:
+  `/api/v2/inspection/{devices,media,realtime,alarms,locations}` with honest
+  availability states (feature flag off → 404, no store → 503, store present →
+  computed metrics), JSON-safe serialization and explicit scope handling;
+* twenty repository/sink/service/API tests cover roundtrip, scope filtering,
   latest-wins, media append/upsert, first-wins behavior, the
-  manager-to-store write path and page-oriented overviews.
+  manager-to-store write path, page-oriented overviews and the HTTP API.
 
 Not implemented by this foundation:
 
@@ -589,9 +593,9 @@ Not implemented by this foundation:
 * no production ingestion scheduler or checkpoints exist;
 * the realtime view sink is only active when a store is explicitly provided;
   production release behavior is unchanged;
-* no API route or dashboard page consumes the store yet; the service layer is
-  ready and unit-tested, and wiring to pages waits for a durable store or an
-  approved development store.
+* no dashboard page consumes the store yet; the API and service layers are
+  ready and unit-tested, the feature flag defaults to off, and page wiring
+  waits for a durable store or an approved development store.
 
 Not implemented by this foundation:
 

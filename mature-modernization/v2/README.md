@@ -35,6 +35,11 @@ the `/api/v2/` namespace and does not replace existing `/api/*` routes.
 - `WS /ws/v2/realtime/{session_id}/gateway`
 - `WS /ws/v2/realtime/{session_id}/media`
 - `GET /api/v2/docs`
+- `GET /api/v2/inspection/devices`
+- `GET /api/v2/inspection/media`
+- `GET /api/v2/inspection/realtime`
+- `GET /api/v2/inspection/alarms`
+- `GET /api/v2/inspection/locations`
 
 M2 enables only `dashboard_v2`. It uses a narrow, read-only adapter to the
 existing local service and forwards only the current browser's CHA session
@@ -42,6 +47,12 @@ cookie. It does not accept or persist user passwords. Metrics use bounded
 process-local caches with stale fallback so a slow video/file source does not
 block the whole dashboard. Device trend samples are stored in
 `CHA_V2_DASHBOARD_STATE_DIR/device-trend.json`.
+
+The M4 inspection API is registered but gated by
+`CHA_V2_FEATURE_INSPECTION_V2` (default off). When enabled without a wired
+`InspectionStore` it returns `503 store_not_configured`; with a store it
+returns deterministic metrics computed from durable inspection-history rows.
+No store is wired in the default release, so production behavior is unchanged.
 
 The legacy page and every legacy `/api/*` contract remain unchanged.
 

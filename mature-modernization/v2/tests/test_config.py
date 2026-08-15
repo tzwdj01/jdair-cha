@@ -22,6 +22,7 @@ class ConfigTests(unittest.TestCase):
             "CHA_V2_FEATURE_REALTIME_CONTROL",
             "CHA_V2_FEATURE_ACCOUNT_POOL_V2",
             "CHA_V2_FEATURE_RECORDS_V2",
+            "CHA_V2_FEATURE_INSPECTION_V2",
         ]
         with patch.dict(os.environ, {name: "" for name in names}, clear=False):
             features = Settings.from_env().public_features()
