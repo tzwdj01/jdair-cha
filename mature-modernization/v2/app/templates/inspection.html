@@ -172,6 +172,14 @@
           <td><button class="timeline-btn" data-device="${esc(item.device_id)}">时间线</button></td>
         </tr>`;
       }).join("");
+      const groupRows = (overview.groups || []).map((item) => `<tr>
+        <td>${esc(item.group_id || "未知分组")}</td>
+        <td>${esc(item.device_count)}</td>
+        <td>${esc(item.online_count)}</td>
+        <td>${esc(item.offline_count)}</td>
+        <td>${esc(item.unknown_count)}</td>
+        <td>${esc(item.online_seconds)}s</td>
+      </tr>`).join("");
       byId("content").innerHTML =
         '<div class="grid">' +
         metric(overview.current_online_count == null ? "--" : overview.current_online_count, "当前在线") +
@@ -182,6 +190,10 @@
         '<div class="card"><h2>设备状态明细</h2>' +
         (devices ? '<table><thead><tr><th>设备</th><th>状态</th><th>在线率</th><th>在线时长</th><th>掉线次数</th><th>最近上线</th><th>最近离线</th><th>质量</th><th>操作</th></tr></thead><tbody>' + devices + '</tbody></table>'
           : '<div class="empty">暂无可展示的设备状态历史。</div>') +
+        '</div>' +
+        '<div class="card"><h2>按分组</h2>' +
+        (groupRows ? '<table><thead><tr><th>分组</th><th>设备数</th><th>在线</th><th>离线</th><th>未知</th><th>在线时长</th></tr></thead><tbody>' + groupRows + '</tbody></table>'
+          : '<div class="empty">暂无可展示的分组统计。</div>') +
         '</div>' +
         '<div class="card" id="timelinePanel" style="display:none"></div>' +
         '<div class="empty">说明：在线率按窗口内在线时长/窗口时长计算；“长时间离线”等需要治理阈值的分类暂不产出。</div>';
@@ -278,6 +290,15 @@
         <td>${esc(item.file_size_bytes)}B</td>
         <td>${flags(item.quality_flags)}</td>
       </tr>`).join("");
+      const groupRows = (overview.groups || []).map((item) => `<tr>
+        <td>${esc(item.group_id || "未知分组")}</td>
+        <td>${esc(item.file_count)}</td>
+        <td>${esc(item.video_count)}</td>
+        <td>${esc(item.image_count)}</td>
+        <td>${esc(item.audio_count)}</td>
+        <td>${esc(item.video_duration_seconds)}s</td>
+        <td>${esc(item.file_size_bytes)}B</td>
+      </tr>`).join("");
       const daily = (overview.daily_counts || []).map((pair) =>
         `<tr><td>${esc(pair[0])}</td><td>${esc(pair[1])}</td></tr>`
       ).join("");
@@ -290,6 +311,10 @@
         '<div class="card"><h2>每设备上传量</h2>' +
         (devices ? '<table><thead><tr><th>设备</th><th>总数</th><th>视频</th><th>图片</th><th>音频</th><th>视频时长</th><th>容量</th><th>质量</th></tr></thead><tbody>' + devices + '</tbody></table>'
           : '<div class="empty">暂无可展示的视频/文件历史。</div>') +
+        '</div>' +
+        '<div class="card"><h2>按分组</h2>' +
+        (groupRows ? '<table><thead><tr><th>分组</th><th>文件数</th><th>视频</th><th>图片</th><th>音频</th><th>视频时长</th><th>容量</th></tr></thead><tbody>' + groupRows + '</tbody></table>'
+          : '<div class="empty">暂无可展示的分组统计。</div>') +
         '</div>' +
         '<div class="card"><h2>按日上传趋势</h2>' +
         (daily ? '<table><thead><tr><th>日期</th><th>数量</th></tr></thead><tbody>' + daily + '</tbody></table>'

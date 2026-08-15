@@ -37,12 +37,34 @@ class DeviceLatestStatus:
 
 
 @dataclass(frozen=True, slots=True)
+class DeviceGroupMetric:
+    group_id: str | None
+    device_count: int
+    online_count: int
+    offline_count: int
+    unknown_count: int
+    online_seconds: int
+
+
+@dataclass(frozen=True, slots=True)
+class MediaGroupMetric:
+    group_id: str | None
+    file_count: int
+    video_count: int
+    image_count: int
+    audio_count: int
+    video_duration_seconds: int
+    file_size_bytes: int
+
+
+@dataclass(frozen=True, slots=True)
 class DeviceOverview:
     generated_at: dt.datetime
     scope_start: dt.datetime
     scope_end: dt.datetime
     uptime: DeviceUptimeAggregationResult
     latest_by_device: tuple[DeviceLatestStatus, ...]
+    groups: tuple[DeviceGroupMetric, ...]
     current_online_count: int
     current_offline_count: int
     current_unknown_count: int
@@ -54,6 +76,7 @@ class MediaOverview:
     scope_start: dt.datetime
     scope_end: dt.datetime
     media: MediaAggregationResult
+    groups: tuple[MediaGroupMetric, ...]
     latest_uploaded_at: dt.datetime | None
     latest_created_at: dt.datetime | None
     daily_counts: tuple[tuple[str, int], ...]
@@ -170,6 +193,7 @@ class InspectionDataService:
             latest_by_device=tuple(
                 sorted(latest, key=lambda item: item.device_id)
             ),
+            groups=_device_groups(latest, uptime.devices),
             current_online_count=online,
             current_offline_count=offline,
             current_unknown_count=unknown,
@@ -212,6 +236,7 @@ class InspectionDataService:
             scope_start=_aware(start).astimezone(UTC),
             scope_end=_aware(end).astimezone(UTC),
             media=media,
+            groups=_media_groups(files),
             latest_uploaded_at=(
                 latest_uploaded.astimezone(UTC)
                 if latest_uploaded is not None
@@ -485,6 +510,103 @@ def _daily_media_counts(
         day = time_value.astimezone(business_tz).date().isoformat()
         counts[day] += 1
     return tuple(sorted(counts.items()))
+
+
+def _device_groups(
+    latest: Iterable[DeviceLatestStatus],
+    uptime_devices: Iterable[Any],
+) -> tuple[DeviceGroupMetric, ...]:
+    latest_by_device = {
+        item.device_id: item
+        for item in latest
+    }
+    groups: dict[str | None, list[Any]] = defaultdict(list)
+    for metric in uptime_devices:
+        groups[metric.group_id].append(metric)
+    result: list[DeviceGroupMetric] = []
+    for group_id, group_metrics in groups.items():
+        device_ids = {metric.device_id for metric in group_metrics}
+        online = sum(
+            1
+            for device_id in device_ids
+            if latest_by_device.get(device_id)
+            and latest_by_device[device_id].latest_online is True
+        )
+        offline = sum(
+            1
+            for device_id in device_ids
+            if latest_by_device.get(device_id)
+            and latest_by_device[device_id].latest_online is False
+        )
+        unknown = max(
+            0,
+            len(device_ids) - online - offline,
+        )
+        online_seconds = sum(
+            metric.online_seconds
+            for metric in group_metrics
+        )
+        result.append(
+            DeviceGroupMetric(
+                group_id=group_id,
+                device_count=len(device_ids),
+                online_count=online,
+                offline_count=offline,
+                unknown_count=unknown,
+                online_seconds=online_seconds,
+            )
+        )
+    return tuple(
+        sorted(
+            result,
+            key=lambda item: (item.group_id or ""),
+        )
+    )
+
+
+def _media_groups(
+    files: Iterable[MediaFile],
+) -> tuple[MediaGroupMetric, ...]:
+    groups: dict[str | None, list[MediaFile]] = defaultdict(list)
+    for item in files:
+        groups[item.group_id].append(item)
+    result: list[MediaGroupMetric] = []
+    for group_id, group_files in groups.items():
+        video_count = sum(
+            1 for item in group_files if item.media_kind == "video"
+        )
+        image_count = sum(
+            1 for item in group_files if item.media_kind == "image"
+        )
+        audio_count = sum(
+            1 for item in group_files if item.media_kind == "audio"
+        )
+        video_duration_seconds = sum(
+            item.duration_seconds or 0
+            for item in group_files
+            if item.media_kind == "video"
+        )
+        file_size_bytes = sum(
+            item.file_size_bytes or 0
+            for item in group_files
+        )
+        result.append(
+            MediaGroupMetric(
+                group_id=group_id,
+                file_count=len(group_files),
+                video_count=video_count,
+                image_count=image_count,
+                audio_count=audio_count,
+                video_duration_seconds=video_duration_seconds,
+                file_size_bytes=file_size_bytes,
+            )
+        )
+    return tuple(
+        sorted(
+            result,
+            key=lambda item: (item.group_id or ""),
+        )
+    )
 
 
 def _aware(value: dt.datetime) -> dt.datetime:

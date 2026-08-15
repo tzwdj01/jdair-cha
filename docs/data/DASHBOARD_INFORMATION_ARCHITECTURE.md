@@ -184,9 +184,10 @@ counts, source span, latest-event age and explicit quality/completeness flags.
 `InspectionStore`:
 
 * `device_overview`: current online/offline/unknown counts, latest status per
-  device, last online/offline times and range-clipped uptime;
+  device, last online/offline times, range-clipped uptime and per-group
+  rollups;
 * `media_overview`: media-kind counts, video duration, file size, latest
-  upload/create time and per-business-day upload counts;
+  upload/create time, per-business-day upload counts and per-group rollups;
 * `realtime_overview`: user/device view counts and durations, first-frame
   success and failure reasons;
 * `alarm_overview` and `location_overview`.
@@ -195,6 +196,10 @@ It intentionally does not produce long-time offline, long-time no upload or
 stale-location classifications because governed thresholds do not exist yet.
 Raw coverage/age values are exposed instead. API routes and pages are not yet
 wired.
+
+The group dimension uses the source `group_id` (department/division key) and
+provides the `部门/分组 → 设备` drill-down level; `city` remains a derived
+value that is not produced until a governed geocoding/coordinate policy exists.
 
 ### 5.2 Read-only inspection API
 

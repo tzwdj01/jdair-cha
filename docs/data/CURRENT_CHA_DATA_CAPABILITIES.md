@@ -578,6 +578,9 @@ Implemented durable store seam:
   rows and deterministic aggregation, and threshold classifications
   (long-time offline/upload, stale location) remain explicitly un-produced
   until a governed threshold exists;
+* device and media overviews now include a group dimension aggregated by
+  `group_id` (department/division key), providing the
+  `部门/分组 → 设备` drill-down level;
 * read-only inspection API (`app/api/inspection.py`) exposes the service:
   `/api/v2/inspection/{devices,media,realtime,alarms,locations}` with honest
   availability states (feature flag off → 404, no store → 503, store present →
@@ -596,7 +599,7 @@ Implemented durable store seam:
   sessions/streams, Gateway/Media connections) when a realtime session manager
   is wired; runtime state is kept separate from store history and is `null`
   when no manager is provided;
-* twenty-eight repository/sink/service/API/page tests cover roundtrip, scope
+* thirty repository/sink/service/API/page tests cover roundtrip, scope
   filtering,
   latest-wins, media append/upsert, first-wins behavior, the
   manager-to-store write path, page-oriented overviews, the HTTP API and page

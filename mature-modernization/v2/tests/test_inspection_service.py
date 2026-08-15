@@ -170,6 +170,113 @@ class InspectionDataServiceTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(dict(overview.daily_counts), {"2026-08-15": 2})
 
+    async def test_device_overview_groups_by_group_id(self) -> None:
+        await self.store.upsert_device_status_events(
+            normalize_device_status_events(
+                [
+                    {
+                        "id": "s-1",
+                        "devId": "WX1",
+                        "groupId": "G1",
+                        "status": 1,
+                        "time": "2026-08-15 00:10:00+00:00",
+                    },
+                    {
+                        "id": "s-2",
+                        "devId": "WX2",
+                        "groupId": "G1",
+                        "status": 2,
+                        "time": "2026-08-15 00:20:00+00:00",
+                    },
+                    {
+                        "id": "s-3",
+                        "devId": "WX3",
+                        "groupId": "G2",
+                        "status": 1,
+                        "time": "2026-08-15 00:30:00+00:00",
+                    },
+                ],
+                source_timezone=UTC,
+                observed_at=dt.datetime(2026, 8, 15, 1, tzinfo=UTC),
+                ingested_at=dt.datetime(
+                    2026,
+                    8,
+                    15,
+                    1,
+                    0,
+                    1,
+                    tzinfo=UTC,
+                ),
+            ).events
+        )
+
+        overview = await self.service.device_overview(
+            start=self.start,
+            end=self.end,
+        )
+        groups = {item.group_id: item for item in overview.groups}
+        g1 = groups["G1"]
+        self.assertEqual(g1.device_count, 2)
+        self.assertEqual(g1.online_count, 1)
+        self.assertEqual(g1.unknown_count, 1)
+        self.assertEqual(g1.offline_count, 0)
+        self.assertEqual(g1.online_seconds, 3000)
+        g2 = groups["G2"]
+        self.assertEqual(g2.device_count, 1)
+        self.assertEqual(g2.online_count, 1)
+        self.assertEqual(g2.online_seconds, 1800)
+
+    async def test_media_overview_groups_by_group_id(self) -> None:
+        await self.store.upsert_media_files(
+            normalize_media_files(
+                [
+                    {
+                        "id": "file-1",
+                        "devId": "WX1",
+                        "groupId": "G1",
+                        "fType": 3,
+                        "fileSize": 4096,
+                        "duration": 125,
+                        "startTime": "2026-08-15 00:10:00+00:00",
+                    },
+                    {
+                        "id": "file-2",
+                        "devId": "WX2",
+                        "groupId": "G2",
+                        "fType": 1,
+                        "fileSize": 1024,
+                        "startTime": "2026-08-15 00:20:00+00:00",
+                    },
+                ],
+                source_timezone=UTC,
+                observed_at=dt.datetime(2026, 8, 15, 1, tzinfo=UTC),
+                ingested_at=dt.datetime(
+                    2026,
+                    8,
+                    15,
+                    1,
+                    0,
+                    1,
+                    tzinfo=UTC,
+                ),
+            ).files
+        )
+
+        overview = await self.service.media_overview(
+            start=self.start,
+            end=self.end,
+        )
+        groups = {item.group_id: item for item in overview.groups}
+        g1 = groups["G1"]
+        self.assertEqual(g1.file_count, 1)
+        self.assertEqual(g1.video_count, 1)
+        self.assertEqual(g1.video_duration_seconds, 125)
+        self.assertEqual(g1.file_size_bytes, 4096)
+        g2 = groups["G2"]
+        self.assertEqual(g2.file_count, 1)
+        self.assertEqual(g2.image_count, 1)
+        self.assertEqual(g2.file_size_bytes, 1024)
+
     async def test_realtime_overview_reports_usage_history(self) -> None:
         await self.store.upsert_realtime_view_events(
             (
