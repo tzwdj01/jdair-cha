@@ -39,7 +39,9 @@ Implemented and covered by unit tests:
   changing-total, empty-page, duplicate-ID and invalid-row quality flags;
 * normalized `DeviceStatusEvent` and `MediaFile` application contracts with
   explicit `occurred_at`/source-time, `observed_at` and `ingested_at`
-  separation.
+  separation;
+* a normalized, immutable `RealtimeViewEvent` finalization contract and an
+  opt-in session-manager sink boundary for forward-only CHA viewing evidence.
 
 Normalization safety rules already enforced:
 
@@ -51,7 +53,12 @@ Normalization safety rules already enforced:
 * file sizes remain bytes and video durations remain seconds;
 * restricted personnel and free-text fields are omitted by default;
 * lifecycle timestamps must be timezone-aware and ingestion cannot precede
-  observation.
+  observation;
+* realtime first-frame time is recorded once, durations are derived from
+  timezone-aware CHA timestamps, and finalization is idempotent per
+  `stream_id`;
+* the event never contains the login-session hash, Cookie, AEE credential,
+  WebSocket URL, SDP, ICE or media payload.
 
 The implementation is in:
 
@@ -60,11 +67,13 @@ The implementation is in:
 * `mature-modernization/v2/app/data/aee_adapter.py`;
 * `mature-modernization/v2/app/data/pagination.py`;
 * `mature-modernization/v2/app/data/normalization.py`;
+* `mature-modernization/v2/app/data/realtime_views.py`;
 * `mature-modernization/v2/tests/test_data_metrics.py`.
 * `mature-modernization/v2/tests/test_aee_data_http.py`.
 * `mature-modernization/v2/tests/test_aee_data_adapter.py`.
 * `mature-modernization/v2/tests/test_aee_data_pagination.py`.
 * `mature-modernization/v2/tests/test_data_normalization.py`.
+* `mature-modernization/v2/tests/test_realtime_view_events.py`.
 
 Not yet implemented:
 
@@ -72,6 +81,7 @@ Not yet implemented:
   authenticated data Adapter;
 * PostgreSQL tables, repository or migration tooling;
 * ingestion checkpoints and retry behavior;
+* a durable `RealtimeViewEvent` sink/repository and historical query API;
 * M4 data APIs and Dashboard pages.
 
 This boundary is intentional. Static evidence confirms the custom `token`
@@ -249,6 +259,17 @@ claim cross-source identity equivalence.
 
 Proposed table: `realtime_view_events`
 
+Application contract status:
+
+`IMPLEMENTED / NOT YET PERSISTED`
+
+The Realtime manager now accepts an opt-in sink and emits one immutable event
+after a stream reaches a terminal viewing boundary. With no sink configured,
+existing Realtime behavior is unchanged. A sink failure cannot block media
+release and remains retryable on an idempotent repeated close. The future
+PostgreSQL sink must be a fast enqueue/upsert boundary rather than a slow query
+inside the media lifecycle.
+
 Minimum fields required by M4:
 
 | Column | Source |
@@ -273,12 +294,15 @@ Minimum fields required by M4:
 
 ### Lifecycle rules
 
-* create one pending event when a stream is accepted;
-* update first-frame fields exactly once;
-* finalize exactly once on every close/failure/shutdown path;
+* track the accepted stream as pending in the existing process-local runtime;
+* update first-frame time exactly once while allowing bounded status/resolution
+  updates;
+* emit a durable candidate exactly once on explicit close, terminal
+  disconnect, timeout cleanup or shutdown;
 * use an idempotency constraint on `stream_id`;
 * do not store AEE tokens, WebSocket URLs, SDP, ICE or media payload;
-* browser disconnect and process shutdown must finalize with explicit reason;
+* browser/control/proxy disconnect and process shutdown finalize with explicit
+  reason;
 * a failed first frame has connection duration but no view duration.
 
 ### Derived metrics

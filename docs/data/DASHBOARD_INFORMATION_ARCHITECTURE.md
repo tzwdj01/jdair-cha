@@ -36,7 +36,7 @@ Candidate cards:
 | today upload count | media record query/index | AVAILABLE, completeness required |
 | 7/30-day upload trend | daily record counts/index | AVAILABLE, completeness required |
 | current realtime sessions | runtime telemetry | AVAILABLE when feature enabled |
-| today realtime views | future `RealtimeViewEvent` | DERIVABLE |
+| today realtime views | finalized `RealtimeViewEvent` contract | DERIVABLE after persistence |
 | long-time offline | future status history | DERIVABLE |
 | long-time no upload | future media index | DERIVABLE |
 | alarm count | AEE `/api/v1/AlarmList` | AVAILABLE source / Adapter TODO |
@@ -91,7 +91,7 @@ Drill-down:
 Views:
 
 * current active sessions from runtime telemetry;
-* today views and viewing time from `RealtimeViewEvent`;
+* today views and viewing time from persisted `RealtimeViewEvent`;
 * first-frame success and latency;
 * failure-reason distribution;
 * views/time by user and device.

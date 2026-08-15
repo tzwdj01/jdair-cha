@@ -97,17 +97,17 @@ the required source events. It does not mean the value already exists.
 
 | Expected field | Status | Current source | Persisted today | Required action |
 | --- | --- | --- | --- | --- |
-| username | AVAILABLE | authenticated CHA session | no | `RealtimeViewEvent.username` |
+| username | AVAILABLE | authenticated CHA session | no | normalized event contract implemented; durable sink TODO |
 | user ID | UNKNOWN | current session exposes username only | no | determine stable identity |
-| device ID | AVAILABLE | realtime stream | no | event dimension |
-| session ID | AVAILABLE | CHA session manager | no | event correlation |
-| stream ID | AVAILABLE | CHA session manager | no | event correlation |
-| opened at | AVAILABLE | stream `created_at` | no | persist event start |
-| first frame at | AVAILABLE | runtime event | no | persist when observed |
-| closed at | AVAILABLE | stream `closed_at` | no | finalize idempotently |
-| duration seconds | DERIVABLE | opened/first-frame/closed timestamps | no | define viewing-duration semantics |
-| result | DERIVABLE | final stream/session status | no | normalized outcome enum |
-| error code | AVAILABLE | runtime stream error | no | normalized safe code |
+| device ID | AVAILABLE | realtime stream | no | normalized event dimension implemented |
+| session ID | AVAILABLE | CHA session manager | no | normalized event correlation implemented |
+| stream ID | AVAILABLE | CHA session manager | no | idempotency key implemented |
+| opened at | AVAILABLE | stream `created_at` | no | event contract implemented |
+| first frame at | AVAILABLE | runtime event | no | first observation is retained exactly once |
+| closed at | AVAILABLE | close/disconnect/timeout/shutdown boundary | no | idempotent finalization implemented |
+| duration seconds | DERIVABLE | opened/first-frame/closed timestamps | no | connection and post-first-frame semantics implemented |
+| result | DERIVABLE | first frame, close reason and bounded error | no | normalized outcome implemented |
+| error code | AVAILABLE | runtime stream error | no | safe CHA code preserved in event |
 | watching count by user | DERIVABLE | `RealtimeViewEvent` | no | aggregate after persistence |
 | watching duration by user | DERIVABLE | `RealtimeViewEvent` | no | aggregate after persistence |
 | device viewed count/duration | DERIVABLE | `RealtimeViewEvent` | no | aggregate after persistence |

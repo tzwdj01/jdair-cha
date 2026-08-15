@@ -19,6 +19,7 @@ from .normalization import (
     normalize_media_files,
 )
 from .pagination import AEEPageCollection, collect_aee_pages
+from .realtime_views import RealtimeViewEvent, build_realtime_view_event
 
 __all__ = [
     "AEEDataHTTPClient",
@@ -39,4 +40,6 @@ __all__ = [
     "normalize_media_files",
     "AEEPageCollection",
     "collect_aee_pages",
+    "RealtimeViewEvent",
+    "build_realtime_view_event",
 ]

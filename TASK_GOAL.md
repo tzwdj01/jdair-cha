@@ -132,7 +132,10 @@ Last updated: 2026-08-15
 * 已增加 normalized `DeviceStatusEvent` 和 `MediaFile` contracts：
   source/observation/ingestion 时间分离、原始 code 保留、非 1 status 不猜测为
   offline、敏感人员/备注字段默认省略。
-* 当前全量 V2 自动化回归为 `113 tests PASS`。
+* 已增加 normalized `RealtimeViewEvent` finalization contract 和可选 sink 边界：
+  首帧只记录一次，close/disconnect/timeout/shutdown 明确分类，按 `stream_id`
+  幂等，且不包含 Cookie hash、AEE 凭据或媒体协商数据。
+* 当前全量 V2 自动化回归为 `123 tests PASS`。
 * 当前开发机没有 Docker、PostgreSQL client/server、`pg_dump` 或
   `pg_restore`。因此不能在此环境宣称 PostgreSQL migration、backup 或 restore
   rehearsal 已完成。
@@ -686,6 +689,13 @@ Commit 应按逻辑阶段组织。
   范围完成 AEE 验证。
 * 已增加历史模型 normalization layer；当前尚未持久化，也没有 API、scheduler
   或生产 wiring。
+* 已增加 CHA-native `RealtimeViewEvent` finalization contract：
+  * 使用已有 authenticated username，不持久化 owner/session Cookie hash；
+  * 以 stream create、首次首帧和 close/disconnect/timeout/shutdown 时间生成
+    connection/view duration；
+  * played、timeout、failed、cancelled、abnormal disconnect 结果可复现；
+  * sink 失败不阻断媒体释放，并可通过重复 close 幂等重试；
+  * 当前 sink 默认未配置，尚无 PostgreSQL repository、outbox 或历史 API。
 
 ## M4 AEE Evidence
 
@@ -1141,13 +1151,17 @@ M4 Done Criteria：
   `mature-modernization/v2/app/data/pagination.py`；
 * 已实现并测试 `DeviceStatusEvent` / `MediaFile` normalization：
   `mature-modernization/v2/app/data/normalization.py`；
-* 当前全量 V2 回归 `113 tests PASS`。
+* 已实现并测试 `RealtimeViewEvent` contract 和 Realtime lifecycle sink：
+  `mature-modernization/v2/app/data/realtime_views.py`；
+* 当前全量 V2 回归 `123 tests PASS`。
 
 ## In Progress
 
 * `ACTIVE MILESTONE: M4`。
 * 正在把已验证的 AEE/CHA 字段语义固化为窄 contracts、normalized historical
   records、page completeness、data-quality evidence 和确定性统计边界。
+* 正在把 `RealtimeViewEvent` 的已完成应用层 finalization contract 连接到未来
+  可演练的 PostgreSQL repository；当前不启用生产 sink。
 * 正在补齐 AEE HTTP Token-only sufficiency/lifecycle、device online status
   map、alarm lifecycle、media code maps 和用户活动数据证据。
 * 正在准备 PostgreSQL repository/migration 的隔离运行条件；当前尚未开始
@@ -1166,7 +1180,8 @@ M4 Done Criteria：
 5. 获得隔离 PostgreSQL runtime 和 `pg_dump`/`pg_restore` 工具后，再增加
    migration/repository，并执行 forward、rollback、backup、restore rehearsal。
 6. 调查 AEE 是否提供合法的用户 login/session/view history；如果不存在，明确
-   标记 `NOT_AVAILABLE`，并只前向收集 CHA `RealtimeViewEvent`。
+   标记 `NOT_AVAILABLE`。CHA 已具备前向 `RealtimeViewEvent` finalization
+   contract，但 durable repository 必须等待隔离 PostgreSQL rehearsal。
 7. 保持 Production Realtime、Audio、Control、AccountPool 关闭。
 
 ## Blocked

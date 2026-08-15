@@ -57,7 +57,8 @@ RealtimeSessionManager
         |
         +-- process-local sessions and streams
         +-- process-local telemetry counters/durations
-        +-- no durable RealtimeViewEvent history
+        +-- finalized RealtimeViewEvent sink contract
+        +-- no durable RealtimeViewEvent repository yet
 ```
 
 The current V2 Dashboard is predominantly a read-only aggregation layer over
@@ -325,11 +326,13 @@ Limitations:
 * all telemetry resets on process restart;
 * no per-user or per-device historical aggregation exists;
 * retained closed sessions are bounded operational diagnostics, not analytics;
-* no durable `RealtimeViewEvent` exists.
+* no durable `RealtimeViewEvent` repository exists.
 
-The current runtime fields are sufficient to derive a future
-`RealtimeViewEvent`, but persistence and event finalization must be implemented
-explicitly.
+The current runtime now finalizes a normalized `RealtimeViewEvent` through an
+opt-in sink boundary. The contract covers first-frame, close, timeout,
+disconnect and shutdown paths without storing runtime media objects. Durable
+PostgreSQL persistence, replay/outbox behavior and analytics queries remain
+unimplemented.
 
 ## 10. Existing Dashboard outputs
 
@@ -403,7 +406,10 @@ Verification:
 * ten normalization tests cover source/observation/ingestion time separation,
   non-1 status uncertainty, field aliases, raw units, partial code maps,
   restricted-field minimization and malformed values;
-* the current complete V2 backend suite passes `113 tests`.
+* ten Realtime-view tests cover outcome/duration semantics, first-frame
+  idempotency, normal close, timeout, session close, abnormal disconnect and
+  sink failure isolation/retry;
+* the current complete V2 backend suite passes `123 tests`.
 
 Implemented read-only transport boundary:
 
@@ -440,6 +446,15 @@ Implemented normalized historical contracts:
   * omits personnel number/name and free-text description by default;
   * records the unverified upstream ID scope rather than claiming global
     uniqueness.
+* `RealtimeViewEvent`
+  * uses authenticated CHA username but never the login-session hash;
+  * records stream/session/device correlation, first frame, resolution,
+    bounded error and release outcome;
+  * derives connection and actual post-first-frame viewing duration;
+  * distinguishes played, timeout, failed, cancelled and abnormal disconnect;
+  * finalizes idempotently through an optional sink on stream/session close,
+    disconnect, TTL cleanup and server shutdown;
+  * isolates sink failure from media cleanup and permits an idempotent retry.
 
 Not implemented by this foundation:
 
@@ -447,6 +462,7 @@ Not implemented by this foundation:
   Adapter;
 * PostgreSQL schema, migrations or repository;
 * ingestion scheduling or checkpoints;
+* durable Realtime-view event sink/outbox or historical API;
 * API routes or Dashboard pages;
 * production configuration changes.
 
@@ -495,7 +511,8 @@ Required M4 improvements:
 
 1. No durable per-device online/offline history.
 2. No durable media-file metadata index.
-3. No durable Realtime viewing history.
+3. No durable Realtime viewing repository or historical API; the final event
+   contract and session-manager sink boundary now exist.
 4. No normalized alarm history.
 5. No flight/task-to-device/media coverage model.
 6. Initial AEE interface/field catalogs now exist, but integration contracts

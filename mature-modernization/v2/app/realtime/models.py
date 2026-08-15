@@ -59,6 +59,9 @@ class RealtimeStream:
     audio_codec: str | None = None
     audio_error_code: str | None = None
     closed_at: dt.datetime | None = None
+    view_close_reason: str | None = None
+    view_error_code: str | None = None
+    view_event_finalized: bool = False
 
     def public(self) -> dict[str, Any]:
         return {
