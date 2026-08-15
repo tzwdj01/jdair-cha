@@ -13,6 +13,7 @@ MEDIA_KIND_BY_CODE = {
     4: "device_file",
 }
 RESTRICTED_MEDIA_FIELDS = ("peopleNo", "peopleName", "des")
+RESTRICTED_ALARM_FIELDS = ("dealUser", "dealTime", "dealDesc")
 
 
 @dataclass(frozen=True, slots=True)
@@ -68,6 +69,36 @@ class MediaFile:
 @dataclass(frozen=True, slots=True)
 class MediaFileNormalizationResult:
     files: tuple[MediaFile, ...]
+    source_row_count: int
+    invalid_row_count: int
+    restricted_field_row_count: int
+    quality_flags: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class AlarmEvent:
+    source_system: str
+    source_record_id: str
+    device_id: str
+    group_id: str | None
+    alarm_type_code: int
+    alarm_status_code: int | None
+    deal_status_code: int | None
+    deal_type_code: int | None
+    handled: bool | None
+    occurred_at: dt.datetime
+    handled_at: dt.datetime | None
+    handler: str | None
+    deal_description: str | None
+    deleted_marker: bool | None
+    observed_at: dt.datetime
+    ingested_at: dt.datetime
+    quality_flags: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class AlarmNormalizationResult:
+    events: tuple[AlarmEvent, ...]
     source_row_count: int
     invalid_row_count: int
     restricted_field_row_count: int
@@ -344,6 +375,152 @@ def normalize_media_files(
     )
 
 
+def normalize_alarm_events(
+    rows: Iterable[Mapping[str, Any]],
+    *,
+    source_timezone: dt.tzinfo,
+    observed_at: dt.datetime,
+    ingested_at: dt.datetime,
+    include_restricted: bool = False,
+) -> AlarmNormalizationResult:
+    observed, ingested = _normalize_lifecycle_times(
+        observed_at,
+        ingested_at,
+    )
+    _validate_source_timezone(source_timezone)
+    source_rows = list(rows)
+    events: list[AlarmEvent] = []
+    invalid_row_count = 0
+    restricted_field_row_count = 0
+
+    for row in source_rows:
+        source_record_id = _optional_text(row.get("id"))
+        device_id = _optional_text(row.get("devId"))
+        alarm_type_code = _optional_int(row.get("alarmType"))
+        occurred_at = _optional_source_time(
+            row.get("alarmTime"),
+            source_timezone=source_timezone,
+        )
+        if (
+            source_record_id is None
+            or device_id is None
+            or alarm_type_code is None
+            or occurred_at is None
+        ):
+            invalid_row_count += 1
+            continue
+
+        flags = {
+            "alarm_code_map_partial",
+            "alarm_lifecycle_unverified",
+            "source_id_scope_unverified",
+        }
+        raw_alarm_status = _first_value(
+            row,
+            ("alarmStatus", "status"),
+        )
+        alarm_status_code = _optional_int(raw_alarm_status)
+        if _is_present(raw_alarm_status):
+            if alarm_status_code is None:
+                flags.add("invalid_alarm_status_ignored")
+            else:
+                flags.add("alarm_status_map_partial")
+            if (
+                not _is_present(row.get("alarmStatus"))
+                and _is_present(row.get("status"))
+            ):
+                flags.add("push_status_alias_used")
+
+        raw_deal_status = row.get("dealStatus")
+        deal_status_code = _optional_int(raw_deal_status)
+        if _is_present(raw_deal_status):
+            if deal_status_code is None:
+                flags.add("invalid_deal_status_ignored")
+            else:
+                flags.add("deal_status_map_partial")
+                flags.add("handled_state_unknown")
+
+        raw_deal_type = row.get("dealType")
+        deal_type_code = _optional_int(raw_deal_type)
+        if _is_present(raw_deal_type):
+            if deal_type_code is None:
+                flags.add("invalid_deal_type_ignored")
+            else:
+                flags.add("deal_type_map_partial")
+
+        restricted_present = any(
+            _is_present(row.get(field))
+            for field in RESTRICTED_ALARM_FIELDS
+        )
+        if restricted_present:
+            restricted_field_row_count += 1
+            if not include_restricted:
+                flags.add("restricted_fields_omitted")
+
+        handled_at = None
+        handler = None
+        deal_description = None
+        if include_restricted:
+            handled_at = _optional_source_time(
+                row.get("dealTime"),
+                source_timezone=source_timezone,
+            )
+            if (
+                _is_present(row.get("dealTime"))
+                and handled_at is None
+            ):
+                flags.add("invalid_deal_time_ignored")
+            handler = _optional_text(row.get("dealUser"))
+            deal_description = _optional_text(row.get("dealDesc"))
+
+        raw_deleted_marker = row.get("isDeleted")
+        deleted_marker = _optional_bool_marker(raw_deleted_marker)
+        if _is_present(raw_deleted_marker):
+            flags.add("deletion_semantics_unverified")
+            if deleted_marker is None:
+                flags.add("invalid_deleted_marker")
+
+        events.append(
+            AlarmEvent(
+                source_system="aee",
+                source_record_id=source_record_id,
+                device_id=device_id,
+                group_id=_optional_text(row.get("groupId")),
+                alarm_type_code=alarm_type_code,
+                alarm_status_code=alarm_status_code,
+                deal_status_code=deal_status_code,
+                deal_type_code=deal_type_code,
+                handled=None,
+                occurred_at=occurred_at,
+                handled_at=handled_at,
+                handler=handler,
+                deal_description=deal_description,
+                deleted_marker=deleted_marker,
+                observed_at=observed,
+                ingested_at=ingested,
+                quality_flags=tuple(sorted(flags)),
+            )
+        )
+
+    result_flags = {
+        "alarm_code_map_partial",
+        "alarm_lifecycle_unverified",
+        "source_id_scope_unverified",
+    }
+    if invalid_row_count:
+        result_flags.add("invalid_rows_ignored")
+    if restricted_field_row_count and not include_restricted:
+        result_flags.add("restricted_fields_omitted")
+
+    return AlarmNormalizationResult(
+        events=tuple(events),
+        source_row_count=len(source_rows),
+        invalid_row_count=invalid_row_count,
+        restricted_field_row_count=restricted_field_row_count,
+        quality_flags=tuple(sorted(result_flags)),
+    )
+
+
 def _normalize_lifecycle_times(
     observed_at: dt.datetime,
     ingested_at: dt.datetime,
@@ -402,7 +579,9 @@ def _first_value(
 
 
 def _optional_text(value: Any) -> str | None:
-    text = str(value or "").strip()
+    if value is None:
+        return None
+    text = str(value).strip()
     return text or None
 
 

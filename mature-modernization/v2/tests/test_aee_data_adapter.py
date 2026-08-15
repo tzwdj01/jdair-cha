@@ -96,6 +96,92 @@ class AEEReadOnlyDataAdapterTests(unittest.TestCase):
         self.assertIn("invalid_rows_ignored", result.quality_flags)
         self.assertIn("records_total_unknown", result.quality_flags)
 
+    def test_alarm_query_uses_only_live_evidenced_fields(self) -> None:
+        client = _HTTPClient(
+            {
+                "result": 200,
+                "data": [
+                    {
+                        "id": "alarm-1",
+                        "devId": "WX1",
+                        "alarmType": 205,
+                    }
+                ],
+                "recordsTotal": 1,
+            }
+        )
+        adapter = AEEReadOnlyDataAdapter(client)
+
+        result = adapter.list_alarms(
+            start=dt.datetime(2026, 8, 15, 0, tzinfo=UTC),
+            end=dt.datetime(2026, 8, 15, 8, tzinfo=UTC),
+            source_timezone=BUSINESS_TZ,
+            time_type=1,
+            group_with_child=1,
+            group_id=0,
+            device_id=" WX1 ",
+            alarm_type=205,
+            alarm_status=1,
+            deal_type=0,
+            deal_status=0,
+            keywords=" battery ",
+            page=1,
+            page_size=100,
+        )
+
+        path, query = client.calls[0]
+        self.assertEqual(path, "/api/v1/AlarmList")
+        self.assertEqual(
+            query,
+            {
+                "st": "2026-08-15 08:00:00",
+                "et": "2026-08-15 16:00:00",
+                "timeType": "1",
+                "groupWithChild": "1",
+                "groupId": "0",
+                "devId": "WX1",
+                "alarmType": "205",
+                "alarmStatus": "1",
+                "dealType": "0",
+                "dealStatus": "0",
+                "keywords": "battery",
+                "page": 1,
+                "pagesize": 100,
+            },
+        )
+        self.assertEqual(result.records_total, 1)
+        self.assertFalse(result.has_more)
+
+    def test_alarm_query_requires_unverified_selector_values(self) -> None:
+        adapter = AEEReadOnlyDataAdapter(
+            _HTTPClient({"result": 200, "data": []})
+        )
+        common = {
+            "start": dt.datetime(
+                2026,
+                8,
+                15,
+                8,
+                tzinfo=BUSINESS_TZ,
+            ),
+            "end": dt.datetime(
+                2026,
+                8,
+                15,
+                16,
+                tzinfo=BUSINESS_TZ,
+            ),
+            "source_timezone": BUSINESS_TZ,
+            "time_type": 1,
+            "group_with_child": 1,
+        }
+
+        for field in ("time_type", "group_with_child"):
+            values = {**common, field: ""}
+            with self.subTest(field=field):
+                with self.assertRaises(ValueError):
+                    adapter.list_alarms(**values)
+
     def test_second_page_has_more_uses_upstream_total(self) -> None:
         client = _HTTPClient(
             {

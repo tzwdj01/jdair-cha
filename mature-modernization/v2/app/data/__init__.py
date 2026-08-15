@@ -11,10 +11,13 @@ from .metrics import (
     aggregate_media_files,
 )
 from .normalization import (
+    AlarmEvent,
+    AlarmNormalizationResult,
     DeviceStatusEvent,
     DeviceStatusNormalizationResult,
     MediaFile,
     MediaFileNormalizationResult,
+    normalize_alarm_events,
     normalize_device_status_events,
     normalize_media_files,
 )
@@ -38,6 +41,9 @@ __all__ = [
     "MediaFileNormalizationResult",
     "normalize_device_status_events",
     "normalize_media_files",
+    "AlarmEvent",
+    "AlarmNormalizationResult",
+    "normalize_alarm_events",
     "AEEPageCollection",
     "collect_aee_pages",
     "RealtimeViewEvent",

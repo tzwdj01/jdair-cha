@@ -135,7 +135,10 @@ Last updated: 2026-08-15
 * 已增加 normalized `RealtimeViewEvent` finalization contract 和可选 sink 边界：
   首帧只记录一次，close/disconnect/timeout/shutdown 明确分类，按 `stream_id`
   幂等，且不包含 Cookie hash、AEE 凭据或媒体协商数据。
-* 当前全量 V2 自动化回归为 `123 tests PASS`。
+* 已增加 `/api/v1/AlarmList` endpoint contract 和 conservative
+  `AlarmEvent` normalization：raw code 保留、handled 不猜测、handler/time/free
+  text 默认省略。
+* 当前全量 V2 自动化回归为 `131 tests PASS`。
 * 当前开发机没有 Docker、PostgreSQL client/server、`pg_dump` 或
   `pg_restore`。因此不能在此环境宣称 PostgreSQL migration、backup 或 restore
   rehearsal 已完成。
@@ -696,6 +699,13 @@ Commit 应按逻辑阶段组织。
   * played、timeout、failed、cancelled、abnormal disconnect 结果可复现；
   * sink 失败不阻断媒体释放，并可通过重复 close 幂等重试；
   * 当前 sink 默认未配置，尚无 PostgreSQL repository、outbox 或历史 API。
+* 已增加 AlarmList / AlarmEvent 应用层基础：
+  * Adapter 只发送 live-evidenced query fields；
+  * `timeType` 和 `groupWithChild` 必须由调用方显式提供，不猜测 selector default；
+  * `id/devId/alarmType/alarmTime` 为事件最小必需字段；
+  * alarm/status/deal codes 原样保留并标注 map partial；
+  * handled/level 不推断，restricted handling fields 默认省略；
+  * 当前尚未持久化，也没有 ingestion scheduler 或 Dashboard API。
 
 ## M4 AEE Evidence
 
@@ -1153,7 +1163,8 @@ M4 Done Criteria：
   `mature-modernization/v2/app/data/normalization.py`；
 * 已实现并测试 `RealtimeViewEvent` contract 和 Realtime lifecycle sink：
   `mature-modernization/v2/app/data/realtime_views.py`；
-* 当前全量 V2 回归 `123 tests PASS`。
+* 已实现并测试 AlarmList Adapter contract 和 `AlarmEvent` normalization；
+* 当前全量 V2 回归 `131 tests PASS`。
 
 ## In Progress
 
@@ -1163,7 +1174,7 @@ M4 Done Criteria：
 * 正在把 `RealtimeViewEvent` 的已完成应用层 finalization contract 连接到未来
   可演练的 PostgreSQL repository；当前不启用生产 sink。
 * 正在补齐 AEE HTTP Token-only sufficiency/lifecycle、device online status
-  map、alarm lifecycle、media code maps 和用户活动数据证据。
+  map、alarm lifecycle/code maps/retention、media code maps 和用户活动数据证据。
 * 正在准备 PostgreSQL repository/migration 的隔离运行条件；当前尚未开始
   production 或本地假替代 migration。
 
@@ -1173,8 +1184,8 @@ M4 Done Criteria：
    确认是否还依赖 Cookie、401 行为和登录/刷新频率；不得输出或持久化 Token。
 2. 捕获 `/api/v1/DevOnlineList` 脱敏 raw response，验证非 1 status map、
    ordering、duplicate、retention、分页和查询边界。
-3. 完成 AlarmList alarm/status/deal code map、生命周期、删除语义和 retention
-   取证。
+3. 继续完成 AlarmList alarm/status/deal code map、生命周期、删除语义和
+   retention 取证；当前 raw-code contract 已完成，但不能标记语义 VERIFIED。
 4. 确认 RecordFileList `id` 唯一性范围、
    `source/upLoadStatus` 完整 code map 和 channel/storage 可用性。
 5. 获得隔离 PostgreSQL runtime 和 `pg_dump`/`pg_restore` 工具后，再增加

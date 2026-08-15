@@ -409,7 +409,11 @@ Verification:
 * ten Realtime-view tests cover outcome/duration semantics, first-frame
   idempotency, normal close, timeout, session close, abnormal disconnect and
   sink failure isolation/retry;
-* the current complete V2 backend suite passes `123 tests`.
+* two AlarmList Adapter tests cover exact evidenced query fields and required
+  unverified-selector values;
+* six Alarm normalization tests cover required identity/time, raw codes,
+  restricted-field minimization, push-status aliasing and malformed values;
+* the current complete V2 backend suite passes `131 tests`.
 
 Implemented read-only transport boundary:
 
@@ -422,7 +426,8 @@ Implemented read-only transport boundary:
 * `AEEReadOnlyDataAdapter` currently supports only:
   * `/api/v1/ext/DevTree`;
   * `/api/v1/DevOnlineList`;
-  * `/api/v1/RecordFileList`.
+  * `/api/v1/RecordFileList`;
+  * `/api/v1/AlarmList`.
 * ranged queries require explicit source timezone, required enterprise scope
   and bounded pagination;
 * page envelopes expose `records_total`, `has_more`, invalid-row count and
@@ -455,6 +460,12 @@ Implemented normalized historical contracts:
   * finalizes idempotently through an optional sink on stream/session close,
     disconnect, TTL cleanup and server shutdown;
   * isolates sink failure from media cleanup and permits an idempotent retry.
+* `AlarmEvent`
+  * requires source alarm ID, device ID, raw alarm type and source alarm time;
+  * preserves alarm/status/deal raw codes with partial-map flags;
+  * leaves handled state and level unknown rather than inventing labels;
+  * omits handler, handling time and free-text deal description by default;
+  * exposes source-ID, lifecycle and deletion uncertainty explicitly.
 
 Not implemented by this foundation:
 
@@ -462,7 +473,7 @@ Not implemented by this foundation:
   Adapter;
 * PostgreSQL schema, migrations or repository;
 * ingestion scheduling or checkpoints;
-* durable Realtime-view event sink/outbox or historical API;
+* durable Realtime-view or Alarm event repository/outbox/historical API;
 * API routes or Dashboard pages;
 * production configuration changes.
 
@@ -513,7 +524,8 @@ Required M4 improvements:
 2. No durable media-file metadata index.
 3. No durable Realtime viewing repository or historical API; the final event
    contract and session-manager sink boundary now exist.
-4. No normalized alarm history.
+4. No durable alarm history; the read-only Adapter and conservative
+   `AlarmEvent` contract now exist.
 5. No flight/task-to-device/media coverage model.
 6. Initial AEE interface/field catalogs now exist, but integration contracts
    and remaining semantics are not yet stable.

@@ -133,7 +133,8 @@ CHA implementation status:
 | Evidence | endpoint, query fields and visible schema `LIVE VERIFIED`; row/handling code paths `STATIC VERIFIED` |
 | Sensitivity | operational alarms; handler identity and free text are restricted |
 | Classification | Class A for query; alarm push is an upstream event source |
-| CHA recommendation | ingest read-only events after retention/privacy rules are approved; do not invoke deal/update actions in M4 discovery |
+| CHA implementation | narrow `list_alarms` Adapter contract exists with explicit time/group selectors and only live-evidenced query fields; `AlarmEvent` normalization preserves raw codes and omits restricted handling fields by default |
+| CHA recommendation | connect ingestion only after token lifecycle, retention/privacy and PostgreSQL rehearsal are approved; do not invoke deal/update actions in M4 discovery |
 
 ### AEE alarm handling update
 

@@ -41,7 +41,9 @@ Implemented and covered by unit tests:
   explicit `occurred_at`/source-time, `observed_at` and `ingested_at`
   separation;
 * a normalized, immutable `RealtimeViewEvent` finalization contract and an
-  opt-in session-manager sink boundary for forward-only CHA viewing evidence.
+  opt-in session-manager sink boundary for forward-only CHA viewing evidence;
+* an `AlarmEvent` normalization contract that requires evidenced identity,
+  device, type and source time while preserving all incomplete code maps.
 
 Normalization safety rules already enforced:
 
@@ -58,7 +60,9 @@ Normalization safety rules already enforced:
   timezone-aware CHA timestamps, and finalization is idempotent per
   `stream_id`;
 * the event never contains the login-session hash, Cookie, AEE credential,
-  WebSocket URL, SDP, ICE or media payload.
+  WebSocket URL, SDP, ICE or media payload;
+* alarm handling identity, handling time and free text are omitted by default;
+  `handled` is not inferred while the deal-status map is incomplete.
 
 The implementation is in:
 
@@ -74,6 +78,7 @@ The implementation is in:
 * `mature-modernization/v2/tests/test_aee_data_pagination.py`.
 * `mature-modernization/v2/tests/test_data_normalization.py`.
 * `mature-modernization/v2/tests/test_realtime_view_events.py`.
+* `mature-modernization/v2/tests/test_alarm_normalization.py`.
 
 Not yet implemented:
 
@@ -321,6 +326,15 @@ Proposed table: `alarm_events`
 The read-only AEE interface `/api/v1/AlarmList`, its core fields and non-empty
 paginated rows are verified. Persistence remains data-gated until code maps,
 lifecycle/deletion semantics, retention and privacy rules are verified.
+
+Application contract status:
+
+`IMPLEMENTED / NOT YET PERSISTED`
+
+The endpoint-specific Adapter requires the caller to provide `timeType` and
+`groupWithChild` instead of inventing defaults for selectors whose semantics
+remain partial. The normalizer retains raw codes and quality flags. It does
+not produce alarm labels, severity or handled state without verified maps.
 
 Candidate fields:
 

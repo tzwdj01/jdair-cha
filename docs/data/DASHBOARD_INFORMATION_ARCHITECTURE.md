@@ -39,7 +39,7 @@ Candidate cards:
 | today realtime views | finalized `RealtimeViewEvent` contract | DERIVABLE after persistence |
 | long-time offline | future status history | DERIVABLE |
 | long-time no upload | future media index | DERIVABLE |
-| alarm count | AEE `/api/v1/AlarmList` | AVAILABLE source / Adapter TODO |
+| alarm count | normalized AEE `AlarmEvent` | DERIVABLE after complete ingestion |
 | flight/task video coverage | normalized relations | DERIVABLE |
 
 Unknown metrics must display “数据源未接入/待验证”, not zero.

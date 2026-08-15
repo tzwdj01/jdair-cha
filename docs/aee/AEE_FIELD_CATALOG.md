@@ -177,6 +177,19 @@ non-empty paginated rows. Sanitized rows showed a low-battery alarm label,
 percentage description and `Waiting` deal-state label. The raw alarm/deal code
 maps, deletion semantics and complete lifecycle remain partial evidence.
 
+CHA normalization status:
+
+* `AlarmEvent` now requires source `id`, `devId`, `alarmType` and
+  `alarmTime`;
+* alarm, status, deal-status and deal-type codes remain raw integers with
+  partial-map quality flags;
+* `handled` remains `null`; the implementation does not infer it from an
+  incomplete `dealStatus` map;
+* `dealUser`, `dealTime` and `dealDesc` are omitted by default and require an
+  explicit restricted-field opt-in;
+* source-ID scope, deletion semantics, lifecycle and retention remain
+  unverified and are not hidden by friendly labels.
+
 Alarm live-push static evidence:
 
 * method/event: `AlarmUpload`;

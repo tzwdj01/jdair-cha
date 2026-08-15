@@ -107,6 +107,59 @@ class AEEReadOnlyDataAdapter:
             page_size=page_size,
         )
 
+    def list_alarms(
+        self,
+        *,
+        start: dt.datetime,
+        end: dt.datetime,
+        source_timezone: dt.tzinfo,
+        time_type: str | int,
+        group_with_child: str | int,
+        group_id: str | int = 0,
+        device_id: str = "",
+        alarm_type: str | int = "",
+        alarm_status: str | int = "",
+        deal_type: str | int = "",
+        deal_status: str | int = "",
+        keywords: str = "",
+        page: int = 1,
+        page_size: int = 1_000,
+    ) -> AEEPageResult:
+        start_value, end_value = _validate_range_and_page(
+            start=start,
+            end=end,
+            source_timezone=source_timezone,
+            page=page,
+            page_size=page_size,
+        )
+        query = {
+            "st": _format_source_time(start_value, source_timezone),
+            "et": _format_source_time(end_value, source_timezone),
+            "timeType": _required_query_value(time_type, "time_type"),
+            "groupWithChild": _required_query_value(
+                group_with_child,
+                "group_with_child",
+            ),
+            "groupId": _optional_text(group_id, default="0"),
+            "devId": _optional_text(device_id),
+            "alarmType": _optional_text(alarm_type),
+            "alarmStatus": _optional_text(alarm_status),
+            "dealType": _optional_text(deal_type),
+            "dealStatus": _optional_text(deal_status),
+            "keywords": _optional_text(keywords),
+            "page": page,
+            "pagesize": page_size,
+        }
+        payload = self._client.get_json(
+            "/api/v1/AlarmList",
+            query=query,
+        )
+        return _parse_page_result(
+            payload,
+            page=page,
+            page_size=page_size,
+        )
+
 
 def _build_common_range_query(
     *,
@@ -120,17 +173,13 @@ def _build_common_range_query(
     page: int,
     page_size: int,
 ) -> dict[str, str | int]:
-    start_value = _require_aware(start, "start")
-    end_value = _require_aware(end, "end")
-    if end_value <= start_value:
-        raise ValueError("end must be after start")
-    _validate_source_timezone(source_timezone)
-    if page <= 0:
-        raise ValueError("page must be positive")
-    if not 1 <= page_size <= MAX_PAGE_SIZE:
-        raise ValueError(
-            f"page_size must be between 1 and {MAX_PAGE_SIZE}"
-        )
+    start_value, end_value = _validate_range_and_page(
+        start=start,
+        end=end,
+        source_timezone=source_timezone,
+        page=page,
+        page_size=page_size,
+    )
 
     if enterprise_id is None or isinstance(enterprise_id, bool):
         raise ValueError("enterprise_id is required")
@@ -147,6 +196,28 @@ def _build_common_range_query(
         "page": page,
         "pagesize": page_size,
     }
+
+
+def _validate_range_and_page(
+    *,
+    start: dt.datetime,
+    end: dt.datetime,
+    source_timezone: dt.tzinfo,
+    page: int,
+    page_size: int,
+) -> tuple[dt.datetime, dt.datetime]:
+    start_value = _require_aware(start, "start")
+    end_value = _require_aware(end, "end")
+    if end_value <= start_value:
+        raise ValueError("end must be after start")
+    _validate_source_timezone(source_timezone)
+    if page <= 0:
+        raise ValueError("page must be positive")
+    if not 1 <= page_size <= MAX_PAGE_SIZE:
+        raise ValueError(
+            f"page_size must be between 1 and {MAX_PAGE_SIZE}"
+        )
+    return start_value, end_value
 
 
 def _parse_page_result(
@@ -240,3 +311,10 @@ def _optional_text(value: Any, *, default: str = "") -> str:
         return default
     text = str(value).strip()
     return text or default
+
+
+def _required_query_value(value: Any, name: str) -> str:
+    text = _optional_text(value)
+    if not text:
+        raise ValueError(f"{name} is required")
+    return text

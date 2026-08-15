@@ -133,17 +133,17 @@ CHA can begin collecting its own explicitly scoped events prospectively.
 
 | Expected field | Status | Current source | Required action |
 | --- | --- | --- | --- |
-| alarm ID | AVAILABLE | AEE static AlarmList `id` | verify live uniqueness/retention |
-| device ID | AVAILABLE | AEE AlarmList/device alarm context | normalize |
-| alarm type/code | AVAILABLE | AEE `alarmType` / current device `alarm` | map semantics and distinguish event/current projection |
+| alarm ID | AVAILABLE | AEE static AlarmList `id` | normalized with source-ID-scope flag; verify live uniqueness/retention |
+| device ID | AVAILABLE | AEE AlarmList/device alarm context | normalized event dimension |
+| alarm type/code | AVAILABLE | AEE `alarmType` / current device `alarm` | raw event code normalized; current projection remains separate |
 | level | UNKNOWN | not cataloged | verify |
-| created at | AVAILABLE | AEE `alarmTime` | verify timezone and event semantics |
-| status | AVAILABLE | AEE query `alarmStatus` / push `status` | raw code only; verify lifecycle |
-| handled | DERIVABLE | AEE `dealStatus` | current static logic treats 0 as unprocessed |
-| handled at | AVAILABLE | AEE `dealTime` | restricted handling metadata |
-| handler | RESTRICTED | may be user-related sensitive data | require business need and authorization |
-| deal type | AVAILABLE | AEE `dealType` | code labels are partial |
-| description | RESTRICTED | AEE alarm description / `dealDesc` | free text; require retention and display policy |
+| created at | AVAILABLE | AEE `alarmTime` | timezone-aware normalization implemented; event semantics still partial |
+| status | AVAILABLE | AEE query `alarmStatus` / push `status` | raw code normalized; alias and lifecycle uncertainty flagged |
+| handled | DERIVABLE | AEE `dealStatus` | remains null until the complete map is verified |
+| handled at | AVAILABLE | AEE `dealTime` | omitted by default; restricted opt-in only |
+| handler | RESTRICTED | AEE `dealUser` | omitted by default; require business need and authorization |
+| deal type | AVAILABLE | AEE `dealType` | raw code normalized; labels remain partial |
+| description | RESTRICTED | AEE `dealDesc` | omitted by default; free-text retention policy required |
 | current offline exception | AVAILABLE | current device status | not an alarm-history substitute |
 | stale location exception | DERIVABLE | current GPS age | define threshold and missing-data policy |
 | long-time no upload | DERIVABLE | media latest-upload time | requires media index |
@@ -173,8 +173,9 @@ CHA can begin collecting its own explicitly scoped events prospectively.
 3. Media records are queryable, but their schema is only partially normalized.
 4. Realtime usage history is `DERIVABLE` from current runtime events but is not
    persisted.
-5. AEE alarm query capability is now `AVAILABLE` at interface/field level, but
-   code maps, lifecycle/deletion semantics and retention remain partially
-   unverified. AEE user activity remains `UNKNOWN`.
+5. AEE alarm query capability, endpoint contract and raw-code normalization are
+   now available, but code maps, lifecycle/deletion semantics, retention and
+   durable persistence remain partially unverified. AEE user activity remains
+   `UNKNOWN`.
 6. Missing values remain unknown/null. They must not be converted to zero for
    visual convenience.
