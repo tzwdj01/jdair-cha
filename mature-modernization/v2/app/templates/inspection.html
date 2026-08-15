@@ -47,6 +47,7 @@
       <button id="tab-media">视频上传</button>
       <button id="tab-realtime">监察使用</button>
       <button id="tab-alarms">告警异常</button>
+      <button id="tab-data_quality">数据质量</button>
     </nav>
     <div class="meta">v{{CHA_V2_VERSION}} · {{CHA_V2_BUILD}}</div>
   </header>
@@ -71,13 +72,15 @@
       devices: "/api/v2/inspection/devices",
       media: "/api/v2/inspection/media",
       realtime: "/api/v2/inspection/realtime",
-      alarms: "/api/v2/inspection/alarms"
+      alarms: "/api/v2/inspection/alarms",
+      data_quality: "/api/v2/inspection/data-quality"
     };
     const TITLES = {
       devices: "设备运行分析",
       media: "视频上传与文件分析",
       realtime: "监察使用分析",
-      alarms: "告警与异常分析"
+      alarms: "告警与异常分析",
+      data_quality: "数据质量"
     };
     const byId = (id) => document.getElementById(id);
 
@@ -147,7 +150,8 @@
       if (tab === "devices") renderDevices(data.overview || {});
       else if (tab === "media") renderMedia(data.overview || {});
       else if (tab === "realtime") renderRealtime(data.overview || {}, data.runtime || null);
-      else renderAlarms(data.overview || {});
+      else if (tab === "alarms") renderAlarms(data.overview || {});
+      else renderDataQuality(data.overview || {});
     }
 
     function renderDevices(overview) {
@@ -412,6 +416,39 @@
           : '<div class="empty">暂无可展示的每设备告警。</div>') +
         '</div>' +
         '<div class="empty">说明：alarm/status/deal 为原始 code，语义尚未验证，暂不映射为业务标签。</div>';
+    }
+
+    function renderDataQuality(overview) {
+      const tables = (overview.tables || []).map((item) => `<tr>
+        <td>${esc(item.table)}</td>
+        <td>${esc(item.row_count)}</td>
+        <td>${esc(item.rows_with_quality_flags)}</td>
+        <td>${esc(item.latest_at || "--")}</td>
+        <td>${esc(item.distinct_device_count)}</td>
+      </tr>`).join("");
+      const flagRows = (overview.quality_flag_counts || []).map((pair) =>
+        `<tr><td>${esc(pair[0])}</td><td>${esc(pair[1])}</td></tr>`
+      ).join("");
+      const sourceRows = (overview.source_system_counts || []).map((pair) =>
+        `<tr><td>${esc(pair[0])}</td><td>${esc(pair[1])}</td></tr>`
+      ).join("");
+      byId("content").innerHTML =
+        '<div class="grid">' +
+        metric(overview.total_rows == null ? "--" : overview.total_rows, "窗口内总行数") +
+        '</div>' +
+        '<div class="card"><h2>各历史表</h2>' +
+        (tables ? '<table><thead><tr><th>表</th><th>行数</th><th>含质量 flag</th><th>最新时间</th><th>设备数</th></tr></thead><tbody>' + tables + '</tbody></table>'
+          : '<div class="empty">当前窗口内无任何历史数据。</div>') +
+        '</div>' +
+        '<div class="card"><h2>质量 flag 分布</h2>' +
+        (flagRows ? '<table><thead><tr><th>flag</th><th>次数</th></tr></thead><tbody>' + flagRows + '</tbody></table>'
+          : '<div class="empty">当前窗口内无质量 flag。</div>') +
+        '</div>' +
+        '<div class="card"><h2>来源系统分布</h2>' +
+        (sourceRows ? '<table><thead><tr><th>来源</th><th>行数</th></tr></thead><tbody>' + sourceRows + '</tbody></table>'
+          : '<div class="empty">当前窗口内无来源数据。</div>') +
+        '</div>' +
+        '<div class="empty">说明：本页报告 store 中真实存在的数据覆盖、新鲜度与质量 flag，不推断缺失数据。</div>';
     }
 
     document.addEventListener("DOMContentLoaded", () => {

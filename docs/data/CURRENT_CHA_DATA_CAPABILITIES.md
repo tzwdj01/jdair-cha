@@ -609,7 +609,11 @@ Implemented durable store seam:
   into the store with accepted/invalid counts and quality flags; it is fully
   testable with in-memory stores and does not depend on AEE authentication
   (the live token/session behavior remains a separate unverified prerequisite);
-* thirty-seven repository/sink/service/API/page tests cover roundtrip, scope
+* a data-quality diagnostic reports store coverage, freshness and quality
+  flags per historical table plus source-system distribution, feeding the
+  “数据质量” tab; it reports only rows that actually exist in the store and
+  never infers missing data;
+* thirty-nine repository/sink/service/API/page tests cover roundtrip, scope
   filtering,
   latest-wins, media append/upsert, first-wins behavior, the
   manager-to-store write path, page-oriented overviews, the HTTP API and page

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import datetime as dt
 from collections import defaultdict
+from collections import Counter
 from dataclasses import dataclass
 from typing import Any, Iterable, Mapping
 
@@ -131,6 +132,25 @@ class DeviceTimeline:
     location_point_count: int
     coordinates_restricted: bool
     quality_flags: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class TableQuality:
+    table: str
+    row_count: int
+    rows_with_quality_flags: int
+    latest_at: dt.datetime | None
+    distinct_device_count: int
+
+
+@dataclass(frozen=True, slots=True)
+class DataQualityOverview:
+    scope_start: dt.datetime
+    scope_end: dt.datetime
+    tables: tuple[TableQuality, ...]
+    quality_flag_counts: tuple[tuple[str, int], ...]
+    source_system_counts: tuple[tuple[str, int], ...]
+    total_rows: int
 
 
 class InspectionDataService:
@@ -402,6 +422,97 @@ class InspectionDataService:
             quality_flags=tuple(sorted(flags)),
         )
 
+    async def data_quality(
+        self,
+        *,
+        start: dt.datetime,
+        end: dt.datetime,
+        device_ids: Iterable[str] | None = None,
+    ) -> DataQualityOverview:
+        start_utc = _aware(start).astimezone(UTC)
+        end_utc = _aware(end).astimezone(UTC)
+        if end_utc <= start_utc:
+            raise ValueError("end must be after start")
+        device_filter = tuple(device_ids) if device_ids else None
+        status_events = await self._store.fetch_device_status_events(
+            start=start,
+            end=end,
+            device_ids=device_filter,
+        )
+        location_events = await self._store.fetch_device_location_events(
+            start=start,
+            end=end,
+            device_ids=device_filter,
+        )
+        media_files = await self._store.fetch_media_files(
+            start=start,
+            end=end,
+            device_ids=device_filter,
+        )
+        view_events = await self._store.fetch_realtime_view_events(
+            start=start,
+            end=end,
+            device_ids=device_filter,
+        )
+        alarm_events = await self._store.fetch_alarm_events(
+            start=start,
+            end=end,
+            device_ids=device_filter,
+        )
+
+        tables = (
+            _table_quality(
+                "device_status_events",
+                status_events,
+                _latest_status_time,
+            ),
+            _table_quality(
+                "device_location_events",
+                location_events,
+                _latest_location_time,
+            ),
+            _table_quality(
+                "media_files",
+                media_files,
+                _latest_media_time,
+            ),
+            _table_quality(
+                "realtime_view_events",
+                view_events,
+                _latest_view_time,
+            ),
+            _table_quality(
+                "alarm_events",
+                alarm_events,
+                _latest_alarm_time,
+            ),
+        )
+
+        flag_counts: Counter[str] = Counter()
+        source_counts: Counter[str] = Counter()
+        total_rows = 0
+        for events in (
+            status_events,
+            location_events,
+            media_files,
+            view_events,
+            alarm_events,
+        ):
+            for event in events:
+                total_rows += 1
+                source_counts[event.source_system] += 1
+                for flag in event.quality_flags:
+                    flag_counts[flag] += 1
+
+        return DataQualityOverview(
+            scope_start=start_utc,
+            scope_end=end_utc,
+            tables=tables,
+            quality_flag_counts=tuple(sorted(flag_counts.items())),
+            source_system_counts=tuple(sorted(source_counts.items())),
+            total_rows=total_rows,
+        )
+
 
 def _project_status_events(
     events: Iterable[DeviceStatusEvent],
@@ -607,6 +718,59 @@ def _media_groups(
             key=lambda item: (item.group_id or ""),
         )
     )
+
+
+def _table_quality(
+    table: str,
+    events: Iterable[object],
+    latest_fn,
+) -> TableQuality:
+    rows = list(events)
+    latest_values = [
+        value
+        for value in (latest_fn(event) for event in rows)
+        if value is not None
+    ]
+    latest_at = max(latest_values).astimezone(UTC) if latest_values else None
+    device_ids = {
+        getattr(event, "device_id")
+        for event in rows
+    }
+    rows_with_flags = sum(
+        1
+        for event in rows
+        if getattr(event, "quality_flags", ())
+    )
+    return TableQuality(
+        table=table,
+        row_count=len(rows),
+        rows_with_quality_flags=rows_with_flags,
+        latest_at=latest_at,
+        distinct_device_count=len(device_ids),
+    )
+
+
+def _latest_status_time(event: object):
+    return getattr(event, "occurred_at")
+
+
+def _latest_location_time(event: object):
+    return getattr(event, "gps_occurred_at")
+
+
+def _latest_media_time(item: object):
+    return (
+        getattr(item, "created_at_source")
+        or getattr(item, "uploaded_at_source")
+    )
+
+
+def _latest_view_time(event: object):
+    return getattr(event, "closed_at")
+
+
+def _latest_alarm_time(event: object):
+    return getattr(event, "occurred_at")
 
 
 def _aware(value: dt.datetime) -> dt.datetime:

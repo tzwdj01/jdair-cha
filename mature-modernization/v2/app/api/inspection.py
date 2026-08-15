@@ -24,6 +24,7 @@ PAGE_ROUTES = {
     "media": "视频上传与文件分析",
     "realtime": "监察使用分析",
     "alarms": "告警与异常分析",
+    "data_quality": "数据质量",
 }
 
 
@@ -416,6 +417,42 @@ def create_inspection_router(
             return scope
         scope_start, scope_end = scope
         overview = await service.location_overview(
+            start=scope_start,
+            end=scope_end,
+            device_ids=_device_ids(device),
+        )
+        return envelope(
+            request,
+            {
+                "source": "inspection_store",
+                "store_configured": True,
+                "scope": scope_payload(scope_start, scope_end, days),
+                "overview": _json_safe(overview),
+            },
+        )
+
+    @router.get("/api/v2/inspection/data-quality")
+    async def inspection_data_quality(
+        request: Request,
+        start: str | None = Query(None),
+        end: str | None = Query(None),
+        days: int = Query(7, ge=1, le=90),
+        device: str = Query("", max_length=64),
+    ) -> JSONResponse:
+        if not settings.feature_inspection_v2:
+            return disabled(request)
+        if service is None:
+            return store_unavailable(request)
+        scope = parse_scope(
+            request,
+            start_raw=start,
+            end_raw=end,
+            days=days,
+        )
+        if isinstance(scope, JSONResponse):
+            return scope
+        scope_start, scope_end = scope
+        overview = await service.data_quality(
             start=scope_start,
             end=scope_end,
             device_ids=_device_ids(device),

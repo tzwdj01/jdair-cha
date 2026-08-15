@@ -524,6 +524,163 @@ class InspectionDataServiceTests(unittest.IsolatedAsyncioTestCase):
                 end=self.end,
             )
 
+    async def test_data_quality_reports_coverage_and_flags(self) -> None:
+        await self.store.upsert_device_status_events(
+            normalize_device_status_events(
+                [
+                    {
+                        "id": "s-1",
+                        "devId": "WX1",
+                        "status": 2,
+                        "time": "2026-08-15 00:10:00+00:00",
+                    }
+                ],
+                source_timezone=UTC,
+                observed_at=dt.datetime(2026, 8, 15, 1, tzinfo=UTC),
+                ingested_at=dt.datetime(
+                    2026,
+                    8,
+                    15,
+                    1,
+                    0,
+                    1,
+                    tzinfo=UTC,
+                ),
+            ).events
+        )
+        await self.store.upsert_device_location_events(
+            normalize_device_location_events(
+                [
+                    {
+                        "lat": 39.9,
+                        "lng": 116.4,
+                        "gpsTime": "2026-08-15 00:20:00+00:00",
+                    }
+                ],
+                device_id="WX1",
+                source_timezone=UTC,
+                observed_at=dt.datetime(2026, 8, 15, 1, tzinfo=UTC),
+                ingested_at=dt.datetime(
+                    2026,
+                    8,
+                    15,
+                    1,
+                    0,
+                    1,
+                    tzinfo=UTC,
+                ),
+            ).events
+        )
+        await self.store.upsert_media_files(
+            normalize_media_files(
+                [
+                    {
+                        "id": "file-1",
+                        "devId": "WX1",
+                        "fType": 3,
+                        "startTime": "2026-08-15 00:30:00+00:00",
+                    }
+                ],
+                source_timezone=UTC,
+                observed_at=dt.datetime(2026, 8, 15, 1, tzinfo=UTC),
+                ingested_at=dt.datetime(
+                    2026,
+                    8,
+                    15,
+                    1,
+                    0,
+                    1,
+                    tzinfo=UTC,
+                ),
+            ).files
+        )
+        await self.store.upsert_realtime_view_events(
+            (
+                build_realtime_view_event(
+                    username="alice",
+                    user_id=None,
+                    device_id="WX1",
+                    session_id="session-1",
+                    stream_id="stream-1",
+                    opened_at=dt.datetime(
+                        2026,
+                        8,
+                        15,
+                        0,
+                        35,
+                        tzinfo=UTC,
+                    ),
+                    first_frame_at=None,
+                    closed_at=dt.datetime(
+                        2026,
+                        8,
+                        15,
+                        0,
+                        40,
+                        tzinfo=UTC,
+                    ),
+                    error_code="FIRST_FRAME_TIMEOUT",
+                    width=None,
+                    height=None,
+                    track_state=None,
+                    close_reason="first_frame_timeout",
+                    release_mode="session_disconnect",
+                ),
+            )
+        )
+        await self.store.upsert_alarm_events(
+            normalize_alarm_events(
+                [
+                    {
+                        "id": "alarm-1",
+                        "devId": "WX1",
+                        "alarmType": 205,
+                        "alarmStatus": 1,
+                        "alarmTime": "2026-08-15 00:05:00+00:00",
+                    }
+                ],
+                source_timezone=UTC,
+                observed_at=dt.datetime(2026, 8, 15, 1, tzinfo=UTC),
+                ingested_at=dt.datetime(
+                    2026,
+                    8,
+                    15,
+                    1,
+                    0,
+                    1,
+                    tzinfo=UTC,
+                ),
+            ).events
+        )
+
+        overview = await self.service.data_quality(
+            start=self.start,
+            end=self.end,
+        )
+        tables = {item.table: item for item in overview.tables}
+        self.assertEqual(overview.total_rows, 5)
+        self.assertEqual(tables["device_status_events"].row_count, 1)
+        self.assertEqual(
+            tables["device_status_events"].rows_with_quality_flags,
+            1,
+        )
+        self.assertEqual(
+            tables["device_status_events"].latest_at,
+            dt.datetime(2026, 8, 15, 0, 10, tzinfo=UTC),
+        )
+        self.assertEqual(
+            tables["realtime_view_events"].latest_at,
+            dt.datetime(2026, 8, 15, 0, 40, tzinfo=UTC),
+        )
+        self.assertEqual(
+            dict(overview.source_system_counts),
+            {"aee": 3, "cha_realtime": 1, "mcs8": 1},
+        )
+        self.assertIn(
+            ("non_online_status_map_partial", 1),
+            overview.quality_flag_counts,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

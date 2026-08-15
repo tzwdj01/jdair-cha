@@ -230,6 +230,9 @@ page
   first-frame success rate and failure reasons.
 * `/dashboard/alarms`: raw alarm/status/deal code distributions and per-device
   alarm counts; code maps remain unverified, so no business labels are shown.
+* `/dashboard/data-quality`: per-table row counts, rows carrying quality
+  flags, latest event time, distinct device count, and source-system
+  distribution for the requested window.
 
 The page never fabricates values. When the store is not configured or has no
 history, it displays “数据源未接入/待验证”. Long-time offline/no-upload and

@@ -41,10 +41,12 @@ the `/api/v2/` namespace and does not replace existing `/api/*` routes.
 - `GET /api/v2/inspection/alarms`
 - `GET /api/v2/inspection/locations`
 - `GET /api/v2/inspection/devices/{device_id}/timeline`
+- `GET /api/v2/inspection/data-quality`
 - `GET /api/v2/dashboard/devices`
 - `GET /api/v2/dashboard/media`
 - `GET /api/v2/dashboard/realtime`
 - `GET /api/v2/dashboard/alarms`
+- `GET /api/v2/dashboard/data-quality`
 
 M2 enables only `dashboard_v2`. It uses a narrow, read-only adapter to the
 existing local service and forwards only the current browser's CHA session
@@ -76,6 +78,10 @@ DevOnlineList / RecordFileList / AlarmList rows are normalized and persisted
 into the store with accepted/invalid counts and quality flags. It is
 source-agnostic and does not depend on AEE authentication, which remains a
 separate unverified prerequisite.
+
+The data-quality diagnostic reports store coverage, freshness and quality
+flags per historical table plus source-system distribution; it reports only
+rows that actually exist and never infers missing data.
 
 The legacy page and every legacy `/api/*` contract remain unchanged.
 

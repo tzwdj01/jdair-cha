@@ -384,6 +384,28 @@ class InspectionAPITests(unittest.IsolatedAsyncioTestCase):
             {205: 1},
         )
 
+    async def test_data_quality_endpoint(self) -> None:
+        app = _app(_settings(feature=True), await _seeded_service())
+        response = await _request(
+            app,
+            (
+                "/api/v2/inspection/data-quality"
+                "?start=2026-08-15T00:00:00%2B00:00"
+                "&end=2026-08-15T01:00:00%2B00:00"
+            ),
+        )
+        self.assertEqual(response.status_code, 200)
+        overview = response.json()["data"]["overview"]
+        self.assertEqual(overview["total_rows"], 6)
+        tables = {
+            item["table"]: item
+            for item in overview["tables"]
+        }
+        self.assertEqual(
+            tables["device_status_events"]["row_count"],
+            2,
+        )
+
     async def test_realtime_runtime_snapshot_when_manager_provided(self) -> None:
         app = _app(
             _settings(feature=True),
@@ -480,6 +502,7 @@ class InspectionAPITests(unittest.IsolatedAsyncioTestCase):
             ("media", "/api/v2/inspection/media"),
             ("realtime", "/api/v2/inspection/realtime"),
             ("alarms", "/api/v2/inspection/alarms"),
+            ("data_quality", "/api/v2/inspection/data-quality"),
         ):
             response = await _request(
                 app,
