@@ -162,11 +162,15 @@ Last updated: 2026-08-15
   接入 `InspectionStore`，形成 CHA 自有监察使用历史写入路径；
   open → first frame → close 会话持久化一条 `RealtimeViewEvent`，
   同一 `stream_id` 重试幂等；该 sink 为 opt-in，生产行为不变。
+* 已增加只读 `InspectionDataService`（`app/services/inspection.py`）：
+  基于 store + 确定性 metrics 输出设备/媒体/监察使用/告警/位置概览；
+  全部指标来自持久化真实行，不猜字段；长时间离线/长时间未上传/位置过期
+  等需要受治理阈值的分类明确不产出，只暴露 raw coverage/age 值。
 * 已完成 Legacy media-to-flight/task reference helper 的代码取证：
   当前 active batch path 只加载 routine tasks，普通 flight matcher 为未接线
   reference code；现有 city/time/score/certainty 只能作为 unverified candidate，
   不得用于 confirmed relation 或 coverage rate。
-* 当前全量 V2 自动化回归为 `159 tests PASS`。
+* 当前全量 V2 自动化回归为 `164 tests PASS`。
 * 当前开发机没有 Docker、PostgreSQL client/server、`pg_dump` 或
   `pg_restore`。因此不能在此环境宣称 PostgreSQL migration、backup 或 restore
   rehearsal 已完成。
@@ -1293,9 +1297,11 @@ M4 Done Criteria：
   （`mature-modernization/v2/migrations/0001_inspection_history.sql`）；
 * 已实现并测试 `StoreViewEventSink` 及 session manager 集成
   （`app/data/store/sinks.py`）；
+* 已实现并测试只读 `InspectionDataService` 页面数据服务层
+  （`app/services/inspection.py`）；
 * 已完成 Legacy media/business-reference heuristic code audit，并将 active
   routine-task candidate 与 dormant flight code 明确区分；
-* 当前全量 V2 回归 `159 tests PASS`。
+* 当前全量 V2 回归 `164 tests PASS`。
 
 ## In Progress
 

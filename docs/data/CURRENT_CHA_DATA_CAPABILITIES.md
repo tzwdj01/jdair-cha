@@ -571,8 +571,16 @@ Implemented durable store seam:
   event to the store: a full open → first frame → close session now persists
   exactly one `RealtimeViewEvent` row, and a retry of the same finalization is
   idempotent per `stream_id`;
-* ten repository/sink tests cover roundtrip, scope filtering, latest-wins,
-  media append/upsert, first-wins behavior and the manager-to-store write path.
+* `InspectionDataService` is a read-only page-oriented service over the store:
+  device overview (current state, latest online/offline, uptime), media
+  overview (counts, duration, size, latest upload, daily trend), realtime
+  usage, alarm and location overviews; every value comes from durable store
+  rows and deterministic aggregation, and threshold classifications
+  (long-time offline/upload, stale location) remain explicitly un-produced
+  until a governed threshold exists;
+* fifteen repository/sink/service tests cover roundtrip, scope filtering,
+  latest-wins, media append/upsert, first-wins behavior, the
+  manager-to-store write path and page-oriented overviews.
 
 Not implemented by this foundation:
 
@@ -581,7 +589,9 @@ Not implemented by this foundation:
 * no production ingestion scheduler or checkpoints exist;
 * the realtime view sink is only active when a store is explicitly provided;
   production release behavior is unchanged;
-* no dashboard page consumes the store yet.
+* no API route or dashboard page consumes the store yet; the service layer is
+  ready and unit-tested, and wiring to pages waits for a durable store or an
+  approved development store.
 
 Not implemented by this foundation:
 

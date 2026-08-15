@@ -178,6 +178,24 @@ Location aggregate responses must not expose coordinates unless the caller is
 authorized for the device-detail/location scope. Summary pages should use only
 counts, source span, latest-event age and explicit quality/completeness flags.
 
+## 5.1 Store-backed data service
+
+`app/services/inspection.py` provides the read-side page service over the
+`InspectionStore`:
+
+* `device_overview`: current online/offline/unknown counts, latest status per
+  device, last online/offline times and range-clipped uptime;
+* `media_overview`: media-kind counts, video duration, file size, latest
+  upload/create time and per-business-day upload counts;
+* `realtime_overview`: user/device view counts and durations, first-frame
+  success and failure reasons;
+* `alarm_overview` and `location_overview`.
+
+It intentionally does not produce long-time offline, long-time no upload or
+stale-location classifications because governed thresholds do not exist yet.
+Raw coverage/age values are exposed instead. API routes and pages are not yet
+wired.
+
 ## 6. Data-source labels
 
 Every page must distinguish:
