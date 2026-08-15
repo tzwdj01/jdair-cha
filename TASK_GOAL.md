@@ -170,11 +170,15 @@ Last updated: 2026-08-15
   `/api/v2/inspection/{devices,media,realtime,alarms,locations}`；
   明确可用性状态（feature off → 404、无 store → 503、有 store → 真实计算值），
   JSON-safe 序列化和显式 scope；feature flag 默认关闭，生产行为不变。
+* 已增加第一批专题页：
+  `GET /api/v2/dashboard/{devices,media,realtime}` 渲染三标签页面
+  （`app/templates/inspection.html`），只消费已接线的 inspection API；
+  store 未接入/为空时页面诚实显示“数据源未接入/待验证”，不伪造指标。
 * 已完成 Legacy media-to-flight/task reference helper 的代码取证：
   当前 active batch path 只加载 routine tasks，普通 flight matcher 为未接线
   reference code；现有 city/time/score/certainty 只能作为 unverified candidate，
   不得用于 confirmed relation 或 coverage rate。
-* 当前全量 V2 自动化回归为 `169 tests PASS`。
+* 当前全量 V2 自动化回归为 `171 tests PASS`。
 * 当前开发机没有 Docker、PostgreSQL client/server、`pg_dump` 或
   `pg_restore`。因此不能在此环境宣称 PostgreSQL migration、backup 或 restore
   rehearsal 已完成。
@@ -1305,9 +1309,11 @@ M4 Done Criteria：
   （`app/services/inspection.py`）；
 * 已实现并测试只读 inspection API
   （`app/api/inspection.py`，feature flag 默认关闭）；
+* 已实现并测试第一批专题页（`/api/v2/dashboard/{devices,media,realtime}`，
+  `app/templates/inspection.html`）；
 * 已完成 Legacy media/business-reference heuristic code audit，并将 active
   routine-task candidate 与 dormant flight code 明确区分；
-* 当前全量 V2 回归 `169 tests PASS`。
+* 当前全量 V2 回归 `171 tests PASS`。
 
 ## In Progress
 

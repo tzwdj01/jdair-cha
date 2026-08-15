@@ -3,10 +3,11 @@ from __future__ import annotations
 import datetime as dt
 from collections.abc import Callable
 from dataclasses import asdict, is_dataclass
+from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Query, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 
 from ..config import Settings
 from ..services.inspection import InspectionDataService
@@ -14,6 +15,14 @@ from ..services.inspection import InspectionDataService
 
 UTC = dt.timezone.utc
 Envelope = Callable[..., JSONResponse]
+TEMPLATE_PATH = (
+    Path(__file__).resolve().parents[1] / "templates" / "inspection.html"
+)
+PAGE_ROUTES = {
+    "devices": "设备运行分析",
+    "media": "视频上传与文件分析",
+    "realtime": "监察使用分析",
+}
 
 
 def create_inspection_router(
@@ -32,6 +41,56 @@ def create_inspection_router(
     """
 
     router = APIRouter()
+
+    def page_disabled(request: Request) -> HTMLResponse:
+        del request
+        return HTMLResponse(
+            status_code=404,
+            content=(
+                "<!doctype html><meta charset='utf-8'>"
+                "<title>监察数据中心未启用</title>"
+                "<body style='font-family:sans-serif;padding:32px'>"
+                "<h1>监察数据中心尚未启用</h1>"
+                "<p>inspection_v2 功能开关当前为关闭状态。</p>"
+                "<p><a href='/'>返回现有系统</a></p></body>"
+            ),
+        )
+
+    def render_page(
+        request: Request,
+        active: str,
+    ) -> HTMLResponse:
+        if not settings.feature_inspection_v2:
+            return page_disabled(request)
+        try:
+            html = TEMPLATE_PATH.read_text(encoding="utf-8")
+        except OSError:
+            return HTMLResponse(
+                status_code=500,
+                content="Inspection dashboard template is unavailable.",
+            )
+        return HTMLResponse(
+            content=html.replace(
+                "{{CHA_INSPECTION_ACTIVE}}",
+                active,
+            ).replace("{{CHA_V2_VERSION}}", settings.version).replace(
+                "{{CHA_V2_BUILD}}",
+                settings.build,
+            )
+        )
+
+    for page_name in ("devices", "media", "realtime"):
+
+        @router.get(
+            f"/api/v2/dashboard/{page_name}",
+            response_class=HTMLResponse,
+            include_in_schema=False,
+        )
+        async def inspection_page(
+            request: Request,
+            _page_name: str = page_name,
+        ) -> HTMLResponse:
+            return render_page(request, _page_name)
 
     def disabled(request: Request) -> JSONResponse:
         return envelope(

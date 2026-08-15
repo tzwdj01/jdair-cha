@@ -582,9 +582,15 @@ Implemented durable store seam:
   `/api/v2/inspection/{devices,media,realtime,alarms,locations}` with honest
   availability states (feature flag off → 404, no store → 503, store present →
   computed metrics), JSON-safe serialization and explicit scope handling;
-* twenty repository/sink/service/API tests cover roundtrip, scope filtering,
+* first-batch inspection pages are wired:
+  `GET /api/v2/dashboard/{devices,media,realtime}` render a three-tab page
+  that consumes only the inspection API and shows honest
+  “数据源未接入/待验证” states when the store is unavailable or empty;
+* twenty-two repository/sink/service/API/page tests cover roundtrip, scope
+  filtering,
   latest-wins, media append/upsert, first-wins behavior, the
-  manager-to-store write path, page-oriented overviews and the HTTP API.
+  manager-to-store write path, page-oriented overviews, the HTTP API and page
+  rendering.
 
 Not implemented by this foundation:
 
@@ -593,9 +599,9 @@ Not implemented by this foundation:
 * no production ingestion scheduler or checkpoints exist;
 * the realtime view sink is only active when a store is explicitly provided;
   production release behavior is unchanged;
-* no dashboard page consumes the store yet; the API and service layers are
-  ready and unit-tested, the feature flag defaults to off, and page wiring
-  waits for a durable store or an approved development store.
+* the first-batch pages exist but the feature flag defaults to off; page data
+  shows explicit unavailable states until a durable store (or an approved
+  development store) is configured and history accumulates.
 
 Not implemented by this foundation:
 

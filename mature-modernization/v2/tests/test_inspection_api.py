@@ -309,6 +309,28 @@ class InspectionAPITests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(reversed_scope.status_code, 400)
 
+    async def test_pages_render_for_each_active_tab(self) -> None:
+        app = _app(_settings(feature=True), await _seeded_service())
+        for page, endpoint in (
+            ("devices", "/api/v2/inspection/devices"),
+            ("media", "/api/v2/inspection/media"),
+            ("realtime", "/api/v2/inspection/realtime"),
+        ):
+            response = await _request(
+                app,
+                f"/api/v2/dashboard/{page}",
+            )
+            self.assertEqual(response.status_code, 200)
+            self.assertIn("监察数据中心", response.text)
+            self.assertIn(f'const ACTIVE = "{page}";', response.text)
+            self.assertIn(endpoint, response.text)
+
+    async def test_page_feature_disabled_returns_404(self) -> None:
+        app = _app(_settings(feature=False), None)
+        response = await _request(app, "/api/v2/dashboard/devices")
+        self.assertEqual(response.status_code, 404)
+        self.assertIn("尚未启用", response.text)
+
 
 if __name__ == "__main__":
     unittest.main()

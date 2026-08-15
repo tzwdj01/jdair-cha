@@ -211,6 +211,23 @@ Availability is explicit:
 The API is registered in the V2 app but the feature flag defaults to off, so
 production behavior is unchanged. Dashboard pages are not wired yet.
 
+### 5.3 First-batch inspection pages
+
+`GET /api/v2/dashboard/{devices,media,realtime}` serve a shared three-tab page
+(`app/templates/inspection.html`) that consumes only the inspection API:
+
+* `/dashboard/devices`: current online/offline/unknown, per-device online rate,
+  online duration, offline transitions, last online/offline;
+* `/dashboard/media`: media-kind counts, video duration, file size, latest
+  upload, per-device upload and daily trend;
+* `/dashboard/realtime`: per-user/per-device view counts and duration,
+  first-frame success rate and failure reasons.
+
+The page never fabricates values. When the store is not configured or has no
+history, it displays “数据源未接入/待验证”. Long-time offline/no-upload and
+stale-location classifications remain un-produced until governed thresholds
+exist. Pages are feature-gated by `CHA_V2_FEATURE_INSPECTION_V2` (default off).
+
 ## 6. Data-source labels
 
 Every page must distinguish:

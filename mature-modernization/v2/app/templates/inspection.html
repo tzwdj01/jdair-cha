@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>监察数据中心 · 专题页</title>
+  <style>
+    :root { font-family: "Microsoft YaHei", Arial, sans-serif; color: #1f2b36; background: #eef2f5; }
+    * { box-sizing: border-box; }
+    body { margin: 0; }
+    header { min-height: 58px; background: #12395a; color: #fff; display: grid; grid-template-columns: 280px 1fr auto; align-items: center; gap: 14px; padding: 0 18px; }
+    h1 { font-size: 18px; margin: 0; font-weight: 650; white-space: nowrap; }
+    .topnav { display: flex; gap: 8px; flex-wrap: wrap; }
+    .topnav button { border: 1px solid #276b9d; background: #287bb6; color: #fff; border-radius: 4px; padding: 7px 11px; cursor: pointer; font: inherit; }
+    .topnav button.active { background: #fff; color: #12395a; border-color: #fff; }
+    .meta { color: #d9e8f2; font-size: 12px; text-align: right; }
+    main { padding: 18px; max-width: 1180px; margin: 0 auto; }
+    .toolbar { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; }
+    .toolbar label { font-size: 13px; color: #354c60; }
+    .toolbar input, .toolbar select { border: 1px solid #c6d4df; border-radius: 4px; padding: 6px 8px; font: inherit; }
+    .card { background: #fff; border: 1px solid #d4dee7; border-radius: 8px; padding: 14px; margin-bottom: 14px; }
+    .card h2 { font-size: 15px; margin: 0 0 10px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; }
+    .metric { background: #f7fafc; border: 1px solid #dbe5ee; border-radius: 6px; padding: 10px 12px; }
+    .metric .value { font-size: 22px; font-weight: 700; color: #12395a; }
+    .metric .label { font-size: 12px; color: #5f7385; margin-top: 4px; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { text-align: left; padding: 7px 9px; border-bottom: 1px solid #e3ebf2; }
+    th { background: #f2f6fa; color: #354c60; }
+    .empty { color: #8a97a5; font-size: 13px; padding: 12px 0; }
+    .notice { border: 1px solid #e6c35c; background: #fff8e6; color: #6b5200; border-radius: 6px; padding: 10px 12px; font-size: 13px; margin-bottom: 12px; }
+    .flag { display: inline-block; background: #eef3f8; border: 1px solid #d4dee7; border-radius: 10px; font-size: 11px; padding: 2px 7px; margin: 2px 3px 0 0; color: #4a5a6b; }
+    .state-on { color: #1c7a3d; font-weight: 700; }
+    .state-unknown { color: #8a6d1a; font-weight: 700; }
+    .state-off { color: #b23b3b; font-weight: 700; }
+    @media (max-width: 760px) {
+      header { grid-template-columns: 1fr; gap: 8px; padding: 10px 14px; }
+      .meta { text-align: left; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>监察数据中心</h1>
+    <nav class="topnav">
+      <button id="tab-devices">设备运行</button>
+      <button id="tab-media">视频上传</button>
+      <button id="tab-realtime">监察使用</button>
+    </nav>
+    <div class="meta">v{{CHA_V2_VERSION}} · {{CHA_V2_BUILD}}</div>
+  </header>
+  <main>
+    <div class="toolbar">
+      <label>范围：近
+        <select id="days">
+          <option value="1">1 天</option>
+          <option value="7" selected>7 天</option>
+          <option value="30">30 天</option>
+        </select>
+      </label>
+      <button id="refresh">刷新</button>
+      <span id="scopeText" class="empty"></span>
+    </div>
+    <div id="notice" class="notice" style="display:none"></div>
+    <div id="content"></div>
+  </main>
+  <script>
+    const ACTIVE = "{{CHA_INSPECTION_ACTIVE}}";
+    const ENDPOINTS = {
+      devices: "/api/v2/inspection/devices",
+      media: "/api/v2/inspection/media",
+      realtime: "/api/v2/inspection/realtime"
+    };
+    const TITLES = {
+      devices: "设备运行分析",
+      media: "视频上传与文件分析",
+      realtime: "监察使用分析"
+    };
+    const byId = (id) => document.getElementById(id);
+
+    function esc(text) {
+      return String(text == null ? "" : text)
+        .replace(/[&<>"']/g, (ch) => ({
+          "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+        }[ch]));
+    }
+
+    function setActiveTab(tab) {
+      Object.keys(ENDPOINTS).forEach((key) => {
+        byId("tab-" + key).classList.toggle("active", key === tab);
+      });
+    }
+
+    function showNotice(message) {
+      const notice = byId("notice");
+      notice.textContent = message;
+      notice.style.display = message ? "block" : "none";
+    }
+
+    function metric(value, label) {
+      return `<div class="metric"><div class="value">${esc(value)}</div><div class="label">${esc(label)}</div></div>`;
+    }
+
+    function flags(items) {
+      if (!items || !items.length) return "";
+      return items.map((f) => `<span class="flag">${esc(f)}</span>`).join("");
+    }
+
+    async function load() {
+      const days = byId("days").value;
+      const tab = ACTIVE;
+      showNotice("");
+      byId("content").innerHTML = '<div class="empty">正在加载…</div>';
+      const url = ENDPOINTS[tab] + "?days=" + days;
+      let response;
+      try {
+        response = await fetch(url, { headers: { "Accept": "application/json" } });
+      } catch (err) {
+        byId("content").innerHTML = '<div class="empty">数据服务当前不可用。</div>';
+        return;
+      }
+      let payload;
+      try {
+        payload = await response.json();
+      } catch (err) {
+        byId("content").innerHTML = '<div class="empty">数据服务返回了无法解析的响应。</div>';
+        return;
+      }
+      if (!response.ok) {
+        const code = payload && payload.data && payload.data.code ? payload.data.code : "unknown";
+        if (code === "feature_disabled" || code === "store_not_configured") {
+          byId("content").innerHTML =
+            '<div class="empty">数据源未接入/待验证：当前尚未配置监察历史数据源，无法生成该专题指标。</div>';
+        } else {
+          byId("content").innerHTML = '<div class="empty">数据服务暂不可用（' + esc(code) + '）。</div>';
+        }
+        return;
+      }
+      const data = payload.data || {};
+      const scope = data.scope || {};
+      if (scope.start) {
+        byId("scopeText").textContent = "范围：" + scope.start + " ~ " + scope.end;
+      }
+      if (tab === "devices") renderDevices(data.overview || {});
+      else if (tab === "media") renderMedia(data.overview || {});
+      else renderRealtime(data.overview || {});
+    }
+
+    function renderDevices(overview) {
+      const uptime = overview.uptime || {};
+      const devices = (uptime.devices || []).map((item) => {
+        const latest = (overview.latest_by_device || []).find((l) => l.device_id === item.device_id);
+        let state;
+        if (latest && latest.latest_online === true) state = '<span class="state-on">在线</span>';
+        else if (latest && latest.latest_online === false) state = '<span class="state-off">离线</span>';
+        else state = '<span class="state-unknown">未知</span>';
+        const rate = (item.window_end && item.window_start) ?
+          ((item.online_seconds / Math.max(1, (new Date(item.window_end) - new Date(item.window_start)) / 1000)) * 100).toFixed(1) : "--";
+        return `<tr>
+          <td>${esc(item.device_id)}</td>
+          <td>${state}</td>
+          <td>${esc(rate)}%</td>
+          <td>${esc(item.online_seconds)}s</td>
+          <td>${esc(item.offline_transition_count)}</td>
+          <td>${esc(item.first_online_at || "--")}</td>
+          <td>${esc(item.last_offline_at || "--")}</td>
+          <td>${flags(item.quality_flags)}</td>
+        </tr>`;
+      }).join("");
+      byId("content").innerHTML =
+        '<div class="grid">' +
+        metric(overview.current_online_count == null ? "--" : overview.current_online_count, "当前在线") +
+        metric(overview.current_offline_count == null ? "--" : overview.current_offline_count, "当前离线") +
+        metric(overview.current_unknown_count == null ? "--" : overview.current_unknown_count, "当前状态未知") +
+        metric(uptime.fetched_count == null ? "--" : uptime.fetched_count, "历史事件行数") +
+        '</div>' +
+        '<div class="card"><h2>设备状态明细</h2>' +
+        (devices ? '<table><thead><tr><th>设备</th><th>状态</th><th>在线率</th><th>在线时长</th><th>掉线次数</th><th>最近上线</th><th>最近离线</th><th>质量</th></tr></thead><tbody>' + devices + '</tbody></table>'
+          : '<div class="empty">暂无可展示的设备状态历史。</div>') +
+        '</div>' +
+        '<div class="empty">说明：在线率按窗口内在线时长/窗口时长计算；“长时间离线”等需要治理阈值的分类暂不产出。</div>';
+    }
+
+    function renderMedia(overview) {
+      const media = overview.media || {};
+      const devices = (media.devices || []).map((item) => `<tr>
+        <td>${esc(item.device_id)}</td>
+        <td>${esc(item.total_files)}</td>
+        <td>${esc(item.video_count)}</td>
+        <td>${esc(item.image_count)}</td>
+        <td>${esc(item.audio_count)}</td>
+        <td>${esc(item.video_duration_seconds)}s</td>
+        <td>${esc(item.file_size_bytes)}B</td>
+        <td>${flags(item.quality_flags)}</td>
+      </tr>`).join("");
+      const daily = (overview.daily_counts || []).map((pair) =>
+        `<tr><td>${esc(pair[0])}</td><td>${esc(pair[1])}</td></tr>`
+      ).join("");
+      byId("content").innerHTML =
+        '<div class="grid">' +
+        metric(media.fetched_count == null ? "--" : media.fetched_count, "范围内文件数") +
+        metric(overview.latest_uploaded_at || "--", "最近上传时间") +
+        metric(overview.latest_created_at || "--", "最近拍摄时间") +
+        '</div>' +
+        '<div class="card"><h2>每设备上传量</h2>' +
+        (devices ? '<table><thead><tr><th>设备</th><th>总数</th><th>视频</th><th>图片</th><th>音频</th><th>视频时长</th><th>容量</th><th>质量</th></tr></thead><tbody>' + devices + '</tbody></table>'
+          : '<div class="empty">暂无可展示的视频/文件历史。</div>') +
+        '</div>' +
+        '<div class="card"><h2>按日上传趋势</h2>' +
+        (daily ? '<table><thead><tr><th>日期</th><th>数量</th></tr></thead><tbody>' + daily + '</tbody></table>'
+          : '<div class="empty">暂无可展示的每日趋势。</div>') +
+        '</div>' +
+        '<div class="empty">说明：“长时间未上传”等需要治理阈值的分类暂不产出。</div>';
+    }
+
+    function renderRealtime(overview) {
+      const aggregation = overview.aggregation || {};
+      const users = (aggregation.users || []).map((item) => `<tr>
+        <td>${esc(item.dimension_id)}</td>
+        <td>${esc(item.view_count)}</td>
+        <td>${esc(item.view_duration_seconds)}s</td>
+        <td>${esc(item.played_count)}</td>
+        <td>${esc(item.first_frame_count)}</td>
+      </tr>`).join("");
+      const devices = (aggregation.devices || []).map((item) => `<tr>
+        <td>${esc(item.dimension_id)}</td>
+        <td>${esc(item.view_count)}</td>
+        <td>${esc(item.view_duration_seconds)}s</td>
+        <td>${esc(item.played_count)}</td>
+      </tr>`).join("");
+      const reasons = (aggregation.error_counts || []).map((pair) =>
+        `<tr><td>${esc(pair[0])}</td><td>${esc(pair[1])}</td></tr>`
+      ).join("");
+      const total = aggregation.event_count == null ? "--" : aggregation.event_count;
+      const played = aggregation.played_count == null ? "--" : aggregation.played_count;
+      const success = (total === "--" || !total) ? "--" : ((played / total) * 100).toFixed(1) + "%";
+      byId("content").innerHTML =
+        '<div class="grid">' +
+        metric(total, "观看事件") +
+        metric(success, "首帧成功率") +
+        metric(aggregation.connection_duration_seconds == null ? "--" : aggregation.connection_duration_seconds + "s", "连接总时长") +
+        metric(aggregation.view_duration_seconds == null ? "--" : aggregation.view_duration_seconds + "s", "观看总时长") +
+        '</div>' +
+        '<div class="card"><h2>每用户</h2>' +
+        (users ? '<table><thead><tr><th>用户</th><th>次数</th><th>观看时长</th><th>播放成功</th><th>首帧</th></tr></thead><tbody>' + users + '</tbody></table>'
+          : '<div class="empty">暂无可展示的监察使用历史。</div>') +
+        '</div>' +
+        '<div class="card"><h2>每设备</h2>' +
+        (devices ? '<table><thead><tr><th>设备</th><th>次数</th><th>观看时长</th><th>播放成功</th></tr></thead><tbody>' + devices + '</tbody></table>'
+          : '<div class="empty">暂无可展示的每设备观看历史。</div>') +
+        '</div>' +
+        '<div class="card"><h2>失败原因</h2>' +
+        (reasons ? '<table><thead><tr><th>错误</th><th>次数</th></tr></thead><tbody>' + reasons + '</tbody></table>'
+          : '<div class="empty">无失败原因记录。</div>') +
+        '</div>';
+    }
+
+    document.addEventListener("DOMContentLoaded", () => {
+      setActiveTab(ACTIVE);
+      document.title = TITLES[ACTIVE] + " · 监察数据中心";
+      Object.keys(ENDPOINTS).forEach((key) => {
+        byId("tab-" + key).addEventListener("click", () => {
+          window.location.href = "/api/v2/dashboard/" + key;
+        });
+      });
+      byId("refresh").addEventListener("click", load);
+      load();
+    });
+  </script>
+</body>
+</html>

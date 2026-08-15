@@ -40,6 +40,9 @@ the `/api/v2/` namespace and does not replace existing `/api/*` routes.
 - `GET /api/v2/inspection/realtime`
 - `GET /api/v2/inspection/alarms`
 - `GET /api/v2/inspection/locations`
+- `GET /api/v2/dashboard/devices`
+- `GET /api/v2/dashboard/media`
+- `GET /api/v2/dashboard/realtime`
 
 M2 enables only `dashboard_v2`. It uses a narrow, read-only adapter to the
 existing local service and forwards only the current browser's CHA session
@@ -53,6 +56,9 @@ The M4 inspection API is registered but gated by
 `InspectionStore` it returns `503 store_not_configured`; with a store it
 returns deterministic metrics computed from durable inspection-history rows.
 No store is wired in the default release, so production behavior is unchanged.
+The first-batch three-tab pages under `/api/v2/dashboard/{devices,media,
+realtime}` consume only the inspection API and show honest
+“数据源未接入/待验证” states when no history is available.
 
 The legacy page and every legacy `/api/*` contract remain unchanged.
 
