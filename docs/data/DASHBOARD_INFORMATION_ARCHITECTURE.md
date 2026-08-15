@@ -213,7 +213,8 @@ production behavior is unchanged. Dashboard pages are not wired yet.
 
 ### 5.3 First-batch inspection pages
 
-`GET /api/v2/dashboard/{devices,media,realtime}` serve a shared three-tab page
+`GET /api/v2/dashboard/{devices,media,realtime,alarms}` serve a shared four-tab
+page
 (`app/templates/inspection.html`) that consumes only the inspection API:
 
 * `/dashboard/devices`: current online/offline/unknown, per-device online rate,
@@ -222,6 +223,8 @@ production behavior is unchanged. Dashboard pages are not wired yet.
   upload, per-device upload and daily trend;
 * `/dashboard/realtime`: per-user/per-device view counts and duration,
   first-frame success rate and failure reasons.
+* `/dashboard/alarms`: raw alarm/status/deal code distributions and per-device
+  alarm counts; code maps remain unverified, so no business labels are shown.
 
 The page never fabricates values. When the store is not configured or has no
 history, it displays “数据源未接入/待验证”. Long-time offline/no-upload and

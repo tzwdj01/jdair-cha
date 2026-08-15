@@ -171,9 +171,11 @@ Last updated: 2026-08-15
   明确可用性状态（feature off → 404、无 store → 503、有 store → 真实计算值），
   JSON-safe 序列化和显式 scope；feature flag 默认关闭，生产行为不变。
 * 已增加第一批专题页：
-  `GET /api/v2/dashboard/{devices,media,realtime}` 渲染三标签页面
+  `GET /api/v2/dashboard/{devices,media,realtime,alarms}` 渲染四标签页面
   （`app/templates/inspection.html`），只消费已接线的 inspection API；
-  store 未接入/为空时页面诚实显示“数据源未接入/待验证”，不伪造指标。
+  store 未接入/为空时页面诚实显示“数据源未接入/待验证”，不伪造指标；
+  告警标签展示 raw alarm/status/deal code 分布与每设备计数，并明确标注
+  code map 尚未验证、不映射业务标签。
 * 已增加设备时间线下钻：
   `GET /api/v2/inspection/devices/{device_id}/timeline` 返回单设备的
   status/media/location 时间线；坐标 restricted 且不输出；设备页内联渲染，
@@ -185,7 +187,7 @@ Last updated: 2026-08-15
   当前 active batch path 只加载 routine tasks，普通 flight matcher 为未接线
   reference code；现有 city/time/score/certainty 只能作为 unverified candidate，
   不得用于 confirmed relation 或 coverage rate。
-* 当前全量 V2 自动化回归为 `177 tests PASS`。
+* 当前全量 V2 自动化回归为 `178 tests PASS`。
 * 当前开发机没有 Docker、PostgreSQL client/server、`pg_dump` 或
   `pg_restore`。因此不能在此环境宣称 PostgreSQL migration、backup 或 restore
   rehearsal 已完成。
@@ -1320,9 +1322,10 @@ M4 Done Criteria：
   `app/templates/inspection.html`）；
 * 已实现并测试设备时间线下钻（`device_timeline` service + API + 页面交互）；
 * 已实现并测试 realtime 运行态快照（API 可选 realtime manager + 页面展示）；
+* 已实现并测试告警专题标签（`/api/v2/dashboard/alarms` + raw code 分布）；
 * 已完成 Legacy media/business-reference heuristic code audit，并将 active
   routine-task candidate 与 dormant flight code 明确区分；
-* 当前全量 V2 回归 `177 tests PASS`。
+* 当前全量 V2 回归 `178 tests PASS`。
 
 ## In Progress
 

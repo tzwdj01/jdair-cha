@@ -46,6 +46,7 @@
       <button id="tab-devices">设备运行</button>
       <button id="tab-media">视频上传</button>
       <button id="tab-realtime">监察使用</button>
+      <button id="tab-alarms">告警异常</button>
     </nav>
     <div class="meta">v{{CHA_V2_VERSION}} · {{CHA_V2_BUILD}}</div>
   </header>
@@ -69,12 +70,14 @@
     const ENDPOINTS = {
       devices: "/api/v2/inspection/devices",
       media: "/api/v2/inspection/media",
-      realtime: "/api/v2/inspection/realtime"
+      realtime: "/api/v2/inspection/realtime",
+      alarms: "/api/v2/inspection/alarms"
     };
     const TITLES = {
       devices: "设备运行分析",
       media: "视频上传与文件分析",
-      realtime: "监察使用分析"
+      realtime: "监察使用分析",
+      alarms: "告警与异常分析"
     };
     const byId = (id) => document.getElementById(id);
 
@@ -143,7 +146,8 @@
       }
       if (tab === "devices") renderDevices(data.overview || {});
       else if (tab === "media") renderMedia(data.overview || {});
-      else renderRealtime(data.overview || {}, data.runtime || null);
+      else if (tab === "realtime") renderRealtime(data.overview || {}, data.runtime || null);
+      else renderAlarms(data.overview || {});
     }
 
     function renderDevices(overview) {
@@ -341,6 +345,48 @@
         (reasons ? '<table><thead><tr><th>错误</th><th>次数</th></tr></thead><tbody>' + reasons + '</tbody></table>'
           : '<div class="empty">无失败原因记录。</div>') +
         '</div>';
+    }
+
+    function renderAlarms(overview) {
+      const aggregation = overview.aggregation || {};
+      const typeRows = (aggregation.alarm_type_counts || []).map((pair) =>
+        `<tr><td>${esc(pair[0])}</td><td>${esc(pair[1])}</td><td>raw code（未映射）</td></tr>`
+      ).join("");
+      const statusRows = (aggregation.alarm_status_counts || []).map((pair) =>
+        `<tr><td>${esc(pair[0])}</td><td>${esc(pair[1])}</td></tr>`
+      ).join("");
+      const dealStatusRows = (aggregation.deal_status_counts || []).map((pair) =>
+        `<tr><td>${esc(pair[0])}</td><td>${esc(pair[1])}</td></tr>`
+      ).join("");
+      const deviceRows = (aggregation.devices || []).map((item) => `<tr>
+        <td>${esc(item.device_id)}</td>
+        <td>${esc(item.alarm_count)}</td>
+        <td>${esc(JSON.stringify(item.alarm_type_counts))}</td>
+      </tr>`).join("");
+      byId("content").innerHTML =
+        '<div class="grid">' +
+        metric(aggregation.alarm_count == null ? "--" : aggregation.alarm_count, "告警数") +
+        metric(aggregation.missing_alarm_status_count == null ? "--" : aggregation.missing_alarm_status_count, "状态缺失") +
+        metric(aggregation.missing_deal_status_count == null ? "--" : aggregation.missing_deal_status_count, "处理状态缺失") +
+        metric(aggregation.partial ? "是" : "否", "结果不完整") +
+        '</div>' +
+        '<div class="card"><h2>按告警类型（raw code）</h2>' +
+        (typeRows ? '<table><thead><tr><th>类型 code</th><th>数量</th><th>说明</th></tr></thead><tbody>' + typeRows + '</tbody></table>'
+          : '<div class="empty">暂无可展示的告警类型分布。</div>') +
+        '</div>' +
+        '<div class="card"><h2>按告警状态（raw code）</h2>' +
+        (statusRows ? '<table><thead><tr><th>状态 code</th><th>数量</th></tr></thead><tbody>' + statusRows + '</tbody></table>'
+          : '<div class="empty">暂无可展示的告警状态分布。</div>') +
+        '</div>' +
+        '<div class="card"><h2>按处理状态（raw code）</h2>' +
+        (dealStatusRows ? '<table><thead><tr><th>处理状态 code</th><th>数量</th></tr></thead><tbody>' + dealStatusRows + '</tbody></table>'
+          : '<div class="empty">暂无可展示的处理状态分布。</div>') +
+        '</div>' +
+        '<div class="card"><h2>每设备告警</h2>' +
+        (deviceRows ? '<table><thead><tr><th>设备</th><th>告警数</th><th>类型分布</th></tr></thead><tbody>' + deviceRows + '</tbody></table>'
+          : '<div class="empty">暂无可展示的每设备告警。</div>') +
+        '</div>' +
+        '<div class="empty">说明：alarm/status/deal 为原始 code，语义尚未验证，暂不映射为业务标签。</div>';
     }
 
     document.addEventListener("DOMContentLoaded", () => {

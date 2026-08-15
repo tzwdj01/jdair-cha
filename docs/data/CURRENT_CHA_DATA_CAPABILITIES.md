@@ -583,9 +583,11 @@ Implemented durable store seam:
   availability states (feature flag off → 404, no store → 503, store present →
   computed metrics), JSON-safe serialization and explicit scope handling;
 * first-batch inspection pages are wired:
-  `GET /api/v2/dashboard/{devices,media,realtime}` render a three-tab page
+  `GET /api/v2/dashboard/{devices,media,realtime,alarms}` render a four-tab page
   that consumes only the inspection API and shows honest
   “数据源未接入/待验证” states when the store is unavailable or empty;
+  the alarms tab shows raw alarm/status/deal code distributions and per-device
+  counts, with an explicit note that code maps are not yet verified;
 * device timeline drill-down is wired:
   `GET /api/v2/inspection/devices/{device_id}/timeline` returns scoped status,
   media and location coverage for one device; coordinates are restricted and
@@ -598,7 +600,8 @@ Implemented durable store seam:
   filtering,
   latest-wins, media append/upsert, first-wins behavior, the
   manager-to-store write path, page-oriented overviews, the HTTP API and page
-  rendering, device timeline drill-down and realtime runtime snapshots.
+  rendering, device timeline drill-down, realtime runtime snapshots and the
+  alarms endpoint/page.
 
 Not implemented by this foundation:
 

@@ -13,6 +13,7 @@ from fastapi.responses import JSONResponse
 from app.api.inspection import create_inspection_router
 from app.config import Settings
 from app.data.normalization import (
+    normalize_alarm_events,
     normalize_device_location_events,
     normalize_device_status_events,
     normalize_media_files,
@@ -266,6 +267,31 @@ async def _seeded_service() -> InspectionDataService:
             ),
         )
     )
+    await store.upsert_alarm_events(
+        normalize_alarm_events(
+            [
+                {
+                    "id": "alarm-1",
+                    "devId": "WX1",
+                    "alarmType": 205,
+                    "alarmStatus": 1,
+                    "dealStatus": 0,
+                    "alarmTime": "2026-08-15 00:05:00+00:00",
+                }
+            ],
+            source_timezone=UTC,
+            observed_at=dt.datetime(2026, 8, 15, 1, tzinfo=UTC),
+            ingested_at=dt.datetime(
+                2026,
+                8,
+                15,
+                1,
+                0,
+                1,
+                tzinfo=UTC,
+            ),
+        ).events
+    )
     return InspectionDataService(store)
 
 
@@ -339,6 +365,24 @@ class InspectionAPITests(unittest.IsolatedAsyncioTestCase):
         aggregation = realtime.json()["data"]["overview"]["aggregation"]
         self.assertEqual(aggregation["event_count"], 1)
         self.assertEqual(aggregation["played_count"], 1)
+
+    async def test_alarms_endpoint(self) -> None:
+        app = _app(_settings(feature=True), await _seeded_service())
+        response = await _request(
+            app,
+            (
+                "/api/v2/inspection/alarms"
+                "?start=2026-08-15T00:00:00%2B00:00"
+                "&end=2026-08-15T01:00:00%2B00:00"
+            ),
+        )
+        self.assertEqual(response.status_code, 200)
+        aggregation = response.json()["data"]["overview"]["aggregation"]
+        self.assertEqual(aggregation["alarm_count"], 1)
+        self.assertEqual(
+            dict(aggregation["alarm_type_counts"]),
+            {205: 1},
+        )
 
     async def test_realtime_runtime_snapshot_when_manager_provided(self) -> None:
         app = _app(
@@ -435,6 +479,7 @@ class InspectionAPITests(unittest.IsolatedAsyncioTestCase):
             ("devices", "/api/v2/inspection/devices"),
             ("media", "/api/v2/inspection/media"),
             ("realtime", "/api/v2/inspection/realtime"),
+            ("alarms", "/api/v2/inspection/alarms"),
         ):
             response = await _request(
                 app,

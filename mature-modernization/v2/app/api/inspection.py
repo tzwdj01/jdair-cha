@@ -23,6 +23,7 @@ PAGE_ROUTES = {
     "devices": "设备运行分析",
     "media": "视频上传与文件分析",
     "realtime": "监察使用分析",
+    "alarms": "告警与异常分析",
 }
 
 
@@ -81,7 +82,7 @@ def create_inspection_router(
             )
         )
 
-    for page_name in ("devices", "media", "realtime"):
+    for page_name in PAGE_ROUTES:
 
         @router.get(
             f"/api/v2/dashboard/{page_name}",
