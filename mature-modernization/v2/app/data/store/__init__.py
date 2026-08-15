@@ -7,5 +7,10 @@ about AEE HTTP, WebRTC runtime state or browser data.
 
 from .memory import MemoryInspectionStore
 from .repository import InspectionStore
+from .sinks import StoreViewEventSink
 
-__all__ = ["InspectionStore", "MemoryInspectionStore"]
+__all__ = [
+    "InspectionStore",
+    "MemoryInspectionStore",
+    "StoreViewEventSink",
+]

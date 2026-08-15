@@ -483,6 +483,16 @@ Repository seam:
   * media: source-ID rows upsert, no-source-ID rows append;
   * realtime view: first finalization per `stream_id` wins.
 
+Realtime usage-history write path:
+
+* `StoreViewEventSink` adapts the session manager's finalization callback to
+  the `InspectionStore`;
+* when a store is provided, an open → first frame → close session persists one
+  `RealtimeViewEvent` row; duplicate finalization of the same stream is
+  ignored;
+* the adapter is opt-in, so production behavior is unchanged until a durable
+  store is configured.
+
 No claim of migration/backup/restore/rollback PASS is made. A real rehearsal
 still requires an isolated PostgreSQL runtime.
 

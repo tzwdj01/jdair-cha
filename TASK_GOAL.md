@@ -158,11 +158,15 @@ Last updated: 2026-08-15
   * idempotent upsert 语义（status/location/alarm latest-wins、
     media source-ID upsert、realtime view first-wins）。
   * 当前不声明 migration/backup/restore/rollback PASS。
+* 已增加 `StoreViewEventSink`：把 realtime session manager 的 finalization
+  接入 `InspectionStore`，形成 CHA 自有监察使用历史写入路径；
+  open → first frame → close 会话持久化一条 `RealtimeViewEvent`，
+  同一 `stream_id` 重试幂等；该 sink 为 opt-in，生产行为不变。
 * 已完成 Legacy media-to-flight/task reference helper 的代码取证：
   当前 active batch path 只加载 routine tasks，普通 flight matcher 为未接线
   reference code；现有 city/time/score/certainty 只能作为 unverified candidate，
   不得用于 confirmed relation 或 coverage rate。
-* 当前全量 V2 自动化回归为 `156 tests PASS`。
+* 当前全量 V2 自动化回归为 `159 tests PASS`。
 * 当前开发机没有 Docker、PostgreSQL client/server、`pg_dump` 或
   `pg_restore`。因此不能在此环境宣称 PostgreSQL migration、backup 或 restore
   rehearsal 已完成。
@@ -1287,9 +1291,11 @@ M4 Done Criteria：
 * 已实现并测试 `InspectionStore` repository 抽象与内存实现
   （`app/data/store/`），并编写 PostgreSQL migration 草稿
   （`mature-modernization/v2/migrations/0001_inspection_history.sql`）；
+* 已实现并测试 `StoreViewEventSink` 及 session manager 集成
+  （`app/data/store/sinks.py`）；
 * 已完成 Legacy media/business-reference heuristic code audit，并将 active
   routine-task candidate 与 dormant flight code 明确区分；
-* 当前全量 V2 回归 `156 tests PASS`。
+* 当前全量 V2 回归 `159 tests PASS`。
 
 ## In Progress
 
