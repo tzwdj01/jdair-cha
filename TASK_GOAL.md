@@ -186,6 +186,9 @@ Last updated: 2026-08-15
 * 增加非生产 dev store 接线：`CHA_V2_INSPECTION_STORE_MODE=memory` 仅限非生产
   环境，接通 realtime view sink → store → service → API → 页面 的端到端链路；
   生产始终无 store，页面保持诚实空态。
+* 已增加 `InspectionIngestor` 写入侧摄入接缝：DevOnlineList/RecordFileList/
+  AlarmList rows 经 normalize 后持久化进 store，并报告 accepted/invalid 数量
+  与 quality flags；不依赖 AEE 认证（live token/session 仍为独立未验证前提）。
 * realtime 概览增加运行态快照：接入 realtime manager 时返回当前 active
   sessions/streams、Gateway/Media 连接；无 manager 时 `runtime=null`，
   运行态与 store 历史严格分开。
@@ -193,7 +196,7 @@ Last updated: 2026-08-15
   当前 active batch path 只加载 routine tasks，普通 flight matcher 为未接线
   reference code；现有 city/time/score/certainty 只能作为 unverified candidate，
   不得用于 confirmed relation 或 coverage rate。
-* 当前全量 V2 自动化回归为 `184 tests PASS`。
+* 当前全量 V2 自动化回归为 `187 tests PASS`。
 * 当前开发机没有 Docker、PostgreSQL client/server、`pg_dump` 或
   `pg_restore`。因此不能在此环境宣称 PostgreSQL migration、backup 或 restore
   rehearsal 已完成。
@@ -1332,9 +1335,11 @@ M4 Done Criteria：
 * 已实现并测试设备/媒体按 group_id 的分组维度（service + 页面）；
 * 已实现并测试非生产 dev store 工厂与 main 接线
   （`app/services/store_factory.py` + `StoreViewEventSink`）；
+* 已实现并测试 `InspectionIngestor` 摄入接缝
+  （`app/services/ingestion.py`，设备/媒体/告警三类）；
 * 已完成 Legacy media/business-reference heuristic code audit，并将 active
   routine-task candidate 与 dormant flight code 明确区分；
-* 当前全量 V2 回归 `184 tests PASS`。
+* 当前全量 V2 回归 `187 tests PASS`。
 
 ## In Progress
 

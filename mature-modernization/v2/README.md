@@ -71,6 +71,12 @@ end-to-end (realtime view sink → store → inspection service → API → page
 The memory store loses history on restart and is never enabled in production;
 production keeps this empty until a durable PostgreSQL store is rehearsed.
 
+`InspectionIngestor` is the write-side ingestion seam: collected
+DevOnlineList / RecordFileList / AlarmList rows are normalized and persisted
+into the store with accepted/invalid counts and quality flags. It is
+source-agnostic and does not depend on AEE authentication, which remains a
+separate unverified prerequisite.
+
 The legacy page and every legacy `/api/*` contract remain unchanged.
 
 The committed release keeps `realtime_readonly=false`. A development or test

@@ -604,7 +604,12 @@ Implemented durable store seam:
   inspection service and API are wired end-to-end so the pages show real
   forward-only CHA usage history; production always returns no store and the
   feature stays honest (“数据源未接入/待验证”);
-* thirty-four repository/sink/service/API/page tests cover roundtrip, scope
+* `InspectionIngestor` is the write-side ingestion seam for AEE/MCS8 rows:
+  DevOnlineList/RecordFileList/AlarmList rows are normalized and persisted
+  into the store with accepted/invalid counts and quality flags; it is fully
+  testable with in-memory stores and does not depend on AEE authentication
+  (the live token/session behavior remains a separate unverified prerequisite);
+* thirty-seven repository/sink/service/API/page tests cover roundtrip, scope
   filtering,
   latest-wins, media append/upsert, first-wins behavior, the
   manager-to-store write path, page-oriented overviews, the HTTP API and page

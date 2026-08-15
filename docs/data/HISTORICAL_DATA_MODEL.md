@@ -483,6 +483,15 @@ Repository seam:
   * media: source-ID rows upsert, no-source-ID rows append;
   * realtime view: first finalization per `stream_id` wins.
 
+Ingestion seam:
+
+* `InspectionIngestor` (in `app/services/ingestion.py`) normalizes collected
+  DevOnlineList / RecordFileList / AlarmList rows and persists them into any
+  `InspectionStore`, reporting accepted/invalid counts and quality flags;
+* the ingestor is source-agnostic and tested with in-memory stores; the live
+  AEE login/token behavior is an explicit, still-unverified prerequisite that
+  the ingestor does not assume.
+
 Realtime usage-history write path:
 
 * `StoreViewEventSink` adapts the session manager's finalization callback to
