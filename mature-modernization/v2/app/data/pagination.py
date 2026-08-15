@@ -22,6 +22,45 @@ class AEEPageCollection:
     quality_flags: tuple[str, ...]
 
 
+@dataclass(frozen=True, slots=True)
+class CollectedSource:
+    """A fully collected source with its completeness metadata preserved.
+
+    This is the payload contract between collectors and the ingestion
+    scheduler: the rows are handed to the ingestor, while the completeness
+    fields make truncation, duplicates and invalid rows explicit instead of
+    silently treating a partial result as complete.
+    """
+
+    source: str
+    rows: tuple[dict[str, Any], ...]
+    records_total: int | None
+    pages_fetched: int
+    fetched_source_count: int
+    invalid_row_count: int
+    duplicate_source_id_count: int
+    complete: bool
+    quality_flags: tuple[str, ...]
+
+    @classmethod
+    def from_collection(
+        cls,
+        source: str,
+        collection: AEEPageCollection,
+    ) -> "CollectedSource":
+        return cls(
+            source=source,
+            rows=tuple(collection.rows),
+            records_total=collection.records_total,
+            pages_fetched=collection.pages_fetched,
+            fetched_source_count=collection.fetched_source_count,
+            invalid_row_count=collection.invalid_row_count,
+            duplicate_source_id_count=collection.duplicate_source_id_count,
+            complete=collection.complete,
+            quality_flags=collection.quality_flags,
+        )
+
+
 def collect_aee_pages(
     fetch_page: PageFetcher,
     *,

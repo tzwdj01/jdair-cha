@@ -617,6 +617,13 @@ Implemented durable store seam:
   with an explicit window and a source-agnostic `RowCollector` protocol; it is
   testable with fake collectors and never assumes AEE authentication, which
   remains an unverified prerequisite owned by the collector;
+* `AEEInspectionCollector` implements the AEE-specific collector by composing
+  the evidence-based `AEEReadOnlyDataAdapter` contracts and
+  `collect_aee_pages`, preserving completeness metadata via `CollectedSource`;
+  alarm selectors (`time_type`, `group_with_child`) are never guessed — alarms
+  are skipped when they are not provided. Combined with the scheduler and
+  ingestor, the full AEE ingestion pipeline is code-ready pending live
+  verification;
 * governed thresholds are read from `CHA_V2_INSPECTION_THRESHOLDS` (JSON of
   positive numbers): `long_no_upload_hours` and `stale_location_hours` produce
   per-device threshold hits only when configured, with an injectable `as_of`
@@ -626,7 +633,7 @@ Implemented durable store seam:
 * `docs/aee/AEE_DATA_VERIFICATION_RUNBOOK.md` turns the P0 conditional
   verification into concrete, lawful, sanitized observation steps with
   evidence templates;
-* forty-seven repository/sink/service/API/page tests cover roundtrip, scope
+* fifty-one repository/sink/service/API/page tests cover roundtrip, scope
   filtering,
   latest-wins, media append/upsert, first-wins behavior, the
   manager-to-store write path, page-oriented overviews, the HTTP API and page

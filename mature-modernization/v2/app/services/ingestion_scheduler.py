@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import datetime as dt
-from typing import Any, Mapping, Protocol
+from dataclasses import dataclass
+from typing import Mapping, Protocol
+
+from ..data.pagination import CollectedSource
 
 from .ingestion import IngestionReport, InspectionIngestor
 
@@ -13,17 +16,24 @@ class RowCollector(Protocol):
     """Collect raw inspection rows for a window.
 
     The collector owns the upstream transport (AEE/MCS8/Legacy) and returns
-    payloads keyed by the ingestor's accepted names:
-    ``device_status``, ``media_files``, ``alarms``. It is the only component
-    that depends on upstream authentication; the scheduler never does.
+    ``CollectedSource`` entries keyed by the ingestor's accepted names
+    (``device_status``, ``media_files``, ``alarms``), preserving completeness
+    metadata. It is the only component that depends on upstream
+    authentication; the scheduler never does.
     """
 
     async def collect(
         self,
         start: dt.datetime,
         end: dt.datetime,
-    ) -> Mapping[str, list[Mapping[str, Any]]]:
+    ) -> Mapping[str, CollectedSource]:
         ...
+
+
+@dataclass(frozen=True, slots=True)
+class ScheduledIngestion:
+    report: IngestionReport
+    sources: tuple[CollectedSource, ...]
 
 
 class InspectionIngestionScheduler:
@@ -48,24 +58,32 @@ class InspectionIngestionScheduler:
         *,
         start: dt.datetime,
         end: dt.datetime,
-    ) -> IngestionReport:
+    ) -> ScheduledIngestion:
         start_utc = _aware_utc(start, "start")
         end_utc = _aware_utc(end, "end")
         if end_utc <= start_utc:
             raise ValueError("end must be after start")
-        payloads = await self._collector.collect(start_utc, end_utc)
+        collected = await self._collector.collect(start_utc, end_utc)
+        payloads = {
+            name: source.rows
+            for name, source in collected.items()
+        }
         observed_at = dt.datetime.now(UTC)
-        return await self._ingestor.ingest_all(
+        report = await self._ingestor.ingest_all(
             payloads,
             observed_at=observed_at,
             ingested_at=observed_at,
+        )
+        return ScheduledIngestion(
+            report=report,
+            sources=tuple(collected.values()),
         )
 
     async def run_recent(
         self,
         *,
         days: int = 1,
-    ) -> IngestionReport:
+    ) -> ScheduledIngestion:
         normalized_days = max(1, min(int(days), 90))
         end = dt.datetime.now(UTC)
         start = end - dt.timedelta(days=normalized_days)

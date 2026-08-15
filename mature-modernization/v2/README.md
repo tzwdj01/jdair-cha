@@ -83,6 +83,12 @@ separate unverified prerequisite.
 an explicit window and a source-agnostic `RowCollector` protocol, testable with
 fake collectors.
 
+`AEEInspectionCollector` composes the evidence-based adapter contracts and page
+collection, preserving completeness metadata via `CollectedSource`. Alarm
+selectors are never guessed: without explicit `time_type`/`group_with_child`
+alarms are skipped. The collector → scheduler → ingestor → store pipeline is
+code-ready pending live AEE verification.
+
 The data-quality diagnostic reports store coverage, freshness and quality
 flags per historical table plus source-system distribution; it reports only
 rows that actually exist and never infers missing data.

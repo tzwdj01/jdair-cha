@@ -4,6 +4,7 @@ import datetime as dt
 import unittest
 
 from app.data.store import MemoryInspectionStore
+from app.data.pagination import CollectedSource
 from app.services.ingestion import InspectionIngestor
 from app.services.ingestion_scheduler import (
     InspectionIngestionScheduler,
@@ -20,23 +21,43 @@ class _FakeCollector:
     async def collect(self, start, end):
         self.calls.append((start, end))
         return {
-            "device_status": [
-                {
-                    "id": "s-1",
-                    "devId": "WX1",
-                    "status": 1,
-                    "time": "2026-08-15 00:10:00+00:00",
-                }
-            ],
-            "media_files": [
-                {
-                    "id": "file-1",
-                    "devId": "WX1",
-                    "fType": 3,
-                    "startTime": "2026-08-15 00:30:00+00:00",
-                }
-            ],
+            "device_status": _collected(
+                "device_status",
+                [
+                    {
+                        "id": "s-1",
+                        "devId": "WX1",
+                        "status": 1,
+                        "time": "2026-08-15 00:10:00+00:00",
+                    }
+                ],
+            ),
+            "media_files": _collected(
+                "media_files",
+                [
+                    {
+                        "id": "file-1",
+                        "devId": "WX1",
+                        "fType": 3,
+                        "startTime": "2026-08-15 00:30:00+00:00",
+                    }
+                ],
+            ),
         }
+
+
+def _collected(source, rows):
+    return CollectedSource(
+        source=source,
+        rows=tuple(rows),
+        records_total=len(rows),
+        pages_fetched=1,
+        fetched_source_count=len(rows),
+        invalid_row_count=0,
+        duplicate_source_id_count=0,
+        complete=True,
+        quality_flags=(),
+    )
 
 
 class InspectionIngestionSchedulerTests(unittest.IsolatedAsyncioTestCase):
@@ -51,13 +72,20 @@ class InspectionIngestionSchedulerTests(unittest.IsolatedAsyncioTestCase):
     async def test_run_once_collects_and_persists(self) -> None:
         start = dt.datetime(2026, 8, 15, 0, tzinfo=UTC)
         end = dt.datetime(2026, 8, 15, 1, tzinfo=UTC)
-        report = await self.scheduler.run_once(start=start, end=end)
+        scheduled = await self.scheduler.run_once(start=start, end=end)
 
         self.assertEqual(self.collector.calls, [(start, end)])
-        results = {item.source: item for item in report.results}
+        results = {
+            item.source: item
+            for item in scheduled.report.results
+        }
         self.assertEqual(results["device_status"].accepted_count, 1)
         self.assertEqual(results["media_files"].accepted_count, 1)
-        self.assertTrue(report.completed)
+        self.assertTrue(scheduled.report.completed)
+        self.assertEqual(
+            {item.source for item in scheduled.sources},
+            {"device_status", "media_files"},
+        )
 
         statuses = await self.store.fetch_device_status_events(
             start=start,
@@ -71,12 +99,12 @@ class InspectionIngestionSchedulerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(files), 1)
 
     async def test_run_recent_uses_bounded_window(self) -> None:
-        report = await self.scheduler.run_recent(days=2)
+        scheduled = await self.scheduler.run_recent(days=2)
         self.assertEqual(len(self.collector.calls), 1)
         start, end = self.collector.calls[0]
         self.assertEqual(end.tzinfo, UTC)
         self.assertEqual((end - start).days, 2)
-        self.assertTrue(report.completed)
+        self.assertTrue(scheduled.report.completed)
 
     async def test_run_once_requires_aware_ordered_window(self) -> None:
         with self.assertRaises(ValueError):
