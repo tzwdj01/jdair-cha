@@ -12,10 +12,15 @@
 | Video 9 | NOT TESTED / NOT ADVERTISED |
 | Receive-only audio | SUPPORTED，生产开关默认关闭 |
 | Local screenshot | SUPPORTED |
+| Fullscreen | COMPLETED / UNVERIFIED，已获非阻塞 evidence waiver |
 | AccountPool | NOT REQUIRED |
 | Control / PTZ / talkback / recording | OUT OF SCOPE |
 
 `validated_stream_limit=6`
+
+近期 Realtime Video 产品最大范围为 16 路，但不代表已批准立即开发或已完成容量
+验证。32 路及更高并发为 `DEFERRED`。Realtime Video 后续作为监察数据平台的基础
+下钻能力，不再作为主要研发方向。
 
 ## 真实 AEE 容量
 
@@ -78,3 +83,49 @@
 仓库和现有资料未证明存在与生产端口、current、env、systemd 完全隔离的真实
 staging，因此本轮没有部署 staging。只完成本地/隔离 release tree 验证和
 Canary runbook。正式 Canary 必须另行审批。
+
+## Production Canary 与 M3 Closure
+
+`2026-08-15` 当前 production release 已完成：
+
+- 1 路 `WXB353` 首帧、1920×1080、track live、heartbeat、close/reopen 和
+  session cleanup；
+- 4 路同时播放、selective close、survivor、reopen、screenshot 和完整资源释放；
+- 非 Canary 用户页面、API 和 Control/Gateway/Media WebSocket 拒绝；
+- Session/Stream/Gateway/Media active counters 归零；
+- Legacy/V2 health 和 restart 回归检查。
+
+`WXB358` 已确认在同一观察窗口内由 AEE 原生 `mediaMonitor` 返回
+`devices is offline`，属于 upstream/device media availability exception，
+不再是 M3 blocker，也不围绕该设备开发 H.265 或其它 workaround。
+
+Fullscreen 最终状态：
+
+`COMPLETED / UNVERIFIED`
+
+生产自动化和 Computer Use 环境无法可靠提供并验证浏览器 Fullscreen API 所需的
+瞬时 real-user activation。没有确认的 CHA Fullscreen 产品代码缺陷。项目负责人已
+批准 evidence waiver，将普通用户
+`enter fullscreen → exit fullscreen → playback continues`
+证据移动到 `POST-M3 OPERATIONAL FOLLOW-UP`。不得将该项标记为 PASS。
+
+M3 最终状态：
+
+`CLOSED / ACCEPTED WITH EVIDENCE WAIVER`
+
+M3 关账后冻结以下近期方向：
+
+- 32 路及更高并发；
+- 为并发引入复杂 AccountPool；
+- H.265 workaround；
+- FFmpeg、自建 SFU、自建 transcoding；
+- 无真实业务需求和 Architecture Escalation Evidence 的媒体架构升级。
+
+`2026-08-15 23:24 CST` 生产关账复核确认：
+
+- Realtime、Audio、Control、AccountPool 均为 `false`；
+- V2 active，`NRestarts=0`；
+- liveness、readiness 和 Legacy dependency PASS；
+- production current、Nginx、database 和 AEE Secret 未修改。
+
+不得自动进入 M4。

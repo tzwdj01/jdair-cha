@@ -4,20 +4,22 @@
 
 Status:
 
-`CONDITIONAL PASS — FULLSCREEN MANUAL VERIFICATION REQUIRED`
+`M3 CLOSED / ACCEPTED WITH EVIDENCE WAIVER`
 
 The production 1-stream and 4-stream realtime media gates passed. Session
 cleanup, resource counters, Canary isolation, screenshot, Legacy/V2 regression,
-and feature-flag safety checks passed. The only remaining acceptance item is a
-normal user-operated browser fullscreen check. The attached Chrome automation
-environment invoked the production fullscreen path but the browser denied
-Fullscreen API activation.
+and feature-flag safety checks passed.
 
-M3 remains:
+Fullscreen remains:
 
-`IN PROGRESS / PRODUCTION CANARY VALIDATION`
+`COMPLETED / UNVERIFIED`
 
-It must not be declared complete until the manual fullscreen check is recorded.
+The project owner accepted a non-blocking evidence waiver because the
+production automation and Computer Use environments could not reliably provide
+and verify the transient real-user activation required by the browser Fullscreen
+API. No confirmed CHA Fullscreen product defect exists. The normal user
+`enter fullscreen → exit fullscreen → playback continues` check is moved to
+`POST-M3 OPERATIONAL FOLLOW-UP` and must not be reported as PASS until observed.
 
 ## Scope
 
@@ -137,7 +139,7 @@ Classification:
 
 This is not evidence of a confirmed product-code defect. The current browser
 control environment did not provide the transient user activation required by
-the Fullscreen API. A normal user-operated Chrome click is still required.
+the Fullscreen API.
 
 ### Follow-up validation window — 19:28–19:33 CST
 
@@ -163,6 +165,26 @@ user-operated fullscreen check:
 
 This follow-up proves page-close cleanup but does not prove fullscreen.
 Fullscreen therefore remains `COMPLETED / UNVERIFIED`.
+
+### Final automation attempt — 22:46–22:50 CST
+
+A final controlled attempt again used the existing Canary allowlist and
+`WXB353`:
+
+* session state reached `PLAYING`;
+* first frame was observed at `22:49:19 CST`;
+* resolution was `1920 × 1080`;
+* video track was `live`;
+* heartbeat was normal.
+
+Before the native Windows click could be issued, Computer Use stopped because
+it could not determine the foreground Chrome URL with sufficient confidence.
+No fullscreen enter/exit evidence was produced. Realtime was immediately
+restored to `false`, the V2 service returned active with `NRestarts=0`, and
+liveness/readiness passed.
+
+This repeated automation limitation is the reason for the approved evidence
+waiver. It is not a Fullscreen PASS and is not evidence of a CHA product defect.
 
 ## Resource and telemetry result
 
@@ -224,6 +246,18 @@ After the Canary:
 
 Realtime was not left enabled after the controlled validation.
 
+Final closure safety recheck at `2026-08-15 23:24 CST`:
+
+* production release remained
+  `/opt/jdair-cha/v2/releases/0.8.0-m3-final-rc-media-offline-fix-20260815`;
+* V2 service was active and `NRestarts=0`;
+* liveness and readiness passed;
+* Legacy dependency was healthy;
+* Realtime, Audio, Control and AccountPool were all `false`;
+* AEE and Canary configuration were reported configured without an active
+  upstream login probe;
+* production `current`, Nginx, database and AEE Secret were not changed.
+
 ## Six-stream evidence waiver
 
 Production 6-stream verification:
@@ -237,17 +271,36 @@ Production Gate and does not invalidate the four-stream result.
 Development-validated stream limit remains 6. Recommended initial production
 limit is 4 until a separate six-device production capacity validation passes.
 
-## Remaining acceptance action
+## Closure decision
 
-1. Enable Realtime only for the existing Canary user.
-2. Use one AEE-native media-available device.
-3. In a normal user-operated production Chrome tab, click the tile fullscreen
-   button.
-4. Confirm the tile enters fullscreen and exits normally.
-5. Confirm playback/session state remains healthy.
-6. Close the session and confirm active session/stream/Gateway/Media gauges
-   return to 0.
-7. Restore Realtime to disabled.
+M3 is:
 
-If this passes, update this report to `PASS` and finalize the M3 Milestone
-Completion Report. Do not enter M4 automatically.
+`CLOSED / ACCEPTED WITH EVIDENCE WAIVER`
+
+Fullscreen is:
+
+`COMPLETED / UNVERIFIED`
+
+Waiver reason:
+
+> Production automation could not reliably provide and verify the transient
+> real-user activation required by the browser Fullscreen API. No confirmed CHA
+> product defect exists.
+
+The fullscreen operational check may be performed during a future normal manual
+usage window, but it no longer blocks M3 or M4 and must not trigger repeated
+automation Canary attempts.
+
+Realtime product scope is frozen after M3:
+
+* retain the existing verified capabilities;
+* near-term Realtime Video maximum scope is 16 streams, subject to a separately
+  approved M4 requirement and capacity validation;
+* 32 streams and higher concurrency are `DEFERRED`;
+* do not introduce complex AccountPool, H.265 workarounds, FFmpeg, custom SFU,
+  custom transcoding or other media infrastructure without real business need
+  and Architecture Escalation Evidence;
+* Realtime Video becomes a foundational drill-down capability of the inspection
+  data platform rather than the primary development direction.
+
+Do not enter M4 automatically.

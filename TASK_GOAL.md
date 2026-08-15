@@ -95,6 +95,18 @@ Last updated: 2026-08-15
   * Canary 完成后已恢复 `realtime_readonly=false`；
   * Audio、Control、AccountPool 全程保持关闭；
   * 生产 `current` 未回退，Nginx 和数据库未修改。
+* `2026-08-15 23:24 CST` M3 关账前生产只读复核确认：
+  * 当前 production release 仍为
+    `0.8.0-m3-final-rc-media-offline-fix-20260815`；
+  * V2 service active，`NRestarts=0`；
+  * liveness、readiness 和 Legacy dependency 均 healthy；
+  * Realtime、Audio、Control、AccountPool 均为 `false`；
+  * AEE Secret 和 Canary allowlist 均为 configured，health 未主动登录 AEE；
+  * production `current`、Nginx、数据库和 AEE Secret 均未修改。
+* 项目负责人已批准 M3 Closure Policy：
+  `M3 CLOSED / ACCEPTED WITH EVIDENCE WAIVER`。
+* Fullscreen 保持 `COMPLETED / UNVERIFIED`，作为
+  `POST-M3 OPERATIONAL FOLLOW-UP`；不得标记为 PASS，也不再阻塞 M3 或 M4。
 
 ---
 
@@ -161,7 +173,7 @@ Last updated: 2026-08-15
 * 账号健康管理；
 * 会话健康管理。
 
-整体状态：`IN PROGRESS / PRODUCTION CANARY VALIDATION`
+整体状态：`CLOSED / ACCEPTED WITH EVIDENCE WAIVER`
 
 已完成并验证：
 
@@ -197,8 +209,11 @@ Last updated: 2026-08-15
   active session/stream/Gateway/Media 均回到 0，
   `realtime_release_failure_total=0`。
 * `COMPLETED / UNVERIFIED`：生产全屏按钮已触发正确 Fullscreen API 路径，但当前
-  受控 Chrome 自动化环境拒绝进入全屏并显示“浏览器未允许进入全屏”；仍需一次普通
-  用户操作的生产浏览器手工验证。
+  受控 Chrome 自动化/Computer Use 环境无法可靠提供并确认 Fullscreen API 所需的
+  transient real-user activation。没有发现新的 CHA Fullscreen 产品代码缺陷。
+  真实普通用户 Chrome 的
+  `enter fullscreen → exit fullscreen → playback continues`
+  证据已获非阻塞 waiver，并移动到 `POST-M3 OPERATIONAL FOLLOW-UP`。
 * `NOT EXECUTED — INSUFFICIENT HEALTHY MEDIA DEVICES`：生产 6 路验证；
   当前观察窗口仅有 4 台 AEE-native media available 视频设备，按已批准 evidence
   waiver 不阻塞 4 路首发容量结论。
@@ -209,9 +224,18 @@ Last updated: 2026-08-15
 * `TODO`：多账号池和完整账号健康管理。
 * `TODO`：将 receive-only Audio 对生产 Canary 开放。
 
-以上 `TODO` 不得因本文件更新而自动开始。此前 M3 release 已明确将 9 路、
-AccountPool 和生产 Audio 开放排除在当前首发范围之外。重新进入这些能力必须由后续
-明确任务授权，并更新本文件中的 M3 执行计划。
+以上事项在 M3 关账时均被明确排除，不影响 M3 closure。不得因本文件更新而自动开始。
+重新进入这些能力必须有后续真实业务需求和明确任务授权。
+
+Realtime 产品范围冻结：
+
+* 保留现有 1 / 4 / 6 路、截图、状态监控、重连、资源释放和 Canary 隔离能力。
+* 近期 Realtime Video 产品最大范围为 16 路；必须由 M4 的真实业务需求和独立容量
+  验证驱动。
+* 32 路及更高并发：`DEFERRED`。
+* 近期不为并发引入复杂 AccountPool，不开发 H.265 workaround，不引入 FFmpeg、
+  自建 SFU、自建 transcoding 或其它无真实业务需求的媒体架构升级。
+* Realtime Video 后续作为监察数据平台的基础下钻能力，不再作为主要研发方向。
 
 当前设备例外：
 
@@ -243,12 +267,19 @@ AccountPool 和生产 Audio 开放排除在当前首发范围之外。重新进�
 
 目标能力：
 
-* 16 / 32 路；
+* 最高 16 路的按需实时视频下钻；
 * 自适应码流；
 * 地图联动；
 * 调度状态联动；
 * 异常选播；
 * 实时与历史视频联动。
+
+范围约束：
+
+* 16 路是近期 Realtime Video 产品最大范围，不代表已批准立即开发。
+* 32 路及更高并发：`DEFERRED`。
+* Realtime Video 是监察数据平台的基础下钻能力，M4 应优先围绕数据、地图、调度、
+  异常和历史记录联动，而不是继续以媒体并发为主要研发方向。
 
 不得自动开始，除非：
 
@@ -302,13 +333,13 @@ AccountPool 和生产 Audio 开放排除在当前首发范围之外。重新进�
 `ACTIVE MILESTONE: M3`
 
 当前状态：
-`IN PROGRESS / PRODUCTION CANARY VALIDATION`
+`CLOSED / ACCEPTED WITH EVIDENCE WAIVER`
 
-当前只执行 M3 Production Canary 的最终证据收口、普通用户操作的生产全屏验证、
-文档/Git 结论和首发容量配置建议。
+M3 已完成关账。Fullscreen 保持 `COMPLETED / UNVERIFIED`，其普通用户操作证据
+移动到 `POST-M3 OPERATIONAL FOLLOW-UP`，不再重复自动化复核，也不阻塞 M4。
 
-不得自动开发 M4，不得顺手扩展 9 路、AccountPool、Audio 生产开放、PTZ、对讲
-或录像。
+不得自动进入 M4。不得顺手扩展 9 路、16 路、32 路、AccountPool、Audio 生产开放、
+PTZ、对讲、录像或媒体基础设施。
 
 当当前 Milestone 达到 Done Criteria 后：
 
@@ -453,14 +484,16 @@ Existing MCS8/AEE capability
 
 与媒体相关的验收应尽可能记录实际测量数据。
 
-M3 当前剩余关键验收：
+M3 Closure：
 
-* 在普通用户操作的生产 Chrome 中点击任一正在播放 tile 的全屏按钮，确认：
-  * tile 实际进入全屏；
-  * 退出全屏后其它 stream 继续 `PLAYING`；
-  * session close 后资源计数仍回到 0。
-* 更新最终 Production Canary report、Runbook/TASK_GOAL 结论并完成 Git
-  commit/push。
+* `COMPLETED / VERIFIED`：生产 1 路和 4 路、首帧、track live、分辨率、heartbeat、
+  screenshot、selective close、survivor、reopen、session/Gateway/Media cleanup、
+  Canary isolation 和 Legacy/V2 回归。
+* `COMPLETED / UNVERIFIED`：Fullscreen 普通用户
+  `enter → exit → playback continues` 证据。
+* `EVIDENCE WAIVER`：Fullscreen 的唯一缺口由自动化环境不能可靠提供和验证瞬时
+  real-user activation 导致；没有确认的 CHA 产品缺陷。该项移至
+  `POST-M3 OPERATIONAL FOLLOW-UP`。
 
 已完成：
 
@@ -790,7 +823,9 @@ M3 当前额外 Done Criteria：
 * 当前生产 release 的 1 路 Production Canary PASS。
 * 当前生产 release 的 4 路 Production Canary PASS，四路首帧均正常。
 * authenticated non-Canary 页面/API/WebSocket 拒绝通过。
-* 首帧、分辨率、track live、截图和全屏均有实际证据。
+* 首帧、分辨率、track live 和截图均有实际证据。
+* Fullscreen 代码路径已有生产触发证据；普通用户 enter/exit/playback-continuity
+  证据保持 `COMPLETED / UNVERIFIED`，由批准的 evidence waiver 非阻塞关账。
 * selective close、survivor 和 reopen 通过。
 * Session/Stream/Gateway/Media active counters 全部回到 0。
 * `realtime_release_failure_total` 在本轮 Canary 中无新增。
@@ -806,6 +841,16 @@ M3 当前额外 Done Criteria：
 未满足以上条件：
 
 不得宣布 Active Milestone 完成。
+
+M3 Closure Exception：
+
+* 项目负责人已明确批准 Fullscreen evidence waiver。
+* 该 waiver 仅豁免真实普通用户 Chrome 的
+  `enter fullscreen → exit fullscreen → playback continues` 人工证据；
+  不把 Fullscreen 标记为 PASS，不豁免其它安全、媒体生命周期、资源释放或回归要求。
+* 其它 M3 Done Criteria 已由现有自动化、真实 AEE、Production Canary 和生产安全
+  证据满足，因此 M3 最终状态为
+  `CLOSED / ACCEPTED WITH EVIDENCE WAIVER`。
 
 ---
 
@@ -838,30 +883,23 @@ M3 当前额外 Done Criteria：
 
 ## In Progress
 
-* Active Milestone 保持 M3。
-* 当前仍为 `PRODUCTION CANARY VALIDATION`，但只剩全屏的普通用户操作验证和
-  最终证据/Git 收口。
+* 无 M3 产品开发或 Production Canary 工作处于进行中。
+* 当前仅执行 M3 closure 文档与 Git 收口。
 
 ## Next
 
-1. 在普通用户操作的 Chrome 中，以 Canary 用户打开 1 台已确认健康设备，手工点击
-   tile 全屏按钮并退出全屏。
-2. 复核其它 stream/session 不受影响并再次确认资源计数归零。
-3. 将全屏结果更新到 Production Canary report 和本文件。
-4. 若手工全屏 PASS，形成 M3 Milestone Completion Report；生产首发建议
-   `max_streams=4`，Realtime 保持关闭等待下一次明确激活授权。
+1. 保持 Production Realtime、Audio、Control、AccountPool 关闭。
+2. 在未来正常人工使用窗口中补充 Fullscreen operational evidence；不得把未验证项
+   标记为 PASS，也不得为此重复自动化 Canary。
+3. 不自动进入 M4；等待项目负责人明确激活下一 Milestone。
+4. 若未来激活 M4，优先推进监察数据平台联动，Realtime 仅作为基础下钻能力，近期
+   最大范围为 16 路，32 路保持 `DEFERRED`。
 
 ## Blocked
 
-* 当前没有由单个媒体不可用设备造成的项目级 blocker。
-* 当前唯一验收缺口是自动化浏览器不提供 Fullscreen API 用户激活，导致生产全屏
-  只能标记为 `COMPLETED / UNVERIFIED`；这不是已确认的产品代码故障。
-* 只有以下情况阻塞本轮：
-  * 没有任何 AEE-native 可实时播放设备；
-  * AEE 正常而 CHA 对同设备失败；
-  * Production Realtime 出现资源泄漏；
-  * 安全边界或 Canary 隔离失败；
-  * Legacy/V2 回归。
+* 无 M3 closure blocker。
+* Fullscreen 的人工证据缺口已由项目负责人批准为非阻塞 evidence waiver。
+* `WXB358` 是 upstream/device media availability exception，不是 M3 blocker。
 
 ## AEE Verification Required
 

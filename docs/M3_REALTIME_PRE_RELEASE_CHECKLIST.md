@@ -72,7 +72,9 @@
 - [ ] Canary 候选设备先通过 AEE-native
       `mediaMonitor=opened/newConsumer/first frame` precheck
 - [ ] 1 路 Production Canary PASS
-- [ ] 4 路 Production Canary 首帧、survivor、reopen、截图、全屏和释放 PASS
+- [ ] 4 路 Production Canary 首帧、survivor、reopen、截图和释放 PASS
+- [ ] Fullscreen 若缺少真实用户激活证据，必须保持
+      `COMPLETED / UNVERIFIED`；不得误标 PASS
 - [ ] 若不足 6 台健康媒体设备，记录 6 路 evidence waiver，而不是使用异常设备
 - [ ] 若 6 路未执行，生产首发最大路数建议为 4
 - [ ] 9 路明确标记 NOT TESTED 且 UI 不显示
@@ -92,3 +94,24 @@
 
 只有全部勾选并完成正式变更审批后，才可进入 staging/canary；本清单不授权直接
 发布 full production。
+
+## M3 Closure Note — 2026-08-15
+
+项目负责人已批准：
+
+`M3 CLOSED / ACCEPTED WITH EVIDENCE WAIVER`
+
+Fullscreen 保持：
+
+`COMPLETED / UNVERIFIED`
+
+该 waiver 仅覆盖普通用户 Chrome 的
+`enter fullscreen → exit fullscreen → playback continues`
+人工证据。原因是生产自动化/Computer Use 环境无法可靠提供并确认 Fullscreen API
+所需的瞬时 real-user activation，且没有确认的 CHA 产品缺陷。
+
+该项移动到 `POST-M3 OPERATIONAL FOLLOW-UP`，不再重复执行自动化 Canary，也不
+阻塞 M4。此记录不把 Fullscreen 标记为 PASS。
+
+M3 关账时 Production Realtime、Audio、Control、AccountPool 均为 `false`；
+V2 active、`NRestarts=0`、liveness/readiness PASS。不得因本清单自动进入 M4。
