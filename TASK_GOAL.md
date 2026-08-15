@@ -151,11 +151,18 @@ Last updated: 2026-08-15
   per-device event/coordinate count、source span、latest age 和 optional-field
   coverage；aggregate 不返回坐标、不自行判定 stale/fresh，并显式处理
   duplicate、update、conflict、invalid 和 incomplete scope。
+* 已增加 driver-agnostic durable store seam：
+  * `InspectionStore` repository 抽象基于 normalized contracts；
+  * 确定性内存实现仅供测试/本地开发；
+  * PostgreSQL migration 草稿覆盖 5 张历史表；
+  * idempotent upsert 语义（status/location/alarm latest-wins、
+    media source-ID upsert、realtime view first-wins）。
+  * 当前不声明 migration/backup/restore/rollback PASS。
 * 已完成 Legacy media-to-flight/task reference helper 的代码取证：
   当前 active batch path 只加载 routine tasks，普通 flight matcher 为未接线
   reference code；现有 city/time/score/certainty 只能作为 unverified candidate，
   不得用于 confirmed relation 或 coverage rate。
-* 当前全量 V2 自动化回归为 `149 tests PASS`。
+* 当前全量 V2 自动化回归为 `156 tests PASS`。
 * 当前开发机没有 Docker、PostgreSQL client/server、`pg_dump` 或
   `pg_restore`。因此不能在此环境宣称 PostgreSQL migration、backup 或 restore
   rehearsal 已完成。
@@ -360,12 +367,70 @@ M4 工作流：
 5. PostgreSQL 只用于设备状态历史、监察使用历史、必要的视频元数据索引、告警历史
    和统计指标；WebRTC runtime 临时状态不得写入 PostgreSQL。
 6. 第一版 Dashboard 页面：
-   * `/dashboard` 监察总览；
-   * `/dashboard/devices` 设备运行分析；
+   * 先建设 `/dashboard/devices` 设备运行分析；
    * `/dashboard/media` 视频与文件分析；
-   * `/dashboard/realtime` 监察使用分析。
+   * `/dashboard/realtime` 监察使用分析；
+   * 三个专题页数据真实、稳定后再建设 `/dashboard` 监察总览。
 7. Drill-down：
    总览 → 城市/部门 → 设备 → 时间线 → 实时视频/历史视频/位置/航班任务/异常。
+
+### M4 优先级模型（2026-08-16 更新）
+
+`P0`：
+
+1. 完成并维护 `DeviceStatusEvent` 标准 contract。
+2. 完成并维护 `MediaFile` 标准 contract。
+3. 在合法、安全条件允许时真实验证 AEE：
+   * `/api/v1/DevOnlineList`；
+   * `/api/v1/RecordFileList`；
+   覆盖字段、时间语义、分页、retention 和 stable identity。只记录脱敏结论。
+4. 在合法、安全条件允许时验证 AEE 数据接口认证边界：
+   * 是否仅依赖自定义 `token` header；
+   * 是否还依赖 Cookie；
+   * Token 失效与刷新行为；
+   不得输出或保存真实 Token/Cookie。
+
+`P1`：
+
+* `RealtimeViewEvent`：优先建立 CHA 自己的监察使用历史，不依赖 AEE 提供该历史。
+* `AlarmEvent`：继续只读取证 alarm_id/device_id/code/type/level/occurred_at/
+  status/handled/handled_at/handler；无法验证的 code map 标记 `UNKNOWN`，不猜测。
+
+`P2`：
+
+* Legacy Media → Flight/Routine Task 自动业务匹配。
+* 在没有 stable identity、时区证据、correction lifecycle 和人工确认正负样本
+  以前：禁止实现自动 matcher，禁止生成 flight/task video coverage KPI。
+* 现有代码审计与 candidate-only gate 保持不变，不再作为当前主线。
+
+`PostgreSQL`：
+
+* 缺少 PostgreSQL runtime 不阻塞 contract 开发。
+* 允许继续：schema design、migration files、repository abstraction、unit tests。
+* 没有真实隔离 PostgreSQL 前：不得声明 migration / backup / restore / rollback
+  PASS。
+
+`Dashboard 第一批页面`：
+
+* 当 `DeviceStatusEvent`、`MediaFile`、`RealtimeViewEvent` 数据模型稳定后，开始
+  真正的数据页面。
+* 优先：`/dashboard/devices`、`/dashboard/media`、`/dashboard/realtime`。
+* 此时不要急于完成最终总览页；专题页数据真实、稳定后，再建设 `/dashboard`。
+
+`当前最重要指标`：
+
+* 设备：当前在线/离线、今日上线/掉线、最近上线、最近离线、今日在线时长、
+  7日/30日在线率、掉线次数、长时间离线。
+* 视频：今日上传数量、视频总时长、文件容量、最近上传时间、每设备上传量、
+  7日/30日趋势、长时间未上传设备。
+* 监察使用：当前 realtime sessions、今日观看次数、每用户观看次数、
+  每用户观看时长、每设备被查看次数、每设备被查看时长、首帧成功率、失败原因。
+
+`执行原则`：
+
+* M4 衡量标准不是调查了多少接口、不是实现了多少自动匹配逻辑，而是是否形成
+  真实、可持续积累的设备运行历史、视频上传历史、监察使用历史、异常历史，以及
+  能否基于这些数据生成可靠 Dashboard。
 
 M4 允许：
 
@@ -1219,9 +1284,12 @@ M4 Done Criteria：
 * 已实现并测试 AlarmList Adapter contract 和 `AlarmEvent` normalization；
 * 已实现并测试 Realtime/Alarm deterministic event metrics；
 * 已实现并测试 DeviceLocation threshold-free deterministic metrics；
+* 已实现并测试 `InspectionStore` repository 抽象与内存实现
+  （`app/data/store/`），并编写 PostgreSQL migration 草稿
+  （`mature-modernization/v2/migrations/0001_inspection_history.sql`）；
 * 已完成 Legacy media/business-reference heuristic code audit，并将 active
   routine-task candidate 与 dormant flight code 明确区分；
-* 当前全量 V2 回归 `149 tests PASS`。
+* 当前全量 V2 回归 `156 tests PASS`。
 
 ## In Progress
 
@@ -1229,30 +1297,31 @@ M4 Done Criteria：
 * 正在把已验证的 AEE/CHA 字段语义固化为窄 contracts、normalized historical
   records、page completeness、data-quality evidence 和确定性统计边界。
 * 正在为已完成的 DeviceStatus、DeviceLocation、MediaFile、RealtimeView 和
-  Alarm 应用层 contracts 规划可演练的 PostgreSQL repository；当前不启用生产
-  sink，也不以 SQLite 或未执行 SQL 代替 PostgreSQL 验收。
+  Alarm 应用层 contracts 编写 PostgreSQL schema/migration files 和
+  driver-agnostic repository 抽象及单元测试；当前不启用生产 sink，也不以
+  SQLite 或未执行 SQL 代替 PostgreSQL 验收。
 * 正在补齐 AEE HTTP Token-only sufficiency/lifecycle、device online status
   map、alarm lifecycle/code maps/retention、media code maps 和用户活动数据证据。
 * 正在准备 PostgreSQL repository/migration 的隔离运行条件；当前尚未开始
   production 或本地假替代 migration。
+* `P2`：Legacy media→flight/task 自动匹配已降级，仅在获得 AMRO 脱敏样例、
+  stable identity、时区证据、correction lifecycle 和人工确认正负样本后恢复。
 
 ## Next
 
-1. 捕获 `/api/v1/DevOnlineList` 脱敏 raw response，验证非 1 status map、
-   ordering、duplicate、retention、分页和查询边界。
-2. 继续完成 AlarmList alarm/status/deal code map、生命周期、删除语义和
-   retention 取证；当前 raw-code contract 已完成，但不能标记语义 VERIFIED。
-3. 确认 RecordFileList `id` 唯一性范围、
-   `source/upLoadStatus` 完整 code map 和 channel/storage 可用性。
-4. 获得隔离 PostgreSQL runtime 和 `pg_dump`/`pg_restore` 工具后，再增加
-   migration/repository，并执行 forward、rollback、backup、restore rehearsal。
-5. 调查 AEE 是否提供合法的用户 login/session/view history；如果不存在，明确
-   标记 `NOT_AVAILABLE`。CHA 已具备前向 `RealtimeViewEvent` finalization
-   contract，但 durable repository 必须等待隔离 PostgreSQL rehearsal。
-6. 获取脱敏 AMRO flight/routine-task 实际样例，验证 stable identity、timezone、
-   date/task type code map、pagination completeness 和 correction lifecycle；
-   在真实正负样本验收前不实现自动 relation matcher。
-7. 保持 Production Realtime、Audio、Control、AccountPool 关闭。
+1. `P0`：固化 `DeviceStatusEvent` / `MediaFile` 标准 contract（已实现并测试；
+   保持窄 scope 和 raw code/quality flag 语义）。
+2. `P0`：在合法、安全条件允许时捕获 `/api/v1/DevOnlineList` 和
+   `/api/v1/RecordFileList` 脱敏 raw response，验证字段、时间语义、分页、
+   retention 和 stable identity；不记录 Cookie/Token/密码。
+3. `P0`：在合法、安全条件允许时验证 AEE 数据接口 token-only sufficiency、
+   Cookie 依赖、失效与刷新行为；只记录脱敏结论。
+4. `P1`：继续 Alarm 只读取证 alarm/status/deal code map、生命周期、删除语义和
+   retention；不能标记语义 VERIFIED 的保持 `UNKNOWN`。
+5. `PostgreSQL`：编写 5 张历史表的 schema/migration files 和
+   driver-agnostic repository 抽象 + 单元测试；获得隔离 PostgreSQL 后再执行
+   forward、rollback、backup、restore rehearsal。
+6. 保持 Production Realtime、Audio、Control、AccountPool 关闭。
 
 ## Blocked
 
@@ -1269,7 +1338,7 @@ M4 Done Criteria：
   normalizer 不受此阻塞；不得猜测 Bearer header 或让浏览器长期持有 AEE 凭据。
 * media-to-flight/task 自动关系和 coverage rate 在缺少 AMRO 脱敏字段样例、
   stable identity/time code map、分页完整性和已确认正负样本前 `BLOCKED`。
-  这不阻塞 dimensions、candidate schema 和其它数据资产工作。
+  该方向已降级为 `P2`，不阻塞 P0/P1 和 PostgreSQL contract 工作。
 
 ## AEE Verification Required
 

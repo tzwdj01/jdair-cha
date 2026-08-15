@@ -463,6 +463,29 @@ Materialized aggregates are justified only after measuring query cost.
 
 No production migration is authorized by this design.
 
+Versioned migration draft:
+
+* `mature-modernization/v2/migrations/0001_inspection_history.sql`
+
+The draft creates five tables: `device_status_events`,
+`device_location_events`, `media_files`, `realtime_view_events` and
+`alarm_events`, with identity/index definitions documented in
+`mature-modernization/v2/migrations/README.md`.
+
+Repository seam:
+
+* `mature-modernization/v2/app/data/store/repository.py` defines the
+  driver-agnostic `InspectionStore` interface over the normalized contracts;
+* `mature-modernization/v2/app/data/store/memory.py` provides a deterministic
+  in-memory implementation for unit tests and local development only;
+* idempotency semantics in the seam match the migration identity indexes:
+  * status/location/alarm: latest observation wins per identity;
+  * media: source-ID rows upsert, no-source-ID rows append;
+  * realtime view: first finalization per `stream_id` wins.
+
+No claim of migration/backup/restore/rollback PASS is made. A real rehearsal
+still requires an isolated PostgreSQL runtime.
+
 Current local constraint:
 
 * no Docker/PostgreSQL runtime, `psql`, `pg_dump` or `pg_restore` is available

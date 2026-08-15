@@ -560,6 +560,23 @@ Implemented deterministic event metrics:
     exclusion and explicit incomplete-scope flags;
   * no stale/fresh label, coordinate-system inference or sampling-rate claim.
 
+Implemented durable store seam:
+
+* `InspectionStore` repository abstraction over normalized event contracts;
+* deterministic in-memory implementation for tests/local development;
+* versioned PostgreSQL migration draft for the five historical tables;
+* idempotent upsert semantics: latest observation wins for status/location/
+  alarm, media source-ID rows upsert, realtime view first-finalization wins;
+* seven repository tests cover roundtrip, scope filtering, latest-wins,
+  media append/upsert and first-wins behavior.
+
+Not implemented by this foundation:
+
+* no PostgreSQL driver or connection pool is wired;
+* no migration/backup/restore/rollback rehearsal has been executed;
+* no production ingestion scheduler or checkpoints exist;
+* no dashboard page consumes the store yet.
+
 Not implemented by this foundation:
 
 * login ownership, token lifetime/refresh or a complete production AEE data

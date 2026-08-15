@@ -35,6 +35,7 @@ from .normalization import (
 )
 from .pagination import AEEPageCollection, collect_aee_pages
 from .realtime_views import RealtimeViewEvent, build_realtime_view_event
+from .store import InspectionStore, MemoryInspectionStore
 
 __all__ = [
     "AEEDataHTTPClient",
@@ -72,4 +73,6 @@ __all__ = [
     "collect_aee_pages",
     "RealtimeViewEvent",
     "build_realtime_view_event",
+    "InspectionStore",
+    "MemoryInspectionStore",
 ]
