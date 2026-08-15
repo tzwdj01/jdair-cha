@@ -1,0 +1,10 @@
+{
+  "source": "LIVE VERIFIED 2026-08-16 DevOnlineList (Statistics/Online page, 3-day window). lat/lng/addr/remarks redacted.",
+  "rows": [
+    {"id": "dev-online-1", "devId": "WXB310", "groupId": 30000002, "devType": 1, "status": 1, "time": "2026-08-13 00:31:11", "network": 0, "battery": 0},
+    {"id": "dev-online-2", "devId": "WXB339", "groupId": 30000002, "devType": 1, "status": 1, "time": "2026-08-13 00:36:48", "network": 0, "battery": 0},
+    {"id": "dev-online-3", "devId": "WXB351", "groupId": 30000002, "devType": 2, "status": 0, "time": "2026-08-13 00:45:01", "network": 0, "battery": 0},
+    {"id": "dev-online-4", "devId": "WXB301", "groupId": 30000002, "devType": 1, "status": 0, "time": "2026-08-13 01:31:49", "network": 0, "battery": 0},
+    {"id": "dev-online-5", "devId": "WXB301", "groupId": 30000002, "devType": 1, "status": 1, "time": "2026-08-13 01:31:51", "network": 0, "battery": 0}
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "source": "LIVE VERIFIED 2026-08-16 AlarmList (Alarm page, 3-day window). dealUser/dealTime/dealDesc/gpsModel/peopleNo/workNo redacted.",
+  "rows": [
+    {"id": "alarm-1", "enterId": 20000000, "groupId": 30000002, "devId": "WXB358", "alarmTime": "2026-08-16 01:42:00", "alarmType": 205, "status": null, "dealType": 0, "dealStatus": 0},
+    {"id": "alarm-2", "enterId": 20000000, "groupId": 30000002, "devId": "WXB358", "alarmTime": "2026-08-16 00:10:54", "alarmType": 205, "status": null, "dealType": 0, "dealStatus": 0},
+    {"id": "alarm-3", "enterId": 20000000, "groupId": 30000002, "devId": "WXB347", "alarmTime": "2026-08-15 21:40:35", "alarmType": 205, "status": null, "dealType": 0, "dealStatus": 0},
+    {"id": "alarm-4", "enterId": 20000000, "groupId": 30000002, "devId": "WXB347", "alarmTime": "2026-08-15 19:35:52", "alarmType": 206, "status": null, "dealType": 0, "dealStatus": 0}
+  ]
+}

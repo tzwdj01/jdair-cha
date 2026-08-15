@@ -79,24 +79,41 @@ class AEEReadOnlyDataAdapter:
         start: dt.datetime,
         end: dt.datetime,
         source_timezone: dt.tzinfo,
-        enterprise_id: str | int,
+        time_type: str | int,
+        group_with_child: str | int,
         group_id: str | int = 0,
         device_id: str = "",
-        keywords: str = "",
+        time_selector: str | int | None = None,
+        is_deleted: bool = False,
         page: int = 1,
         page_size: int = 1_000,
     ) -> AEEPageResult:
-        query = _build_common_range_query(
+        start_value, end_value = _validate_range_and_page(
             start=start,
             end=end,
             source_timezone=source_timezone,
-            enterprise_id=enterprise_id,
-            group_id=group_id,
-            device_id=device_id,
-            keywords=keywords,
             page=page,
             page_size=page_size,
         )
+        # LIVE VERIFIED 2026-08-16: the RecordFileList request carries
+        # devId/timeSelector/timeType/groupId/groupWithChild/isDeleted/page/
+        # pagesize/st/et and does NOT send enterId or keywords.
+        query: dict[str, str | int | bool] = {
+            "st": _format_source_time(start_value, source_timezone),
+            "et": _format_source_time(end_value, source_timezone),
+            "devId": _optional_text(device_id),
+            "timeType": _required_query_value(time_type, "time_type"),
+            "groupId": _optional_text(group_id, default="0"),
+            "groupWithChild": _required_query_value(
+                group_with_child,
+                "group_with_child",
+            ),
+            "isDeleted": str(bool(is_deleted)).lower(),
+            "page": page,
+            "pagesize": page_size,
+        }
+        if time_selector is not None:
+            query["timeSelector"] = _optional_text(time_selector)
         payload = self._client.get_json(
             "/api/v1/RecordFileList",
             query=query,
@@ -121,6 +138,7 @@ class AEEReadOnlyDataAdapter:
         alarm_status: str | int = "",
         deal_type: str | int = "",
         deal_status: str | int = "",
+        s5: str | int = "",
         keywords: str = "",
         page: int = 1,
         page_size: int = 1_000,
@@ -142,10 +160,13 @@ class AEEReadOnlyDataAdapter:
             ),
             "groupId": _optional_text(group_id, default="0"),
             "devId": _optional_text(device_id),
-            "alarmType": _optional_text(alarm_type),
-            "alarmStatus": _optional_text(alarm_status),
-            "dealType": _optional_text(deal_type),
-            "dealStatus": _optional_text(deal_status),
+            # LIVE VERIFIED 2026-08-16: unset alarm filters use the "-1"
+            # sentinel in the real request.
+            "alarmType": _optional_text(alarm_type, default="-1"),
+            "alarmStatus": _optional_text(alarm_status, default="-1"),
+            "dealType": _optional_text(deal_type, default="-1"),
+            "dealStatus": _optional_text(deal_status, default="-1"),
+            "s5": _optional_text(s5),
             "keywords": _optional_text(keywords),
             "page": page,
             "pagesize": page_size,
@@ -226,15 +247,19 @@ def _parse_page_result(
     page: int,
     page_size: int,
 ) -> AEEPageResult:
-    result_code = payload.get("result")
+    # LIVE VERIFIED 2026-08-16: the AEE data envelopes carry an integer
+    # ``error`` field where 200 means success. A missing-token request returns
+    # HTTP 200 with ``error=333`` and no data, so the business code is the
+    # authoritative success signal (not the HTTP status and not ``result``).
+    error_code = payload.get("error")
     try:
-        result_ok = int(result_code) == 200
+        error_ok = int(error_code) == 200
     except (TypeError, ValueError):
-        result_ok = False
-    if not result_ok:
+        error_ok = False
+    if not error_ok:
         raise AEEDataHTTPError(
             "AEE_DATA_UPSTREAM_REJECTED",
-            "AEE data endpoint rejected the request",
+            f"AEE data endpoint rejected the request (error={error_code})",
         )
 
     raw_rows = payload.get("data")

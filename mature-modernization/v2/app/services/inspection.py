@@ -636,6 +636,8 @@ def _latest_status_by_device(
         flags: set[str] = set()
         if latest.status_code == 1:
             online = True
+        elif latest.status_code == 0:
+            online = False
         else:
             online = None
             flags.add("non_online_status_map_partial")

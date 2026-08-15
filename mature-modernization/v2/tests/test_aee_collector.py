@@ -74,6 +74,8 @@ class AEEInspectionCollectorTests(unittest.IsolatedAsyncioTestCase):
         self.collector = AEEInspectionCollector(
             self.adapter,
             enterprise_id="ENT-1",
+            time_type=0,
+            group_with_child=0,
         )
         self.start = dt.datetime(2026, 8, 15, 0, tzinfo=UTC)
         self.end = dt.datetime(2026, 8, 15, 1, tzinfo=UTC)
@@ -100,7 +102,7 @@ class AEEInspectionCollectorTests(unittest.IsolatedAsyncioTestCase):
         enterprise_seen = {
             kwargs["enterprise_id"]
             for name, kwargs in self.adapter.calls
-            if name in {"dev_online", "record_files"}
+            if name == "dev_online"
         }
         self.assertEqual(enterprise_seen, {"ENT-1"})
 
@@ -108,8 +110,9 @@ class AEEInspectionCollectorTests(unittest.IsolatedAsyncioTestCase):
         collector = AEEInspectionCollector(
             self.adapter,
             enterprise_id="ENT-1",
-            time_type="2",
-            group_with_child="1",
+            time_type=0,
+            group_with_child=0,
+            include_alarms=True,
         )
         collected = await collector.collect(self.start, self.end)
 
@@ -123,14 +126,24 @@ class AEEInspectionCollectorTests(unittest.IsolatedAsyncioTestCase):
             for name, kwargs in self.adapter.calls
             if name == "alarms"
         )
-        self.assertEqual(alarm_kwargs["time_type"], "2")
-        self.assertEqual(alarm_kwargs["group_with_child"], "1")
+        self.assertEqual(alarm_kwargs["time_type"], 0)
+        self.assertEqual(alarm_kwargs["group_with_child"], 0)
 
     async def test_enterprise_id_is_required(self) -> None:
         with self.assertRaises(ValueError):
-            AEEInspectionCollector(self.adapter, enterprise_id=None)
+            AEEInspectionCollector(
+                self.adapter,
+                enterprise_id=None,
+                time_type=0,
+                group_with_child=0,
+            )
         with self.assertRaises(ValueError):
-            AEEInspectionCollector(self.adapter, enterprise_id=True)
+            AEEInspectionCollector(
+                self.adapter,
+                enterprise_id=True,
+                time_type=0,
+                group_with_child=0,
+            )
 
     async def test_window_must_be_aware_and_ordered(self) -> None:
         with self.assertRaises(ValueError):

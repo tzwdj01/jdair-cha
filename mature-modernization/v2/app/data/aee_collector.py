@@ -21,9 +21,10 @@ class AEEInspectionCollector:
     ``CollectedSource``. It never assumes authentication behavior: the token
     provider is owned by the injected adapter's transport.
 
-    Alarm collection requires explicit ``time_type`` and ``group_with_child``
-    selectors. They are never guessed: when absent, alarms are simply not
-    collected.
+    ``time_type`` and ``group_with_child`` are required for RecordFileList
+    collection, matching the live-verified request shape (the page sends 0/0).
+    Alarm collection is opt-in via ``include_alarms``; alarms are never
+    collected unless explicitly requested.
     """
 
     def __init__(
@@ -36,8 +37,11 @@ class AEEInspectionCollector:
         page_size: int = 1_000,
         max_pages: int = 100,
         max_records: int = 100_000,
-        time_type: str | int | None = None,
-        group_with_child: str | int | None = None,
+        time_type: str | int,
+        group_with_child: str | int,
+        time_selector: str | int | None = None,
+        is_deleted: bool = False,
+        include_alarms: bool = False,
     ) -> None:
         if enterprise_id is None or isinstance(enterprise_id, bool):
             raise ValueError("enterprise_id is required")
@@ -52,6 +56,9 @@ class AEEInspectionCollector:
         self._max_records = max_records
         self._time_type = time_type
         self._group_with_child = group_with_child
+        self._time_selector = time_selector
+        self._is_deleted = is_deleted
+        self._include_alarms = include_alarms
 
     async def collect(
         self,
@@ -89,8 +96,12 @@ class AEEInspectionCollector:
                 start=start_utc,
                 end=end_utc,
                 source_timezone=self._source_timezone,
-                enterprise_id=self._enterprise_id,
+                time_type=self._time_type,
+                group_with_child=self._group_with_child,
                 group_id=self._group_id,
+                device_id="",
+                time_selector=self._time_selector,
+                is_deleted=self._is_deleted,
                 page=page,
                 page_size=page_size,
             ),
@@ -108,10 +119,7 @@ class AEEInspectionCollector:
                 files,
             ),
         }
-        if (
-            self._time_type is not None
-            and self._group_with_child is not None
-        ):
+        if self._include_alarms:
             alarms = collect_aee_pages(
                 lambda page, page_size: self._adapter.list_alarms(
                     start=start_utc,

@@ -1,0 +1,8 @@
+{
+  "source": "LIVE VERIFIED 2026-08-16 RecordFileList (Server Files page, 3-day window). peopleNo/workNo/des/path/oss*/lat/lng/ip/port redacted.",
+  "rows": [
+    {"id": "rec-1", "enterId": 20000000, "groupId": 30000002, "devId": "WXB358", "title": "WXB358_000000__20260816_041132_2065.mp4", "fType": 3, "lType": 0, "source": 0, "upLoadStatus": 0, "fileLen": 187109839, "duration": 301, "startTime": "2026-08-16 04:11:33", "fileTime": "2026-08-16 04:11:33", "endTime": "2026-08-16 04:16:33", "upLoadTime": "2026-08-16 04:19:33", "isDeleted": false},
+    {"id": "rec-2", "enterId": 20000000, "groupId": 30000002, "devId": "WXB310", "title": "WXB310_000000__20260816_020121_0001.wav", "fType": 2, "lType": 0, "source": 0, "upLoadStatus": 0, "fileLen": 204800, "duration": 18, "startTime": "2026-08-16 02:01:24", "fileTime": "2026-08-16 02:01:24", "endTime": "2026-08-16 02:01:42", "upLoadTime": "2026-08-16 02:01:42", "isDeleted": false},
+    {"id": "rec-3", "enterId": 20000000, "groupId": 30000002, "devId": "WXB310", "title": "WXB310_000000__20260816_015724_0001.mp4", "fType": 3, "lType": 1, "source": 0, "upLoadStatus": 0, "fileLen": 42991616, "duration": 107, "startTime": "2026-08-16 01:57:24", "fileTime": "2026-08-16 01:57:24", "endTime": "2026-08-16 01:59:11", "upLoadTime": "2026-08-16 01:59:11", "isDeleted": false}
+  ]
+}

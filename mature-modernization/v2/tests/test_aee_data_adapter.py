@@ -25,7 +25,7 @@ class AEEReadOnlyDataAdapterTests(unittest.TestCase):
     def test_device_online_query_uses_explicit_source_timezone(self) -> None:
         client = _HTTPClient(
             {
-                "result": 200,
+                "error": 200,
                 "data": [{"id": "1", "devId": "WX1"}],
                 "recordsTotal": 2,
             }
@@ -55,12 +55,48 @@ class AEEReadOnlyDataAdapterTests(unittest.TestCase):
         self.assertTrue(result.has_more)
         self.assertEqual(result.rows[0]["devId"], "WX1")
 
+    def test_record_file_query_matches_live_verified_shape(self) -> None:
+        client = _HTTPClient(
+            {
+                "error": 200,
+                "data": [{"id": "1", "devId": "WX1"}],
+                "recordsTotal": 711,
+            }
+        )
+        adapter = AEEReadOnlyDataAdapter(client)
+
+        result = adapter.list_record_files(
+            start=dt.datetime(2026, 8, 13, 0, tzinfo=BUSINESS_TZ),
+            end=dt.datetime(2026, 8, 16, 23, 59, 59, tzinfo=BUSINESS_TZ),
+            source_timezone=BUSINESS_TZ,
+            time_type=0,
+            group_with_child=0,
+            group_id=0,
+            device_id="",
+            time_selector=3,
+            is_deleted=False,
+            page=1,
+            page_size=1000,
+        )
+
+        path, query = client.calls[0]
+        self.assertEqual(path, "/api/v1/RecordFileList")
+        self.assertNotIn("enterId", query)
+        self.assertNotIn("keywords", query)
+        self.assertEqual(query["timeType"], "0")
+        self.assertEqual(query["groupWithChild"], "0")
+        self.assertEqual(query["timeSelector"], "3")
+        self.assertEqual(query["isDeleted"], "false")
+        self.assertEqual(query["st"], "2026-08-13 00:00:00")
+        self.assertEqual(query["et"], "2026-08-16 23:59:59")
+        self.assertEqual(result.records_total, 711)
+
     def test_record_file_page_reports_invalid_rows_and_unknown_total(
         self,
     ) -> None:
         client = _HTTPClient(
             {
-                "result": "200",
+                "error": 200,
                 "data": [
                     {"id": "1", "devId": "WX1"},
                     "invalid-row",
@@ -86,7 +122,8 @@ class AEEReadOnlyDataAdapterTests(unittest.TestCase):
                 tzinfo=BUSINESS_TZ,
             ),
             source_timezone=BUSINESS_TZ,
-            enterprise_id="20000000",
+            time_type=0,
+            group_with_child=0,
         )
 
         self.assertEqual(len(result.rows), 1)
@@ -99,7 +136,7 @@ class AEEReadOnlyDataAdapterTests(unittest.TestCase):
     def test_alarm_query_uses_only_live_evidenced_fields(self) -> None:
         client = _HTTPClient(
             {
-                "result": 200,
+                "error": 200,
                 "data": [
                     {
                         "id": "alarm-1",
@@ -124,6 +161,7 @@ class AEEReadOnlyDataAdapterTests(unittest.TestCase):
             alarm_status=1,
             deal_type=0,
             deal_status=0,
+            s5="",
             keywords=" battery ",
             page=1,
             page_size=100,
@@ -144,6 +182,7 @@ class AEEReadOnlyDataAdapterTests(unittest.TestCase):
                 "alarmStatus": "1",
                 "dealType": "0",
                 "dealStatus": "0",
+                "s5": "",
                 "keywords": "battery",
                 "page": 1,
                 "pagesize": 100,
@@ -152,9 +191,31 @@ class AEEReadOnlyDataAdapterTests(unittest.TestCase):
         self.assertEqual(result.records_total, 1)
         self.assertFalse(result.has_more)
 
+    def test_alarm_unset_filters_use_dash_one_sentinel(self) -> None:
+        client = _HTTPClient(
+            {
+                "error": 200,
+                "data": [{"id": "alarm-1", "devId": "WX1"}],
+                "recordsTotal": 1,
+            }
+        )
+        adapter = AEEReadOnlyDataAdapter(client)
+        adapter.list_alarms(
+            start=dt.datetime(2026, 8, 15, 0, tzinfo=UTC),
+            end=dt.datetime(2026, 8, 15, 8, tzinfo=UTC),
+            source_timezone=BUSINESS_TZ,
+            time_type=0,
+            group_with_child=0,
+        )
+        _, query = client.calls[0]
+        self.assertEqual(query["alarmType"], "-1")
+        self.assertEqual(query["alarmStatus"], "-1")
+        self.assertEqual(query["dealType"], "-1")
+        self.assertEqual(query["dealStatus"], "-1")
+
     def test_alarm_query_requires_unverified_selector_values(self) -> None:
         adapter = AEEReadOnlyDataAdapter(
-            _HTTPClient({"result": 200, "data": []})
+            _HTTPClient({"error": 200, "data": []})
         )
         common = {
             "start": dt.datetime(
@@ -185,7 +246,7 @@ class AEEReadOnlyDataAdapterTests(unittest.TestCase):
     def test_second_page_has_more_uses_upstream_total(self) -> None:
         client = _HTTPClient(
             {
-                "result": 200,
+                "error": 200,
                 "data": [{"id": str(index)} for index in range(3)],
                 "recordsTotal": 8,
             }
@@ -208,7 +269,8 @@ class AEEReadOnlyDataAdapterTests(unittest.TestCase):
                 tzinfo=BUSINESS_TZ,
             ),
             source_timezone=BUSINESS_TZ,
-            enterprise_id="20000000",
+            time_type=0,
+            group_with_child=0,
             page=2,
             page_size=3,
         )
@@ -216,7 +278,7 @@ class AEEReadOnlyDataAdapterTests(unittest.TestCase):
         self.assertTrue(result.has_more)
 
     def test_device_tree_uses_only_the_verified_path(self) -> None:
-        payload = {"result": 200, "content": []}
+        payload = {"error": 200, "content": []}
         client = _HTTPClient(payload)
         adapter = AEEReadOnlyDataAdapter(client)
 
@@ -230,7 +292,7 @@ class AEEReadOnlyDataAdapterTests(unittest.TestCase):
         self,
     ) -> None:
         adapter = AEEReadOnlyDataAdapter(
-            _HTTPClient({"result": 200, "data": []})
+            _HTTPClient({"error": 200, "data": []})
         )
         valid_start = dt.datetime(
             2026,
@@ -285,7 +347,7 @@ class AEEReadOnlyDataAdapterTests(unittest.TestCase):
                     adapter.list_device_online(**values)
 
     def test_upstream_rejection_and_invalid_page_are_bounded(self) -> None:
-        common = {
+        common_device = {
             "start": dt.datetime(
                 2026,
                 8,
@@ -304,20 +366,38 @@ class AEEReadOnlyDataAdapterTests(unittest.TestCase):
             "enterprise_id": "20000000",
         }
         rejected = AEEReadOnlyDataAdapter(
-            _HTTPClient({"result": 403, "data": []})
+            _HTTPClient({"error": 403, "data": []})
         )
         with self.assertRaises(AEEDataHTTPError) as rejection:
-            rejected.list_device_online(**common)
+            rejected.list_device_online(**common_device)
         self.assertEqual(
             rejection.exception.code,
             "AEE_DATA_UPSTREAM_REJECTED",
         )
 
         malformed = AEEReadOnlyDataAdapter(
-            _HTTPClient({"result": 200, "data": {}})
+            _HTTPClient({"error": 200, "data": {}})
         )
         with self.assertRaises(AEEDataHTTPError) as invalid:
-            malformed.list_record_files(**common)
+            malformed.list_record_files(
+                start=dt.datetime(
+                    2026,
+                    8,
+                    15,
+                    8,
+                    tzinfo=BUSINESS_TZ,
+                ),
+                end=dt.datetime(
+                    2026,
+                    8,
+                    15,
+                    16,
+                    tzinfo=BUSINESS_TZ,
+                ),
+                source_timezone=BUSINESS_TZ,
+                time_type=0,
+                group_with_child=0,
+            )
         self.assertEqual(
             invalid.exception.code,
             "AEE_DATA_INVALID_RESPONSE",

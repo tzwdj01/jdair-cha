@@ -174,6 +174,10 @@ def normalize_device_status_events(
         online: bool | None
         if status_code == 1:
             online = True
+        elif status_code == 0:
+            # LIVE VERIFIED 2026-08-16: DevOnlineList status is a transition
+            # code with 1 = online and 0 = offline within the observed dataset.
+            online = False
         else:
             online = None
             flags.add("non_online_status_map_partial")
