@@ -60,6 +60,9 @@ No store is wired in the default release, so production behavior is unchanged.
 The first-batch three-tab pages under `/api/v2/dashboard/{devices,media,
 realtime}` consume only the inspection API and show honest
 “数据源未接入/待验证” states when no history is available.
+The realtime inspection endpoint also returns the current runtime snapshot
+(active sessions/streams, Gateway/Media connections) when the realtime session
+manager is wired; runtime state stays separate from durable history.
 
 The legacy page and every legacy `/api/*` contract remain unchanged.
 

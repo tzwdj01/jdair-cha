@@ -120,10 +120,35 @@ def _envelope(
 def _app(
     settings: Settings,
     service: InspectionDataService | None,
+    manager=None,
 ) -> FastAPI:
     app = FastAPI()
-    app.include_router(create_inspection_router(settings, service, _envelope))
+    app.include_router(
+        create_inspection_router(
+            settings,
+            service,
+            _envelope,
+            manager,
+        )
+    )
     return app
+
+
+class _FakeRealtimeManager:
+    def __init__(self) -> None:
+        self._snapshot = {
+            "gauges": {
+                "realtime_active_sessions": 2,
+                "realtime_active_streams": 3,
+                "realtime_sessions_playing": 1,
+                "realtime_streams_playing": 2,
+                "realtime_gateway_connections": 1,
+                "realtime_media_connections": 1,
+            }
+        }
+
+    async def telemetry_snapshot(self):
+        return self._snapshot
 
 
 async def _seeded_service() -> InspectionDataService:
@@ -314,6 +339,40 @@ class InspectionAPITests(unittest.IsolatedAsyncioTestCase):
         aggregation = realtime.json()["data"]["overview"]["aggregation"]
         self.assertEqual(aggregation["event_count"], 1)
         self.assertEqual(aggregation["played_count"], 1)
+
+    async def test_realtime_runtime_snapshot_when_manager_provided(self) -> None:
+        app = _app(
+            _settings(feature=True),
+            await _seeded_service(),
+            _FakeRealtimeManager(),
+        )
+        response = await _request(
+            app,
+            (
+                "/api/v2/inspection/realtime"
+                "?start=2026-08-15T00:00:00%2B00:00"
+                "&end=2026-08-15T01:00:00%2B00:00"
+            ),
+        )
+        self.assertEqual(response.status_code, 200)
+        runtime = response.json()["data"]["runtime"]
+        self.assertEqual(runtime["active_sessions"], 2)
+        self.assertEqual(runtime["active_streams"], 3)
+        self.assertEqual(runtime["gateway_connections"], 1)
+        self.assertEqual(runtime["media_connections"], 1)
+
+    async def test_realtime_runtime_null_without_manager(self) -> None:
+        app = _app(_settings(feature=True), await _seeded_service())
+        response = await _request(
+            app,
+            (
+                "/api/v2/inspection/realtime"
+                "?start=2026-08-15T00:00:00%2B00:00"
+                "&end=2026-08-15T01:00:00%2B00:00"
+            ),
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIsNone(response.json()["data"]["runtime"])
 
     async def test_device_timeline_endpoint(self) -> None:
         app = _app(_settings(feature=True), await _seeded_service())

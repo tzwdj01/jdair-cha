@@ -10,6 +10,7 @@ from fastapi import APIRouter, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 
 from ..config import Settings
+from ..realtime.session_manager import RealtimeSessionManager
 from ..services.inspection import InspectionDataService
 
 
@@ -29,6 +30,7 @@ def create_inspection_router(
     settings: Settings,
     service: InspectionDataService | None,
     envelope: Envelope,
+    realtime_manager: RealtimeSessionManager | None = None,
 ) -> APIRouter:
     """Read-only inspection history API over the InspectionStore.
 
@@ -314,6 +316,36 @@ def create_inspection_router(
             device_ids=_device_ids(device),
             usernames=_ids(user),
         )
+        runtime = None
+        if realtime_manager is not None:
+            snapshot = await realtime_manager.telemetry_snapshot()
+            gauges = snapshot.get("gauges", {})
+            runtime = {
+                "active_sessions": gauges.get(
+                    "realtime_active_sessions",
+                    0,
+                ),
+                "active_streams": gauges.get(
+                    "realtime_active_streams",
+                    0,
+                ),
+                "sessions_playing": gauges.get(
+                    "realtime_sessions_playing",
+                    0,
+                ),
+                "streams_playing": gauges.get(
+                    "realtime_streams_playing",
+                    0,
+                ),
+                "gateway_connections": gauges.get(
+                    "realtime_gateway_connections",
+                    0,
+                ),
+                "media_connections": gauges.get(
+                    "realtime_media_connections",
+                    0,
+                ),
+            }
         return envelope(
             request,
             {
@@ -321,6 +353,7 @@ def create_inspection_router(
                 "store_configured": True,
                 "scope": scope_payload(scope_start, scope_end, days),
                 "overview": _json_safe(overview),
+                "runtime": runtime,
             },
         )
 

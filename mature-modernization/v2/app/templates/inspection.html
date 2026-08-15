@@ -143,7 +143,7 @@
       }
       if (tab === "devices") renderDevices(data.overview || {});
       else if (tab === "media") renderMedia(data.overview || {});
-      else renderRealtime(data.overview || {});
+      else renderRealtime(data.overview || {}, data.runtime || null);
     }
 
     function renderDevices(overview) {
@@ -294,8 +294,14 @@
         '<div class="empty">说明：“长时间未上传”等需要治理阈值的分类暂不产出。</div>';
     }
 
-    function renderRealtime(overview) {
+    function renderRealtime(overview, runtime) {
       const aggregation = overview.aggregation || {};
+      const runtimeCards = runtime
+        ? metric(runtime.active_sessions == null ? "--" : runtime.active_sessions, "当前实时会话") +
+          metric(runtime.active_streams == null ? "--" : runtime.active_streams, "当前实时流") +
+          metric(runtime.gateway_connections == null ? "--" : runtime.gateway_connections, "Gateway 连接") +
+          metric(runtime.media_connections == null ? "--" : runtime.media_connections, "Media 连接")
+        : metric("--", "当前实时会话（需启用 realtime 运行态）");
       const users = (aggregation.users || []).map((item) => `<tr>
         <td>${esc(item.dimension_id)}</td>
         <td>${esc(item.view_count)}</td>
@@ -316,6 +322,7 @@
       const played = aggregation.played_count == null ? "--" : aggregation.played_count;
       const success = (total === "--" || !total) ? "--" : ((played / total) * 100).toFixed(1) + "%";
       byId("content").innerHTML =
+        '<div class="grid">' + runtimeCards + '</div>' +
         '<div class="grid">' +
         metric(total, "观看事件") +
         metric(success, "首帧成功率") +

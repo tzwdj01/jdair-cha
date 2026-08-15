@@ -132,6 +132,7 @@ app.include_router(
         settings,
         inspection_service,
         envelope,
+        realtime_manager,
     )
 )
 

@@ -590,11 +590,15 @@ Implemented durable store seam:
   `GET /api/v2/inspection/devices/{device_id}/timeline` returns scoped status,
   media and location coverage for one device; coordinates are restricted and
   never returned, and the devices page renders the timeline inline;
-* twenty-six repository/sink/service/API/page tests cover roundtrip, scope
+* the realtime endpoint also returns the current runtime snapshot (active
+  sessions/streams, Gateway/Media connections) when a realtime session manager
+  is wired; runtime state is kept separate from store history and is `null`
+  when no manager is provided;
+* twenty-eight repository/sink/service/API/page tests cover roundtrip, scope
   filtering,
   latest-wins, media append/upsert, first-wins behavior, the
   manager-to-store write path, page-oriented overviews, the HTTP API and page
-  rendering, plus device timeline drill-down.
+  rendering, device timeline drill-down and realtime runtime snapshots.
 
 Not implemented by this foundation:
 

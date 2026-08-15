@@ -237,6 +237,14 @@ Device timeline drill-down:
 * the devices page renders the timeline inline, giving the
   `总览 → 设备 → 时间线` drill-down path.
 
+Realtime runtime state:
+
+* `/api/v2/inspection/realtime` returns a `runtime` block with current active
+  sessions/streams and Gateway/Media connections when a realtime session
+  manager is wired; it is `null` otherwise;
+* runtime state is reported separately from durable store history and is never
+  mixed into historical metrics.
+
 ## 6. Data-source labels
 
 Every page must distinguish:
