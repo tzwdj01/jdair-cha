@@ -147,7 +147,11 @@ Last updated: 2026-08-15
   user/device viewing totals、duration/latency、result/error distribution，
   以及 raw alarm device/type/status/deal-status counts；duplicate、conflict 和
   incomplete scope 不会被静默吞掉。
-* 当前全量 V2 自动化回归为 `144 tests PASS`。
+* 已增加 threshold-free DeviceLocation event aggregation：
+  per-device event/coordinate count、source span、latest age 和 optional-field
+  coverage；aggregate 不返回坐标、不自行判定 stale/fresh，并显式处理
+  duplicate、update、conflict、invalid 和 incomplete scope。
+* 当前全量 V2 自动化回归为 `149 tests PASS`。
 * 当前开发机没有 Docker、PostgreSQL client/server、`pg_dump` 或
   `pg_restore`。因此不能在此环境宣称 PostgreSQL migration、backup 或 restore
   rehearsal 已完成。
@@ -731,6 +735,13 @@ Commit 应按逻辑阶段组织。
 * 已增加 `DeviceLocationEvent` 纯 normalization layer；位置数据统一标记
   restricted，不保留 free-text address，不猜测 coordinate system、单位、
   GPS/network code map、stale threshold、retention 或 sampling。
+* 已增加 DeviceLocation deterministic aggregation：
+  * 只接受 normalized events 和显式 reporting window；
+  * 只返回 event count、distinct-coordinate count、source span、latest age 和
+    optional-field presence counts，不返回坐标；
+  * exact duplicate 删除，同位置更新折叠到 latest observation；
+  * 同 source/device/time 的坐标冲突排除并标记 partial；
+  * 不定义 stale threshold、sampling coverage ratio 或 coordinate system。
 
 ## M4 AEE Evidence
 
@@ -1193,7 +1204,8 @@ M4 Done Criteria：
   `mature-modernization/v2/app/data/realtime_views.py`；
 * 已实现并测试 AlarmList Adapter contract 和 `AlarmEvent` normalization；
 * 已实现并测试 Realtime/Alarm deterministic event metrics；
-* 当前全量 V2 回归 `144 tests PASS`。
+* 已实现并测试 DeviceLocation threshold-free deterministic metrics；
+* 当前全量 V2 回归 `149 tests PASS`。
 
 ## In Progress
 
@@ -1221,8 +1233,8 @@ M4 Done Criteria：
 5. 调查 AEE 是否提供合法的用户 login/session/view history；如果不存在，明确
    标记 `NOT_AVAILABLE`。CHA 已具备前向 `RealtimeViewEvent` finalization
    contract，但 durable repository 必须等待隔离 PostgreSQL rehearsal。
-6. 在不依赖 AEE 未知语义和数据库的前提下，继续设计 location freshness/
-   coverage 的确定性统计边界；不得自行设定 stale threshold 或 coordinate system。
+6. 审计 Legacy 航班/例行任务与 media 的现有 heuristic relation helpers，
+   先形成字段、时间窗、位置和误配风险证据；不得直接把 heuristic 标记为 VERIFIED。
 7. 保持 Production Realtime、Audio、Control、AccountPool 关闭。
 
 ## Blocked

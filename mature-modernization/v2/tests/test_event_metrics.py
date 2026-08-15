@@ -6,14 +6,40 @@ from dataclasses import replace
 
 from app.data.metrics import (
     aggregate_alarm_events,
+    aggregate_device_locations,
     aggregate_realtime_views,
 )
-from app.data.normalization import normalize_alarm_events
+from app.data.normalization import (
+    normalize_alarm_events,
+    normalize_device_location_events,
+)
 from app.data.realtime_views import build_realtime_view_event
 
 
 UTC = dt.timezone.utc
 BUSINESS_TZ = dt.timezone(dt.timedelta(hours=8), name="Asia/Shanghai")
+
+
+def location_events(
+    rows,
+    *,
+    device_id: str,
+    observed_at: dt.datetime | None = None,
+):
+    observed = observed_at or dt.datetime(
+        2026,
+        8,
+        15,
+        1,
+        tzinfo=UTC,
+    )
+    return normalize_device_location_events(
+        rows,
+        device_id=device_id,
+        source_timezone=UTC,
+        observed_at=observed,
+        ingested_at=observed + dt.timedelta(seconds=1),
+    ).events
 
 
 def view_event(
@@ -58,6 +84,248 @@ def view_event(
         close_reason=result_reason,
         release_mode="session_disconnect",
     )
+
+
+class DeviceLocationMetricTests(unittest.TestCase):
+    def test_coverage_and_age_are_raw_threshold_free_values(self) -> None:
+        events = [
+            *location_events(
+                [
+                    {
+                        "lat": 39.9,
+                        "lng": 116.4,
+                        "gpsTime": "2026-08-15 00:10:00+00:00",
+                        "speed": 10,
+                        "accuracy": 5,
+                    },
+                    {
+                        "lat": 39.91,
+                        "lng": 116.41,
+                        "gpsTime": "2026-08-15 00:30:00+00:00",
+                        "direction": 90,
+                        "battery": 80,
+                        "gpsType": 2,
+                        "netWorkType": "LTE",
+                    },
+                ],
+                device_id="WX1",
+            ),
+            *location_events(
+                [
+                    {
+                        "lat": 31.2,
+                        "lng": 121.4,
+                        "gpsTime": "2026-08-15 00:40:00+00:00",
+                    }
+                ],
+                device_id="WX2",
+            ),
+        ]
+
+        result = aggregate_device_locations(
+            events,
+            window_start=dt.datetime(
+                2026,
+                8,
+                15,
+                0,
+                tzinfo=UTC,
+            ),
+            window_end=dt.datetime(
+                2026,
+                8,
+                15,
+                1,
+                tzinfo=UTC,
+            ),
+        )
+
+        self.assertEqual(result.source_event_count, 3)
+        self.assertEqual(result.included_event_count, 3)
+        metrics = {
+            metric.device_id: metric
+            for metric in result.devices
+        }
+        wx1 = metrics["WX1"]
+        self.assertEqual(wx1.event_count, 2)
+        self.assertEqual(wx1.distinct_coordinate_count, 2)
+        self.assertEqual(wx1.source_span_seconds, 1200)
+        self.assertEqual(wx1.latest_age_seconds, 1800)
+        self.assertEqual(wx1.speed_value_count, 1)
+        self.assertEqual(wx1.direction_value_count, 1)
+        self.assertEqual(wx1.accuracy_value_count, 1)
+        self.assertEqual(wx1.battery_value_count, 1)
+        self.assertEqual(wx1.gps_type_count, 1)
+        self.assertEqual(wx1.network_type_count, 1)
+        self.assertNotIn("stale", " ".join(result.quality_flags))
+
+    def test_duplicates_and_latest_same_position_update_are_collapsed(
+        self,
+    ) -> None:
+        base = location_events(
+            [
+                {
+                    "id": "gps-1",
+                    "lat": 39.9,
+                    "lng": 116.4,
+                    "gpsTime": "2026-08-15 00:30:00+00:00",
+                    "battery": 70,
+                }
+            ],
+            device_id="WX1",
+        )[0]
+        updated = replace(
+            base,
+            battery_value=71,
+            observed_at=base.observed_at + dt.timedelta(minutes=1),
+            ingested_at=base.ingested_at + dt.timedelta(minutes=1),
+        )
+
+        result = aggregate_device_locations(
+            [base, base, updated],
+            window_start=dt.datetime(
+                2026,
+                8,
+                15,
+                0,
+                tzinfo=UTC,
+            ),
+            window_end=dt.datetime(
+                2026,
+                8,
+                15,
+                2,
+                tzinfo=UTC,
+            ),
+        )
+
+        self.assertEqual(result.included_event_count, 1)
+        self.assertEqual(result.duplicate_event_count, 1)
+        self.assertEqual(result.updated_observation_count, 1)
+        self.assertEqual(result.devices[0].battery_value_count, 1)
+        self.assertIn(
+            "location_updates_collapsed_to_latest_observation",
+            result.quality_flags,
+        )
+
+    def test_same_timestamp_coordinate_conflict_is_excluded(self) -> None:
+        base = location_events(
+            [
+                {
+                    "lat": 39.9,
+                    "lng": 116.4,
+                    "gpsTime": "2026-08-15 00:30:00+00:00",
+                }
+            ],
+            device_id="WX1",
+        )[0]
+        conflict = replace(base, longitude=116.5)
+
+        result = aggregate_device_locations(
+            [base, conflict],
+            window_start=dt.datetime(
+                2026,
+                8,
+                15,
+                0,
+                tzinfo=UTC,
+            ),
+            window_end=dt.datetime(
+                2026,
+                8,
+                15,
+                2,
+                tzinfo=UTC,
+            ),
+        )
+
+        self.assertEqual(result.included_event_count, 0)
+        self.assertEqual(result.conflicting_timestamp_count, 1)
+        self.assertTrue(result.partial)
+        self.assertIn(
+            "same_timestamp_location_conflicts_excluded",
+            result.quality_flags,
+        )
+
+    def test_invalid_and_out_of_window_events_are_counted(self) -> None:
+        before, inside = location_events(
+            [
+                {
+                    "lat": 39.8,
+                    "lng": 116.3,
+                    "gpsTime": "2026-08-14 23:59:00+00:00",
+                },
+                {
+                    "lat": 39.9,
+                    "lng": 116.4,
+                    "gpsTime": "2026-08-15 00:30:00+00:00",
+                },
+            ],
+            device_id="WX1",
+        )
+        invalid = replace(inside, latitude=999)
+
+        result = aggregate_device_locations(
+            [before, inside, invalid],
+            window_start=dt.datetime(
+                2026,
+                8,
+                15,
+                0,
+                tzinfo=UTC,
+            ),
+            window_end=dt.datetime(
+                2026,
+                8,
+                15,
+                1,
+                tzinfo=UTC,
+            ),
+            complete=False,
+        )
+
+        self.assertEqual(result.included_event_count, 1)
+        self.assertEqual(result.out_of_window_count, 1)
+        self.assertEqual(result.invalid_event_count, 1)
+        self.assertTrue(result.partial)
+        self.assertIn("invalid_events_excluded", result.quality_flags)
+        self.assertIn(
+            "events_outside_window_excluded",
+            result.quality_flags,
+        )
+        self.assertIn("input_scope_incomplete", result.quality_flags)
+
+    def test_window_must_be_aware_and_ordered(self) -> None:
+        with self.assertRaises(ValueError):
+            aggregate_device_locations(
+                [],
+                window_start=dt.datetime(2026, 8, 15, 0),
+                window_end=dt.datetime(
+                    2026,
+                    8,
+                    15,
+                    1,
+                    tzinfo=UTC,
+                ),
+            )
+        with self.assertRaises(ValueError):
+            aggregate_device_locations(
+                [],
+                window_start=dt.datetime(
+                    2026,
+                    8,
+                    15,
+                    1,
+                    tzinfo=UTC,
+                ),
+                window_end=dt.datetime(
+                    2026,
+                    8,
+                    15,
+                    0,
+                    tzinfo=UTC,
+                ),
+            )
 
 
 class RealtimeViewMetricTests(unittest.TestCase):

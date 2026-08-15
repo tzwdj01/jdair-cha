@@ -404,6 +404,16 @@ Implemented pure functions:
   * counts image/audio/video/device-file types without UI rounding;
   * exposes invalid values, unknown types and query-limit/pagination
     truncation as quality flags.
+* `aggregate_device_locations`
+  * accepts only normalized `DeviceLocationEvent` rows and an explicit
+    timezone-aware reporting window;
+  * exposes per-device event count, distinct-coordinate count, source span,
+    latest-event age and optional-measurement presence counts;
+  * does not expose coordinates in its aggregate projection;
+  * does not classify freshness or invent sampling coverage without a governed
+    threshold/cadence;
+  * removes exact duplicates, collapses same-position updates to the latest
+    observation and excludes same-source/time coordinate conflicts.
 
 Verification:
 
@@ -419,7 +429,8 @@ Verification:
 * nine collection tests cover known/unknown totals, short-page completion,
   max-page/max-record limits, empty pages, changing totals, duplicate source
   IDs and invalid source rows;
-* ten normalization tests cover source/observation/ingestion time separation,
+* sixteen normalization tests cover source/observation/ingestion time
+  separation, restricted location scope and coordinates,
   non-1 status uncertainty, field aliases, raw units, partial code maps,
   restricted-field minimization and malformed values;
 * ten Realtime-view tests cover outcome/duration semantics, first-frame
@@ -429,10 +440,11 @@ Verification:
   unverified-selector values;
 * six Alarm normalization tests cover required identity/time, raw codes,
   restricted-field minimization, push-status aliasing and malformed values;
-* seven event-metric tests cover Realtime user/device totals, duration
-  recalculation, duplicate/conflict handling, Alarm update collapse and
-  unknown raw-status preservation;
-* the current complete V2 backend suite passes `138 tests`.
+* twelve event-metric tests cover location coverage/age values, location
+  duplicate/update/conflict/range handling, Realtime user/device totals,
+  duration recalculation, Alarm update collapse and unknown raw-status
+  preservation;
+* the current complete V2 backend suite passes `149 tests`.
 
 Implemented read-only transport boundary:
 
@@ -463,6 +475,13 @@ Implemented normalized historical contracts:
   * normalizes source event time, observation time and ingestion time to UTC;
   * maps only verified `status==1` to `online=true`;
   * leaves non-1 status online state unknown until the status map is verified.
+* `DeviceLocationEvent`
+  * binds rows to an explicit queried device scope;
+  * validates global coordinate bounds and the Legacy zero sentinel;
+  * separates GPS source time, observation time and ingestion time;
+  * keeps absent measurements null and preserves GPS/network source codes;
+  * marks coordinates restricted and all unverified units/code maps as
+    quality flags.
 * `MediaFile`
   * normalizes verified device/title/time/size/duration/type aliases;
   * preserves raw list/source/upload/deletion codes with quality flags;
@@ -500,6 +519,13 @@ Implemented deterministic event metrics:
   * raw alarm-status and deal-status distributions;
   * mutable alarm rows collapsed to the latest observation;
   * duplicate/conflict/missing-status and incomplete-scope flags.
+* Device location:
+  * per-device event count, distinct-coordinate count and source time span;
+  * raw latest-location age relative to the requested window end;
+  * optional speed/direction/accuracy/battery/GPS/network field coverage;
+  * duplicate removal, latest-observation collapse, conflicting coordinate
+    exclusion and explicit incomplete-scope flags;
+  * no stale/fresh label, coordinate-system inference or sampling-rate claim.
 
 Not implemented by this foundation:
 
@@ -507,7 +533,8 @@ Not implemented by this foundation:
   Adapter;
 * PostgreSQL schema, migrations or repository;
 * ingestion scheduling or checkpoints;
-* durable Realtime-view or Alarm event repository/outbox/historical API;
+* durable DeviceLocation, Realtime-view or Alarm event
+  repository/outbox/historical API;
 * API routes or Dashboard pages;
 * production configuration changes.
 

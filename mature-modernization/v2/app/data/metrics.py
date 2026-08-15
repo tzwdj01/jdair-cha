@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import datetime as dt
+import math
 from collections import defaultdict
 from dataclasses import dataclass
 from typing import Any, Iterable, Mapping
 
-from .normalization import AlarmEvent
+from .normalization import AlarmEvent, DeviceLocationEvent
 from .realtime_views import RealtimeViewEvent
 
 
@@ -32,6 +33,40 @@ class DeviceUptimeAggregationResult:
     fetched_count: int
     invalid_row_count: int
     duplicate_event_count: int
+    quality_flags: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class DeviceLocationMetric:
+    device_id: str
+    event_count: int
+    distinct_coordinate_count: int
+    first_gps_at: dt.datetime
+    last_gps_at: dt.datetime
+    source_span_seconds: float
+    latest_age_seconds: float
+    speed_value_count: int
+    direction_value_count: int
+    accuracy_value_count: int
+    battery_value_count: int
+    gps_type_count: int
+    network_type_count: int
+    quality_flags: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class DeviceLocationAggregationResult:
+    devices: tuple[DeviceLocationMetric, ...]
+    window_start: dt.datetime
+    window_end: dt.datetime
+    source_event_count: int
+    included_event_count: int
+    duplicate_event_count: int
+    updated_observation_count: int
+    conflicting_timestamp_count: int
+    out_of_window_count: int
+    invalid_event_count: int
+    partial: bool
     quality_flags: tuple[str, ...]
 
 
@@ -359,6 +394,193 @@ def aggregate_media_files(
     )
 
 
+def aggregate_device_locations(
+    events: Iterable[DeviceLocationEvent],
+    *,
+    window_start: dt.datetime,
+    window_end: dt.datetime,
+    complete: bool = True,
+) -> DeviceLocationAggregationResult:
+    """Aggregate normalized location events without inventing freshness rules.
+
+    The result exposes event coverage and age as raw durations only. It does
+    not classify devices as fresh/stale, infer coordinate systems or expose
+    coordinates in the aggregate projection.
+    """
+
+    start = _require_aware(window_start, "window_start").astimezone(UTC)
+    end = _require_aware(window_end, "window_end").astimezone(UTC)
+    if end <= start:
+        raise ValueError("window_end must be after window_start")
+
+    source_events = list(events)
+    valid_events: list[DeviceLocationEvent] = []
+    invalid_event_count = 0
+    out_of_window_count = 0
+    flags: set[str] = set()
+    for event in source_events:
+        if not _valid_location_event(event):
+            invalid_event_count += 1
+            continue
+        occurred_at = event.gps_occurred_at.astimezone(UTC)
+        if occurred_at < start or occurred_at > end:
+            out_of_window_count += 1
+            continue
+        valid_events.append(event)
+
+    grouped: dict[
+        tuple[str, str, str, dt.datetime],
+        list[DeviceLocationEvent],
+    ] = defaultdict(list)
+    for event in valid_events:
+        identity = (
+            event.source_system,
+            event.location_source,
+            event.device_id,
+            event.gps_occurred_at.astimezone(UTC),
+        )
+        grouped[identity].append(event)
+
+    selected: list[DeviceLocationEvent] = []
+    duplicate_event_count = 0
+    updated_observation_count = 0
+    conflicting_timestamp_count = 0
+    for identity_events in grouped.values():
+        unique = list(dict.fromkeys(identity_events))
+        duplicate_event_count += len(identity_events) - len(unique)
+        coordinates = {
+            (event.latitude, event.longitude)
+            for event in unique
+        }
+        if len(coordinates) > 1:
+            conflicting_timestamp_count += 1
+            continue
+        if len(unique) == 1:
+            selected.append(unique[0])
+            continue
+
+        latest_time = max(
+            (event.observed_at, event.ingested_at)
+            for event in unique
+        )
+        latest = [
+            event
+            for event in unique
+            if (event.observed_at, event.ingested_at) == latest_time
+        ]
+        if len(latest) != 1:
+            conflicting_timestamp_count += 1
+            continue
+        updated_observation_count += 1
+        selected.append(latest[0])
+
+    device_groups: dict[str, list[DeviceLocationEvent]] = defaultdict(list)
+    for event in selected:
+        device_groups[event.device_id].append(event)
+        if event.quality_flags:
+            flags.add("source_event_quality_flags_present")
+
+    device_metrics: list[DeviceLocationMetric] = []
+    for device_id, device_events in device_groups.items():
+        ordered = sorted(
+            device_events,
+            key=lambda event: (
+                event.gps_occurred_at,
+                event.observed_at,
+                event.ingested_at,
+            ),
+        )
+        first_gps_at = ordered[0].gps_occurred_at.astimezone(UTC)
+        last_gps_at = ordered[-1].gps_occurred_at.astimezone(UTC)
+        device_flags: set[str] = set()
+        if any(event.quality_flags for event in ordered):
+            device_flags.add("source_event_quality_flags_present")
+
+        device_metrics.append(
+            DeviceLocationMetric(
+                device_id=device_id,
+                event_count=len(ordered),
+                distinct_coordinate_count=len(
+                    {
+                        (event.latitude, event.longitude)
+                        for event in ordered
+                    }
+                ),
+                first_gps_at=first_gps_at,
+                last_gps_at=last_gps_at,
+                source_span_seconds=round(
+                    (last_gps_at - first_gps_at).total_seconds(),
+                    3,
+                ),
+                latest_age_seconds=round(
+                    (end - last_gps_at).total_seconds(),
+                    3,
+                ),
+                speed_value_count=sum(
+                    event.speed_value is not None
+                    for event in ordered
+                ),
+                direction_value_count=sum(
+                    event.direction_value is not None
+                    for event in ordered
+                ),
+                accuracy_value_count=sum(
+                    event.accuracy_value is not None
+                    for event in ordered
+                ),
+                battery_value_count=sum(
+                    event.battery_value is not None
+                    for event in ordered
+                ),
+                gps_type_count=sum(
+                    event.gps_type_code is not None
+                    for event in ordered
+                ),
+                network_type_count=sum(
+                    event.network_type_code is not None
+                    for event in ordered
+                ),
+                quality_flags=tuple(sorted(device_flags)),
+            )
+        )
+
+    if invalid_event_count:
+        flags.add("invalid_events_excluded")
+    if out_of_window_count:
+        flags.add("events_outside_window_excluded")
+    if duplicate_event_count:
+        flags.add("duplicate_events_removed")
+    if updated_observation_count:
+        flags.add(
+            "location_updates_collapsed_to_latest_observation"
+        )
+    if conflicting_timestamp_count:
+        flags.add("same_timestamp_location_conflicts_excluded")
+    if not complete:
+        flags.add("input_scope_incomplete")
+
+    return DeviceLocationAggregationResult(
+        devices=tuple(
+            sorted(device_metrics, key=lambda item: item.device_id)
+        ),
+        window_start=start,
+        window_end=end,
+        source_event_count=len(source_events),
+        included_event_count=len(selected),
+        duplicate_event_count=duplicate_event_count,
+        updated_observation_count=updated_observation_count,
+        conflicting_timestamp_count=conflicting_timestamp_count,
+        out_of_window_count=out_of_window_count,
+        invalid_event_count=invalid_event_count,
+        partial=(
+            not complete
+            or bool(invalid_event_count)
+            or bool(conflicting_timestamp_count)
+        ),
+        quality_flags=tuple(sorted(flags)),
+    )
+
+
 def aggregate_realtime_views(
     events: Iterable[RealtimeViewEvent],
     *,
@@ -665,6 +887,34 @@ def _deduplicate_online_events(
         key = (event.device_id, event.occurred_at, event.status)
         unique.setdefault(key, event)
     return list(unique.values())
+
+
+def _valid_location_event(event: DeviceLocationEvent) -> bool:
+    time_values = (
+        event.gps_occurred_at,
+        event.observed_at,
+        event.ingested_at,
+    )
+    if any(
+        value.tzinfo is None or value.utcoffset() is None
+        for value in time_values
+    ):
+        return False
+    if event.ingested_at < event.observed_at:
+        return False
+    if (
+        not math.isfinite(event.latitude)
+        or not math.isfinite(event.longitude)
+    ):
+        return False
+    if not -90 <= event.latitude <= 90:
+        return False
+    if not -180 <= event.longitude <= 180:
+        return False
+    return not (
+        abs(event.latitude) < 0.000001
+        and abs(event.longitude) < 0.000001
+    )
 
 
 def _parse_source_time(

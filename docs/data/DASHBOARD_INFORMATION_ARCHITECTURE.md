@@ -52,7 +52,9 @@ Views:
 * status freshness;
 * 7/30-day uptime after event history exists;
 * long-time offline;
-* stale location;
+* latest location age and raw event coverage;
+* stale-location classification only after an approved threshold and source
+  cadence are defined;
 * device detail timeline.
 
 Filters:
@@ -166,6 +168,10 @@ Each response should expose:
 * availability/data-quality status;
 * nullable values for unavailable metrics;
 * links or identifiers for drill-down.
+
+Location aggregate responses must not expose coordinates unless the caller is
+authorized for the device-detail/location scope. Summary pages should use only
+counts, source span, latest-event age and explicit quality/completeness flags.
 
 ## 6. Data-source labels
 

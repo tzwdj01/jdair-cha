@@ -40,12 +40,16 @@ Implemented and covered by unit tests:
 * normalized `DeviceStatusEvent` and `MediaFile` application contracts with
   explicit `occurred_at`/source-time, `observed_at` and `ingested_at`
   separation;
+* normalized, restricted `DeviceLocationEvent` application contracts for the
+  verified Legacy per-device GPS-history shape;
 * a normalized, immutable `RealtimeViewEvent` finalization contract and an
   opt-in session-manager sink boundary for forward-only CHA viewing evidence;
 * an `AlarmEvent` normalization contract that requires evidenced identity,
   device, type and source time while preserving all incomplete code maps;
 * deterministic Realtime and Alarm aggregations over normalized final events,
   with duplicate/conflict handling and explicit incomplete-input flags.
+* deterministic DeviceLocation aggregation exposing raw coverage/age values
+  without coordinates, stale thresholds or sampling assumptions.
 
 Normalization safety rules already enforced:
 
@@ -243,6 +247,19 @@ Current implementation boundary:
 * Coordinate system, units, code maps, stale threshold, correction behavior,
   sampling and retention remain unverified.
 * No repository, migration, scheduler, API or production wiring exists yet.
+
+Current deterministic aggregate:
+
+* requires an explicit reporting window;
+* returns event count, distinct-coordinate count, source time span and latest
+  event age per device;
+* counts presence of speed, direction, accuracy, battery, GPS-type and network
+  fields without interpreting their semantics;
+* removes exact duplicates and collapses same-position updates to the latest
+  observation;
+* excludes same-source/device/time coordinate conflicts;
+* never returns coordinates in the aggregate projection and never assigns a
+  stale/fresh label without a governed threshold.
 
 ## 6. MediaFile
 
