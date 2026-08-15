@@ -208,6 +208,48 @@ def create_inspection_router(
             },
         )
 
+    @router.get("/api/v2/inspection/devices/{device_id}/timeline")
+    async def inspection_device_timeline(
+        request: Request,
+        device_id: str,
+        start: str | None = Query(None),
+        end: str | None = Query(None),
+        days: int = Query(7, ge=1, le=90),
+    ) -> JSONResponse:
+        if not settings.feature_inspection_v2:
+            return disabled(request)
+        if service is None:
+            return store_unavailable(request)
+        normalized_device = device_id.strip()
+        if not normalized_device:
+            return invalid_scope(request, "device_id is required.")
+        scope = parse_scope(
+            request,
+            start_raw=start,
+            end_raw=end,
+            days=days,
+        )
+        if isinstance(scope, JSONResponse):
+            return scope
+        scope_start, scope_end = scope
+        try:
+            timeline = await service.device_timeline(
+                device_id=normalized_device,
+                start=scope_start,
+                end=scope_end,
+            )
+        except ValueError as exc:
+            return invalid_scope(request, str(exc))
+        return envelope(
+            request,
+            {
+                "source": "inspection_store",
+                "store_configured": True,
+                "scope": scope_payload(scope_start, scope_end, days),
+                "timeline": _json_safe(timeline),
+            },
+        )
+
     @router.get("/api/v2/inspection/media")
     async def inspection_media(
         request: Request,

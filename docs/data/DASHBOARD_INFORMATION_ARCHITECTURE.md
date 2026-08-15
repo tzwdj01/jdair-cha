@@ -228,6 +228,15 @@ history, it displays “数据源未接入/待验证”. Long-time offline/no-up
 stale-location classifications remain un-produced until governed thresholds
 exist. Pages are feature-gated by `CHA_V2_FEATURE_INSPECTION_V2` (default off).
 
+Device timeline drill-down:
+
+* `GET /api/v2/inspection/devices/{device_id}/timeline` returns the device's
+  scoped status events, media files and location coverage;
+* coordinates are restricted and omitted from the response; only time,
+  measurement and raw-code fields are returned;
+* the devices page renders the timeline inline, giving the
+  `总览 → 设备 → 时间线` drill-down path.
+
 ## 6. Data-source labels
 
 Every page must distinguish:

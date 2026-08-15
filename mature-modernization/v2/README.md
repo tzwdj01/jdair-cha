@@ -40,6 +40,7 @@ the `/api/v2/` namespace and does not replace existing `/api/*` routes.
 - `GET /api/v2/inspection/realtime`
 - `GET /api/v2/inspection/alarms`
 - `GET /api/v2/inspection/locations`
+- `GET /api/v2/inspection/devices/{device_id}/timeline`
 - `GET /api/v2/dashboard/devices`
 - `GET /api/v2/dashboard/media`
 - `GET /api/v2/dashboard/realtime`

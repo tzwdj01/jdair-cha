@@ -344,6 +344,79 @@ class InspectionDataServiceTests(unittest.IsolatedAsyncioTestCase):
                 end=self.end,
             )
 
+    async def test_device_timeline_returns_scoped_events(self) -> None:
+        await self.store.upsert_device_status_events(
+            normalize_device_status_events(
+                [
+                    {
+                        "id": "s-1",
+                        "devId": "WX1",
+                        "status": 1,
+                        "time": "2026-08-15 00:10:00+00:00",
+                    }
+                ],
+                source_timezone=UTC,
+                observed_at=dt.datetime(2026, 8, 15, 1, tzinfo=UTC),
+                ingested_at=dt.datetime(
+                    2026,
+                    8,
+                    15,
+                    1,
+                    0,
+                    1,
+                    tzinfo=UTC,
+                ),
+            ).events
+        )
+        await self.store.upsert_device_location_events(
+            normalize_device_location_events(
+                [
+                    {
+                        "lat": 39.9,
+                        "lng": 116.4,
+                        "gpsTime": "2026-08-15 00:20:00+00:00",
+                    }
+                ],
+                device_id="WX1",
+                source_timezone=UTC,
+                observed_at=dt.datetime(2026, 8, 15, 1, tzinfo=UTC),
+                ingested_at=dt.datetime(
+                    2026,
+                    8,
+                    15,
+                    1,
+                    0,
+                    1,
+                    tzinfo=UTC,
+                ),
+            ).events
+        )
+
+        timeline = await self.service.device_timeline(
+            device_id="WX1",
+            start=self.start,
+            end=self.end,
+        )
+
+        self.assertEqual(timeline.status_event_count, 1)
+        self.assertEqual(timeline.location_point_count, 1)
+        self.assertTrue(timeline.coordinates_restricted)
+        self.assertEqual(
+            timeline.location_points[0].gps_occurred_at,
+            dt.datetime(2026, 8, 15, 0, 20, tzinfo=UTC),
+        )
+        self.assertFalse(
+            hasattr(timeline.location_points[0], "latitude")
+        )
+
+    async def test_device_timeline_requires_device_id(self) -> None:
+        with self.assertRaises(ValueError):
+            await self.service.device_timeline(
+                device_id=" ",
+                start=self.start,
+                end=self.end,
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

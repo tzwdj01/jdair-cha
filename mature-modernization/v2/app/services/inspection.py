@@ -83,6 +83,33 @@ class LocationOverview:
     aggregation: DeviceLocationAggregationResult
 
 
+@dataclass(frozen=True, slots=True)
+class LocationPointSummary:
+    gps_occurred_at: dt.datetime
+    speed_value: float | None
+    direction_value: float | None
+    accuracy_value: float | None
+    battery_value: float | None
+    gps_type_code: int | str | None
+    network_type_code: int | str | None
+    quality_flags: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class DeviceTimeline:
+    device_id: str
+    scope_start: dt.datetime
+    scope_end: dt.datetime
+    status_events: tuple[DeviceStatusEvent, ...]
+    media_files: tuple[MediaFile, ...]
+    location_points: tuple[LocationPointSummary, ...]
+    status_event_count: int
+    media_file_count: int
+    location_point_count: int
+    coordinates_restricted: bool
+    quality_flags: tuple[str, ...]
+
+
 class InspectionDataService:
     """Read-only page-oriented data service over the InspectionStore.
 
@@ -262,6 +289,92 @@ class InspectionDataService:
                 window_start=start,
                 window_end=end,
             ),
+        )
+
+    async def device_timeline(
+        self,
+        *,
+        device_id: str,
+        start: dt.datetime,
+        end: dt.datetime,
+    ) -> DeviceTimeline:
+        normalized_device_id = str(device_id or "").strip()
+        if not normalized_device_id:
+            raise ValueError("device_id is required")
+        status_events = await self._store.fetch_device_status_events(
+            start=start,
+            end=end,
+            device_ids=[normalized_device_id],
+        )
+        media_files = await self._store.fetch_media_files(
+            start=start,
+            end=end,
+            device_ids=[normalized_device_id],
+        )
+        location_events = await self._store.fetch_device_location_events(
+            start=start,
+            end=end,
+            device_ids=[normalized_device_id],
+        )
+        location_points = tuple(
+            sorted(
+                (
+                    LocationPointSummary(
+                        gps_occurred_at=event.gps_occurred_at.astimezone(
+                            UTC
+                        ),
+                        speed_value=event.speed_value,
+                        direction_value=event.direction_value,
+                        accuracy_value=event.accuracy_value,
+                        battery_value=event.battery_value,
+                        gps_type_code=event.gps_type_code,
+                        network_type_code=event.network_type_code,
+                        quality_flags=event.quality_flags,
+                    )
+                    for event in location_events
+                ),
+                key=lambda item: (
+                    item.gps_occurred_at,
+                    str(item.speed_value or ""),
+                ),
+            )
+        )
+        flags: set[str] = set()
+        for events in (
+            status_events,
+            media_files,
+            location_events,
+        ):
+            if any(getattr(event, "quality_flags", ()) for event in events):
+                flags.add("source_event_quality_flags_present")
+        return DeviceTimeline(
+            device_id=normalized_device_id,
+            scope_start=_aware(start).astimezone(UTC),
+            scope_end=_aware(end).astimezone(UTC),
+            status_events=tuple(
+                sorted(
+                    status_events,
+                    key=lambda event: (
+                        event.occurred_at,
+                        event.observed_at,
+                    ),
+                )
+            ),
+            media_files=tuple(
+                sorted(
+                    media_files,
+                    key=lambda item: (
+                        item.created_at_source or item.uploaded_at_source,
+                        item.observed_at,
+                    ),
+                )
+            ),
+            location_points=location_points,
+            status_event_count=len(status_events),
+            media_file_count=len(media_files),
+            location_point_count=len(location_points),
+            coordinates_restricted=True,
+            quality_flags=tuple(sorted(flags)),
         )
 
 

@@ -165,6 +165,7 @@
           <td>${esc(item.first_online_at || "--")}</td>
           <td>${esc(item.last_offline_at || "--")}</td>
           <td>${flags(item.quality_flags)}</td>
+          <td><button class="timeline-btn" data-device="${esc(item.device_id)}">时间线</button></td>
         </tr>`;
       }).join("");
       byId("content").innerHTML =
@@ -175,10 +176,90 @@
         metric(uptime.fetched_count == null ? "--" : uptime.fetched_count, "历史事件行数") +
         '</div>' +
         '<div class="card"><h2>设备状态明细</h2>' +
-        (devices ? '<table><thead><tr><th>设备</th><th>状态</th><th>在线率</th><th>在线时长</th><th>掉线次数</th><th>最近上线</th><th>最近离线</th><th>质量</th></tr></thead><tbody>' + devices + '</tbody></table>'
+        (devices ? '<table><thead><tr><th>设备</th><th>状态</th><th>在线率</th><th>在线时长</th><th>掉线次数</th><th>最近上线</th><th>最近离线</th><th>质量</th><th>操作</th></tr></thead><tbody>' + devices + '</tbody></table>'
           : '<div class="empty">暂无可展示的设备状态历史。</div>') +
         '</div>' +
+        '<div class="card" id="timelinePanel" style="display:none"></div>' +
         '<div class="empty">说明：在线率按窗口内在线时长/窗口时长计算；“长时间离线”等需要治理阈值的分类暂不产出。</div>';
+      document.querySelectorAll(".timeline-btn").forEach((button) => {
+        button.addEventListener("click", () => {
+          loadTimeline(button.getAttribute("data-device"));
+        });
+      });
+    }
+
+    async function loadTimeline(deviceId) {
+      const days = byId("days").value;
+      const panel = byId("timelinePanel");
+      panel.style.display = "block";
+      panel.innerHTML = '<div class="empty">正在加载设备时间线…</div>';
+      let response;
+      try {
+        response = await fetch(
+          "/api/v2/inspection/devices/" +
+            encodeURIComponent(deviceId) +
+            "/timeline?days=" + days,
+          { headers: { "Accept": "application/json" } }
+        );
+      } catch (err) {
+        panel.innerHTML = '<div class="empty">设备时间线当前不可用。</div>';
+        return;
+      }
+      let payload;
+      try {
+        payload = await response.json();
+      } catch (err) {
+        panel.innerHTML = '<div class="empty">设备时间线返回了无法解析的响应。</div>';
+        return;
+      }
+      if (!response.ok) {
+        panel.innerHTML = '<div class="empty">设备时间线暂不可用（' +
+          esc((payload && payload.data && payload.data.code) || "unknown") +
+          "）。</div>";
+        return;
+      }
+      const timeline = (payload.data || {}).timeline || {};
+      const statusRows = (timeline.status_events || []).map((event) => `<tr>
+        <td>${esc(event.occurred_at)}</td>
+        <td>${esc(event.status_code)}</td>
+        <td>${event.online === true ? "在线" : (event.online === false ? "离线" : "未知")}</td>
+        <td>${flags(event.quality_flags)}</td>
+      </tr>`).join("");
+      const mediaRows = (timeline.media_files || []).map((item) => `<tr>
+        <td>${esc(item.title || "--")}</td>
+        <td>${esc(item.media_kind || "--")}</td>
+        <td>${esc(item.created_at_source || item.uploaded_at_source || "--")}</td>
+        <td>${item.duration_seconds == null ? "--" : esc(item.duration_seconds) + "s"}</td>
+        <td>${item.file_size_bytes == null ? "--" : esc(item.file_size_bytes) + "B"}</td>
+      </tr>`).join("");
+      const locationRows = (timeline.location_points || []).map((point) => `<tr>
+        <td>${esc(point.gps_occurred_at)}</td>
+        <td>${point.speed_value == null ? "--" : esc(point.speed_value)}</td>
+        <td>${point.accuracy_value == null ? "--" : esc(point.accuracy_value)}</td>
+        <td>${point.battery_value == null ? "--" : esc(point.battery_value)}</td>
+        <td>${point.gps_type_code == null ? "--" : esc(point.gps_type_code)}</td>
+        <td>${point.network_type_code == null ? "--" : esc(point.network_type_code)}</td>
+      </tr>`).join("");
+      panel.innerHTML =
+        '<h2>设备时间线：' + esc(deviceId) + '</h2>' +
+        '<div class="grid">' +
+        metric(timeline.status_event_count == null ? "--" : timeline.status_event_count, "状态事件") +
+        metric(timeline.media_file_count == null ? "--" : timeline.media_file_count, "媒体文件") +
+        metric(timeline.location_point_count == null ? "--" : timeline.location_point_count, "位置点") +
+        '</div>' +
+        '<div class="card"><h3>状态变化</h3>' +
+        (statusRows ? '<table><thead><tr><th>时间</th><th>status</th><th>在线</th><th>质量</th></tr></thead><tbody>' + statusRows + '</tbody></table>'
+          : '<div class="empty">该设备在范围内无状态事件。</div>') +
+        '</div>' +
+        '<div class="card"><h3>媒体文件</h3>' +
+        (mediaRows ? '<table><thead><tr><th>标题</th><th>类型</th><th>时间</th><th>时长</th><th>容量</th></tr></thead><tbody>' + mediaRows + '</tbody></table>'
+          : '<div class="empty">该设备在范围内无媒体文件。</div>') +
+        '</div>' +
+        '<div class="card"><h3>位置点</h3>' +
+        (locationRows ? '<table><thead><tr><th>时间</th><th>速度</th><th>精度</th><th>电量</th><th>GPS 类型</th><th>网络类型</th></tr></thead><tbody>' + locationRows + '</tbody></table>'
+          : '<div class="empty">该设备在范围内无位置点。</div>') +
+        '</div>' +
+        '<div class="empty">说明：位置点不输出坐标（坐标受限制）；如需地图下钻，须在明确授权方案后另行开放。</div>';
     }
 
     function renderMedia(overview) {

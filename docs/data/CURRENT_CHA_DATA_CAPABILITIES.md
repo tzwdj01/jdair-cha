@@ -586,11 +586,15 @@ Implemented durable store seam:
   `GET /api/v2/dashboard/{devices,media,realtime}` render a three-tab page
   that consumes only the inspection API and shows honest
   “数据源未接入/待验证” states when the store is unavailable or empty;
-* twenty-two repository/sink/service/API/page tests cover roundtrip, scope
+* device timeline drill-down is wired:
+  `GET /api/v2/inspection/devices/{device_id}/timeline` returns scoped status,
+  media and location coverage for one device; coordinates are restricted and
+  never returned, and the devices page renders the timeline inline;
+* twenty-six repository/sink/service/API/page tests cover roundtrip, scope
   filtering,
   latest-wins, media append/upsert, first-wins behavior, the
   manager-to-store write path, page-oriented overviews, the HTTP API and page
-  rendering.
+  rendering, plus device timeline drill-down.
 
 Not implemented by this foundation:
 

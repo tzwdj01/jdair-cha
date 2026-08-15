@@ -13,6 +13,7 @@ from fastapi.responses import JSONResponse
 from app.api.inspection import create_inspection_router
 from app.config import Settings
 from app.data.normalization import (
+    normalize_device_location_events,
     normalize_device_status_events,
     normalize_media_files,
 )
@@ -174,6 +175,30 @@ async def _seeded_service() -> InspectionDataService:
             ),
         ).files
     )
+    await store.upsert_device_location_events(
+        normalize_device_location_events(
+            [
+                {
+                    "lat": 39.9,
+                    "lng": 116.4,
+                    "gpsTime": "2026-08-15 00:10:00+00:00",
+                    "speed": 12.5,
+                }
+            ],
+            device_id="WX1",
+            source_timezone=UTC,
+            observed_at=dt.datetime(2026, 8, 15, 1, tzinfo=UTC),
+            ingested_at=dt.datetime(
+                2026,
+                8,
+                15,
+                1,
+                0,
+                1,
+                tzinfo=UTC,
+            ),
+        ).events
+    )
     await store.upsert_realtime_view_events(
         (
             build_realtime_view_event(
@@ -289,6 +314,42 @@ class InspectionAPITests(unittest.IsolatedAsyncioTestCase):
         aggregation = realtime.json()["data"]["overview"]["aggregation"]
         self.assertEqual(aggregation["event_count"], 1)
         self.assertEqual(aggregation["played_count"], 1)
+
+    async def test_device_timeline_endpoint(self) -> None:
+        app = _app(_settings(feature=True), await _seeded_service())
+        response = await _request(
+            app,
+            (
+                "/api/v2/inspection/devices/WX1/timeline"
+                "?start=2026-08-15T00:00:00%2B00:00"
+                "&end=2026-08-15T01:00:00%2B00:00"
+            ),
+        )
+        self.assertEqual(response.status_code, 200)
+        timeline = response.json()["data"]["timeline"]
+        self.assertEqual(timeline["device_id"], "WX1")
+        self.assertEqual(timeline["status_event_count"], 1)
+        self.assertEqual(timeline["media_file_count"], 1)
+        self.assertEqual(timeline["location_point_count"], 1)
+        self.assertTrue(timeline["coordinates_restricted"])
+        self.assertNotIn("latitude", timeline["location_points"][0])
+        self.assertNotIn("longitude", timeline["location_points"][0])
+        self.assertEqual(
+            timeline["location_points"][0]["speed_value"],
+            12.5,
+        )
+        self.assertIn(
+            "source_event_quality_flags_present",
+            timeline["quality_flags"],
+        )
+
+    async def test_device_timeline_feature_disabled(self) -> None:
+        app = _app(_settings(feature=False), None)
+        response = await _request(
+            app,
+            "/api/v2/inspection/devices/WX1/timeline",
+        )
+        self.assertEqual(response.status_code, 404)
 
     async def test_invalid_scope_returns_400(self) -> None:
         app = _app(_settings(feature=True), await _seeded_service())
