@@ -13,6 +13,7 @@ from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
 
 from .api.inspection import create_inspection_router
+from .api.inspections import create_inspections_router
 from .config import Settings
 from .data.store import StoreViewEventSink
 from .realtime.api import create_realtime_router
@@ -27,7 +28,11 @@ from .services.legacy import (
     LegacyTransportError,
 )
 from .services.inspection import InspectionDataService
-from .services.store_factory import build_inspection_store
+from .services.inspection_records import InspectionRecordService
+from .services.store_factory import (
+    build_inspection_record_store,
+    build_inspection_store,
+)
 
 
 UTC = dt.timezone.utc
@@ -61,6 +66,12 @@ inspection_service = (
         thresholds=settings.inspection_thresholds,
     )
     if inspection_store is not None
+    else None
+)
+inspection_record_store = build_inspection_record_store(settings)
+inspection_record_service = (
+    InspectionRecordService(inspection_record_store)
+    if inspection_record_store is not None
     else None
 )
 
@@ -153,6 +164,32 @@ app.include_router(
         realtime_manager,
     )
 )
+if inspection_record_store is not None and inspection_record_service is not None:
+
+    async def inspection_identity(request: Request) -> tuple[str | None, str]:
+        cookie_header = request.headers.get("cookie", "")
+        session_cookie = request.cookies.get("jdair_mcs8_session", "")
+        if not cookie_header or not session_cookie:
+            raise RuntimeError("authentication_required")
+        response = await legacy_client.session(cookie_header)
+        payload = response.json()
+        if (
+            response.status_code != 200
+            or not isinstance(payload, dict)
+            or not payload.get("authenticated")
+        ):
+            raise RuntimeError("authentication_required")
+        return None, str(payload.get("username") or "authenticated-user")[:128]
+
+    app.include_router(
+        create_inspections_router(
+            settings,
+            inspection_record_service,
+            inspection_record_store,
+            envelope,
+            inspection_identity,
+        )
+    )
 
 
 @app.exception_handler(Exception)
