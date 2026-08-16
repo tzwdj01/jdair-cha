@@ -570,7 +570,7 @@ Realtime 产品范围冻结：
 
 ## M4 — Inspection Data Center & AEE Data Capability Integration
 
-状态：`M4 ACTIVE / P2.5 PASS / P3 FOUNDATION PASS / P3.1 PASS / P3.2 BLOCKED — PRODUCTION POSTGRESQL CAPACITY DECISION REQUIRED`
+状态：`M4 ACTIVE / P2.5 PASS / P3 FOUNDATION PASS / P3.1 PASS / P3.2 IN PROGRESS — PRODUCTION POSTGRESQL SERVER PREFLIGHT: REVIEW REQUIRED`
 
 （不得宣布 M4 COMPLETE。P0 数据能力获取已在授权 AEE 会话下完成 live 验证，
 AEE 数据 API 已确认 TOKEN-ONLY / 无 Cookie 可用；P1 历史数据 contract /
@@ -592,13 +592,21 @@ InspectionRecord 保存、backup/health/audit。不授权全用户开放/32 路/
 自动 matcher/Legacy 替换/破坏性操作。M4 NOT COMPLETE。
 
 `2026-08-16` 生产只读容量审计（jdair.top）结论：主机仅
-`2 vCPU / 1.9 GiB RAM`，当前已用 1.7 GiB、可用约 244 MiB、swap 已用
-752 MiB；已运行 openclaw/mcs8_web_panel/v2 uvicorn/airamro-proxy/
-aon-pc-proxy/dockerd/containerd/tailscaled 等；现有备份 303 MiB 位于
-同一系统盘。**容量不足以安全同机承载 PostgreSQL + CHA + scheduler +
-backup**。按 P3.2 授权范围（容量不足不得强行部署），本次激活在容量闸门
-处 `BLOCKED`，输出 `PRODUCTION POSTGRESQL CAPACITY DECISION REQUIRED`。
-详见 `docs/aee/M4_P3_2_PRODUCTION_AUDIT_20260816.md`。）
+`2 vCPU / 1.9 GiB RAM`，已用 1.7 GiB、可用约 244 MiB、swap 已用 752 MiB；
+容量不足以安全同机承载 PostgreSQL + CHA + scheduler + backup。
+
+项目负责人已提供新的独立 PostgreSQL 候选服务器：`PRODUCTION POSTGRESQL
+CANDIDATE = ALIYUN SILICON VALLEY SERVER`（47.251.105.9）。
+当前执行 `SERVER + NETWORK PREFLIGHT`（只读，不安装）。Preflight 结论：
+服务器为干净专用节点（仅 sshd + Aliyun 内置 agent；无 PG/MySQL/Docker/
+宝塔/Web）；1.6 GiB RAM（无 swap）、35 G 可用磁盘；CHA↔Aliyun 同路由 TCP
+RTT ≈150ms 稳定、10/10 无丢包（ICMP 被 CHA 云防火墙屏蔽）→ 网络分类
+`ACCEPTABLE FOR CANARY`；TCP 5432 对公网未开放（CHA 侧已确认关闭）。
+待关闭项（REVIEW REQUIRED）：Aliyun Security Group 5432 公网关闭与 SSH
+受限（OS 层 ufw/iptables 为空、依赖安全组）、Aliyun 安装 Tailscale 接入
+tailnet、Aliyun 增加 swap、CHA SSH 本次认证被限流需复确认 + 直接
+CHA→Aliyun TCP 探针与真实 Dashboard 延迟实测、备份位置确认。
+详见 `docs/aee/M4_P3_2_ALIYUN_PG_PREFLIGHT_20260816.md`。）
 
 名称：
 
@@ -1831,25 +1839,25 @@ M4 Done Criteria：
 
 * `ACTIVE MILESTONE: M4`。
 * 状态：`M4 ACTIVE / P2.5 PASS / P3 FOUNDATION PASS / P3.1 PASS /
-  P3.2 BLOCKED — PRODUCTION POSTGRESQL CAPACITY DECISION REQUIRED`
+  P3.2 IN PROGRESS — PRODUCTION POSTGRESQL SERVER PREFLIGHT: REVIEW REQUIRED`
   （不宣布 M4 COMPLETE）。
 * `M4 P3.2 — CONTROLLED PRODUCTION DATA ACTIVATION & CANARY`：
-  * 生产只读审计完成（jdair.top）：`2 vCPU / 1.9 GiB RAM`，已用 1.7 GiB、
-    可用约 244 MiB、swap 已用 752 MiB；已有 openclaw/mcs8_web_panel/
-    airamro-proxy/aon-pc-proxy/dockerd/containerd/tailscaled 等常驻服务；
-    现有备份 303 MiB 位于同一系统盘；
-  * 按授权范围（容量不足不得强行部署）停止部署：未安装 PG、未应用
-    migration、未启用 scheduler/allowlist/Inspection、未写生产 Secret；
-  * 输出 `PRODUCTION POSTGRESQL CAPACITY DECISION REQUIRED`。
-* 生产数据激活：`AUTHORIZED — CONTROLLED CANARY ONLY`（但受容量闸门阻塞）。
+  * Aliyun Silicon Valley PG 候选服务器只读 preflight 完成：干净专用节点
+    （2 vCPU / 1.6 GiB 无 swap / 35 G 可用 / 仅 sshd+Aliyun agent）；
+  * CHA↔Aliyun 网络基线：TCP RTT ≈150ms 稳定、10/10 无丢包；ICMP 被 CHA
+    云防火墙屏蔽 → `ACCEPTABLE FOR CANARY`；
+  * 未安装任何软件、未改生产；`REVIEW REQUIRED` 待关闭项已列出。
+* 生产数据激活：`AUTHORIZED — CONTROLLED CANARY ONLY`（受 preflight 闸门
+  约束）。
 
 ## Next
 
-1. `P3.2` 阻塞：`PRODUCTION POSTGRESQL CAPACITY DECISION REQUIRED`。需项目
-   负责人决策：a) 云端托管 PostgreSQL；b) 独立 PG 服务器；c) 升级 CHA 主机
-   内存（建议 ≥4 GiB，最好 8 GiB）+ 分离备份盘；或组合方案；并指定非系统盘
-   备份位置。
-2. 容量决策后：生产完整备份（时间戳 + SHA256 manifest + rollback point）
+1. `P3.2` preflight 待关闭项：Aliyun Security Group（SSH 受限、5432 公网
+   关闭）、Aliyun 安装 Tailscale 接入 tailnet、Aliyun 增加 swap、CHA SSH
+   复确认 + 直接 CHA→Aliyun TCP 探针与真实 Dashboard 延迟实测、备份位置
+   确认。关闭后重新评估 → `PRODUCTION POSTGRESQL SERVER PREFLIGHT PASS`
+   或保持 REVIEW REQUIRED。
+2. 关闭后：生产完整备份（时间戳 + SHA256 manifest + rollback point）
    → PG 初始化/migration 0001+0002 → secret 注入 → 生产 ONE SHOT → 幂等/
    对账 → LOW-RATE scheduler → AuthorizedUser Canary → Inspection Canary
    → 备份/监控/kill switch。
