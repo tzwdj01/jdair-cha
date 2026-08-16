@@ -212,7 +212,9 @@ def aggregate_device_uptime(
     metrics: list[DeviceUptimeMetric] = []
     duplicate_event_count = 0
     for device_id, source_events in grouped.items():
-        events = _deduplicate_online_events(source_events)
+        events, dedup_multi_source = _deduplicate_online_events(
+            source_events
+        )
         duplicate_event_count += len(source_events) - len(events)
         events.sort(
             key=lambda item: (
@@ -252,6 +254,13 @@ def aggregate_device_uptime(
             flags.add("online_at_window_start")
         if invalid_by_device.get(device_id):
             flags.add("invalid_rows_ignored")
+        if dedup_multi_source:
+            # LIVE VERIFIED 2026-08-16: the same (device, time, status) can be
+            # emitted more than once with a different source id but identical
+            # content (source-level redundancy). Storage keeps every source
+            # row; the interval metric dedups them and this flag makes the
+            # redundancy class explicit instead of silent.
+            flags.add("same_time_status_multi_source_dedup")
 
         for event in in_window:
             if current_online is True:
@@ -881,12 +890,17 @@ def _aggregate_view_dimensions(
 
 def _deduplicate_online_events(
     events: Iterable[_OnlineEvent],
-) -> list[_OnlineEvent]:
+) -> tuple[list[_OnlineEvent], bool]:
     unique: dict[tuple[str, dt.datetime, int], _OnlineEvent] = {}
+    removed_multi_source = False
     for event in events:
         key = (event.device_id, event.occurred_at, event.status)
-        unique.setdefault(key, event)
-    return list(unique.values())
+        existing = unique.get(key)
+        if existing is None:
+            unique[key] = event
+        elif existing.source_id != event.source_id:
+            removed_multi_source = True
+    return list(unique.values()), removed_multi_source
 
 
 def _valid_location_event(event: DeviceLocationEvent) -> bool:

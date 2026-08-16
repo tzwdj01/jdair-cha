@@ -85,6 +85,50 @@ class DeviceUptimeMetricTests(unittest.TestCase):
             metric.quality_flags,
         )
 
+    def test_multi_source_same_time_status_dedup_is_explicit(self) -> None:
+        rows = [
+            {
+                "id": "a",
+                "devId": "WX1",
+                "groupId": "G1",
+                "status": 1,
+                "time": "2026-08-15 08:00:00",
+            },
+            {
+                # same device/time/status, different source id, identical
+                # content -> source-level redundancy, explicitly flagged.
+                "id": "b",
+                "devId": "WX1",
+                "groupId": "G1",
+                "status": 1,
+                "time": "2026-08-15 08:00:00",
+            },
+        ]
+        result = aggregate_device_uptime(
+            rows,
+            window_start=dt.datetime(
+                2026,
+                8,
+                15,
+                0,
+                tzinfo=BUSINESS_TZ,
+            ),
+            window_end=dt.datetime(
+                2026,
+                8,
+                15,
+                16,
+                tzinfo=BUSINESS_TZ,
+            ),
+            source_timezone=BUSINESS_TZ,
+        )
+        self.assertEqual(result.duplicate_event_count, 1)
+        metric = result.devices[0]
+        self.assertIn(
+            "same_time_status_multi_source_dedup",
+            metric.quality_flags,
+        )
+
     def test_pre_window_event_seeds_initial_online_state(self) -> None:
         rows = [
             {

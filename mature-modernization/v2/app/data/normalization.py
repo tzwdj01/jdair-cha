@@ -7,6 +7,7 @@ from typing import Any, Iterable, Mapping
 
 
 UTC = dt.timezone.utc
+EPOCH_ZERO_DATE = dt.date(1970, 1, 1)
 MEDIA_KIND_BY_CODE = {
     1: "image",
     2: "audio",
@@ -451,12 +452,19 @@ def normalize_media_files(
         elif raw_duration is not None and duration_seconds is None:
             flags.add("invalid_video_duration_ignored")
 
+        # LIVE VERIFIED 2026-08-16: RecordFileList occasionally carries a
+        # missing-capture-time sentinel ``1970-01-01 08:00:00`` (business-local,
+        # i.e. epoch-zero UTC) in ``startTime``/``fileTime``. Such a value is a
+        # sentinel, not a real capture time; mapping it to ``None`` keeps
+        # range queries and PostgreSQL indexes honest (the row remains
+        # queryable by its valid upload time).
         created_at_source = _optional_source_time(
             _first_value(
                 row,
                 ("fileTime", "startTime", "beginTime"),
             ),
             source_timezone=source_timezone,
+            reject_epoch_zero=True,
         )
         if (
             _first_value(
@@ -466,7 +474,15 @@ def normalize_media_files(
             is not None
             and created_at_source is None
         ):
-            flags.add("invalid_created_time_ignored")
+            if _is_epoch_zero_source_text(
+                _first_value(
+                    row,
+                    ("fileTime", "startTime", "beginTime"),
+                )
+            ):
+                flags.add("epoch_zero_source_time_ignored")
+            else:
+                flags.add("invalid_created_time_ignored")
 
         uploaded_at_source = _optional_source_time(
             _first_value(
@@ -474,6 +490,7 @@ def normalize_media_files(
                 ("upLoadTime", "uploadTime", "endTime"),
             ),
             source_timezone=source_timezone,
+            reject_epoch_zero=True,
         )
         if (
             _first_value(
@@ -483,7 +500,15 @@ def normalize_media_files(
             is not None
             and uploaded_at_source is None
         ):
-            flags.add("invalid_uploaded_time_ignored")
+            if _is_epoch_zero_source_text(
+                _first_value(
+                    row,
+                    ("upLoadTime", "uploadTime", "endTime"),
+                )
+            ):
+                flags.add("epoch_zero_source_time_ignored")
+            else:
+                flags.add("invalid_uploaded_time_ignored")
 
         # LIVE VERIFIED 2026-08-16: RecordFileList rows carry ``endTime``
         # (capture end, non-null, e.g. startTime 04:11:33 + 301s -> endTime
@@ -494,6 +519,7 @@ def normalize_media_files(
                 ("endTime", "finishTime", "end_time"),
             ),
             source_timezone=source_timezone,
+            reject_epoch_zero=True,
         )
         if (
             _first_value(
@@ -503,7 +529,15 @@ def normalize_media_files(
             is not None
             and end_at_source is None
         ):
-            flags.add("invalid_end_time_ignored")
+            if _is_epoch_zero_source_text(
+                _first_value(
+                    row,
+                    ("endTime", "finishTime", "end_time"),
+                )
+            ):
+                flags.add("epoch_zero_source_time_ignored")
+            else:
+                flags.add("invalid_end_time_ignored")
         if created_at_source is None and uploaded_at_source is None:
             flags.add("media_time_missing")
 
@@ -755,6 +789,7 @@ def _optional_source_time(
     value: Any,
     *,
     source_timezone: dt.tzinfo,
+    reject_epoch_zero: bool = False,
 ) -> dt.datetime | None:
     if value is None or value == "":
         return None
@@ -771,7 +806,16 @@ def _optional_source_time(
         return None
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=source_timezone)
-    return parsed.astimezone(UTC)
+    parsed_utc = parsed.astimezone(UTC)
+    if reject_epoch_zero and parsed_utc.date() == EPOCH_ZERO_DATE:
+        return None
+    return parsed_utc
+
+
+def _is_epoch_zero_source_text(value: Any) -> bool:
+    """True when the raw source text looks like the epoch-zero sentinel."""
+
+    return isinstance(value, str) and "1970-01-01" in value.strip()
 
 
 def _require_aware(value: dt.datetime, name: str) -> dt.datetime:
