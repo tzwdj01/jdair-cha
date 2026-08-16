@@ -327,6 +327,16 @@ class InspectionAPITests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status_code, 200)
         payload = response.json()
         self.assertTrue(payload["data"]["store_configured"])
+        meta = payload["data"]["meta"]
+        self.assertIsNotNone(meta["generated_at"])
+        self.assertIsNotNone(
+            meta["freshness"]["latest_occurred_at"]
+        )
+        self.assertIn("complete", meta["quality"])
+        self.assertIn(
+            "quality_flags",
+            meta["quality"],
+        )
         overview = payload["data"]["overview"]
         self.assertEqual(overview["current_online_count"], 1)
         self.assertEqual(overview["current_unknown_count"], 1)
@@ -346,6 +356,14 @@ class InspectionAPITests(unittest.IsolatedAsyncioTestCase):
             ),
         )
         self.assertEqual(media.status_code, 200)
+        media_meta = media.json()["data"]["meta"]
+        self.assertIsNotNone(
+            media_meta["freshness"]["latest_uploaded_at"]
+        )
+        self.assertIsNotNone(
+            media_meta["freshness"]["latest_created_at"]
+        )
+        self.assertFalse(media_meta["quality"]["partial"])
         media_overview = media.json()["data"]["overview"]["media"]
         self.assertEqual(media_overview["devices"][0]["video_count"], 1)
         self.assertEqual(
@@ -365,6 +383,14 @@ class InspectionAPITests(unittest.IsolatedAsyncioTestCase):
             ),
         )
         self.assertEqual(realtime.status_code, 200)
+        realtime_meta = realtime.json()["data"]["meta"]
+        self.assertIsNotNone(
+            realtime_meta["freshness"]["latest_closed_at"]
+        )
+        self.assertEqual(
+            realtime_meta["quality"]["event_count"],
+            1,
+        )
         aggregation = realtime.json()["data"]["overview"]["aggregation"]
         self.assertEqual(aggregation["event_count"], 1)
         self.assertEqual(aggregation["played_count"], 1)
@@ -380,6 +406,8 @@ class InspectionAPITests(unittest.IsolatedAsyncioTestCase):
             ),
         )
         self.assertEqual(response.status_code, 200)
+        alarm_meta = response.json()["data"]["meta"]
+        self.assertEqual(alarm_meta["quality"]["alarm_count"], 1)
         aggregation = response.json()["data"]["overview"]["aggregation"]
         self.assertEqual(aggregation["alarm_count"], 1)
         self.assertEqual(

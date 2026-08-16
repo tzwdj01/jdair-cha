@@ -346,6 +346,8 @@ def _validate_media(item: MediaFile) -> None:
     _require_times(item, ("observed_at", "ingested_at"))
     if item.created_at_source is not None:
         _aware(item.created_at_source, "created_at_source")
+    if item.end_at_source is not None:
+        _aware(item.end_at_source, "end_at_source")
     if item.uploaded_at_source is not None:
         _aware(item.uploaded_at_source, "uploaded_at_source")
 

@@ -334,6 +334,7 @@ class MediaFileNormalizationTests(unittest.TestCase):
                     "fileSize": 4096,
                     "videoTime": 125,
                     "startTime": "2026-08-15 08:00:00",
+                    "endTime": "2026-08-15 08:02:05",
                     "uploadTime": "2026-08-15 08:05:00",
                     "workNo": "WORK-1",
                 }
@@ -354,6 +355,10 @@ class MediaFileNormalizationTests(unittest.TestCase):
         self.assertEqual(
             item.created_at_source,
             dt.datetime(2026, 8, 15, 0, tzinfo=UTC),
+        )
+        self.assertEqual(
+            item.end_at_source,
+            dt.datetime(2026, 8, 15, 0, 2, 5, tzinfo=UTC),
         )
         self.assertIn(
             "source_id_scope_unverified",
@@ -410,6 +415,7 @@ class MediaFileNormalizationTests(unittest.TestCase):
                     "fileLen": -1,
                     "duration": "bad",
                     "fileTime": "not-a-time",
+                    "endTime": "also-not-a-time",
                     "upLoadTime": "also-not-a-time",
                     "isDeleted": "maybe",
                 },
@@ -432,6 +438,10 @@ class MediaFileNormalizationTests(unittest.TestCase):
         )
         self.assertIn(
             "invalid_created_time_ignored",
+            item.quality_flags,
+        )
+        self.assertIn(
+            "invalid_end_time_ignored",
             item.quality_flags,
         )
         self.assertIn(

@@ -98,6 +98,7 @@ class RealtimeOverview:
     scope_start: dt.datetime
     scope_end: dt.datetime
     aggregation: RealtimeViewAggregationResult
+    latest_closed_at: dt.datetime | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -106,6 +107,7 @@ class AlarmOverview:
     scope_start: dt.datetime
     scope_end: dt.datetime
     aggregation: AlarmAggregationResult
+    latest_occurred_at: dt.datetime | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -156,6 +158,7 @@ class TableQuality:
 
 @dataclass(frozen=True, slots=True)
 class DataQualityOverview:
+    generated_at: dt.datetime
     scope_start: dt.datetime
     scope_end: dt.datetime
     tables: tuple[TableQuality, ...]
@@ -336,6 +339,13 @@ class InspectionDataService:
             scope_start=_aware(start).astimezone(UTC),
             scope_end=_aware(end).astimezone(UTC),
             aggregation=aggregate_realtime_views(events),
+            latest_closed_at=max(
+                (
+                    event.closed_at.astimezone(UTC)
+                    for event in events
+                ),
+                default=None,
+            ),
         )
 
     async def alarm_overview(
@@ -355,6 +365,13 @@ class InspectionDataService:
             scope_start=_aware(start).astimezone(UTC),
             scope_end=_aware(end).astimezone(UTC),
             aggregation=aggregate_alarm_events(events),
+            latest_occurred_at=max(
+                (
+                    event.occurred_at.astimezone(UTC)
+                    for event in events
+                ),
+                default=None,
+            ),
         )
 
     async def location_overview(
@@ -571,6 +588,7 @@ class InspectionDataService:
                     flag_counts[flag] += 1
 
         return DataQualityOverview(
+            generated_at=dt.datetime.now(UTC),
             scope_start=start_utc,
             scope_end=end_utc,
             tables=tables,

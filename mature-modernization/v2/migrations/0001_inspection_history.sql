@@ -86,6 +86,7 @@ CREATE TABLE IF NOT EXISTS media_files (
     file_size_bytes BIGINT,
     duration_seconds INTEGER,
     created_at_source TIMESTAMPTZ,
+    end_at_source TIMESTAMPTZ,
     uploaded_at_source TIMESTAMPTZ,
     work_no TEXT,
     people_no TEXT,
@@ -105,6 +106,9 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_media_source_identity
 
 CREATE INDEX IF NOT EXISTS ix_media_device_created
     ON media_files (device_id, created_at_source);
+
+CREATE INDEX IF NOT EXISTS ix_media_device_end
+    ON media_files (device_id, end_at_source);
 
 CREATE INDEX IF NOT EXISTS ix_media_device_uploaded
     ON media_files (device_id, uploaded_at_source);

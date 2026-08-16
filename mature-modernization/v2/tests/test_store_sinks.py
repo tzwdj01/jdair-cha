@@ -148,8 +148,11 @@ class StoreViewEventSinkManagerIntegrationTests(unittest.IsolatedAsyncioTestCase
             owner_key="owner-a",
         )
 
-        start = dt.datetime(2026, 8, 15, 0, tzinfo=UTC)
-        end = dt.datetime(2026, 8, 16, 0, tzinfo=UTC)
+        # The manager timestamps events with the current wall clock, so the
+        # fetch window must be relative to now rather than a fixed past date.
+        now_utc = dt.datetime.now(UTC)
+        start = now_utc - dt.timedelta(days=1)
+        end = now_utc + dt.timedelta(days=1)
         rows = await store.fetch_realtime_view_events(
             start=start,
             end=end,

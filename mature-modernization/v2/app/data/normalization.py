@@ -84,6 +84,7 @@ class MediaFile:
     file_size_bytes: int | None
     duration_seconds: int | None
     created_at_source: dt.datetime | None
+    end_at_source: dt.datetime | None
     uploaded_at_source: dt.datetime | None
     work_no: str | None
     people_no: str | None
@@ -483,6 +484,26 @@ def normalize_media_files(
             and uploaded_at_source is None
         ):
             flags.add("invalid_uploaded_time_ignored")
+
+        # LIVE VERIFIED 2026-08-16: RecordFileList rows carry ``endTime``
+        # (capture end, non-null, e.g. startTime 04:11:33 + 301s -> endTime
+        # 04:16:33). It is stored as ``end_at_source`` for range analysis.
+        end_at_source = _optional_source_time(
+            _first_value(
+                row,
+                ("endTime", "finishTime", "end_time"),
+            ),
+            source_timezone=source_timezone,
+        )
+        if (
+            _first_value(
+                row,
+                ("endTime", "finishTime", "end_time"),
+            )
+            is not None
+            and end_at_source is None
+        ):
+            flags.add("invalid_end_time_ignored")
         if created_at_source is None and uploaded_at_source is None:
             flags.add("media_time_missing")
 
@@ -528,6 +549,7 @@ def normalize_media_files(
                 file_size_bytes=file_size_bytes,
                 duration_seconds=duration_seconds,
                 created_at_source=created_at_source,
+                end_at_source=end_at_source,
                 uploaded_at_source=uploaded_at_source,
                 work_no=_optional_text(row.get("workNo")),
                 people_no=(
