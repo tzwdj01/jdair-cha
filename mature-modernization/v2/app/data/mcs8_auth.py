@@ -119,7 +119,12 @@ class MCS8ServerAuthProvider:
         self._username = username.strip()
         self._password = password
         self._timeout_seconds = timeout_seconds
-        self._socket_factory = socket_factory or socket.create_connection
+        self._socket_factory = socket_factory or (
+            lambda host, port: socket.create_connection(
+                (host, port),
+                timeout=self._timeout_seconds,
+            )
+        )
         self._token: str | None = None
         self._connect_info: dict[str, Any] = {}
         self._last_login_at: float | None = None

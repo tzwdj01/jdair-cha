@@ -145,6 +145,12 @@ class MCS8DataHTTPClient:
                 "MCS8_DATA_INVALID_RESPONSE",
                 "MCS8 data endpoint returned invalid JSON",
             ) from exc
+        if isinstance(payload, list):
+            # GetDevListByGroupId returns the device rows directly as a
+            # top-level JSON array (not a paginated envelope). Wrap it so the
+            # dict-envelope contract holds for callers; the adapter already
+            # reads ``data`` for list payloads.
+            return {"data": payload}
         if not isinstance(payload, dict):
             raise AEEDataHTTPError(
                 "MCS8_DATA_INVALID_RESPONSE",
