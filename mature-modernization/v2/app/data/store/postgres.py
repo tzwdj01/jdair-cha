@@ -206,6 +206,59 @@ class PostgresInspectionStore(InspectionStore):
             for row in rows
         )
 
+    async def fetch_latest_device_statuses(
+        self,
+        *,
+        device_ids: Iterable[str] | None = None,
+        source_system: str | None = None,
+    ) -> dict[str, DeviceStatusEvent]:
+        return await asyncio.to_thread(
+            self._fetch_latest_device_statuses_sync,
+            _id_set(device_ids),
+            source_system,
+        )
+
+    def _fetch_latest_device_statuses_sync(
+        self,
+        device_ids: set[str] | None,
+        source_system: str | None,
+    ) -> dict[str, DeviceStatusEvent]:
+        clauses: list[str] = []
+        params: list[Any] = []
+        if device_ids:
+            clauses.append("device_id = ANY(%s)")
+            params.append(list(device_ids))
+        if source_system:
+            clauses.append("source_system = %s")
+            params.append(source_system)
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        sql = f"""
+        SELECT DISTINCT ON (device_id)
+               source_system, source_record_id, device_id, group_id,
+               device_type_code, status_code, online, occurred_at,
+               observed_at, ingested_at, quality_flags
+        FROM {self._qualify('device_status_events')}
+        {where}
+        ORDER BY device_id, occurred_at DESC, observed_at DESC, ingested_at DESC
+        """
+        rows = self._select(sql, params)
+        return {
+            row[2]: DeviceStatusEvent(
+                source_system=row[0],
+                source_record_id=row[1],
+                device_id=row[2],
+                group_id=row[3],
+                device_type_code=row[4],
+                status_code=row[5],
+                online=row[6],
+                occurred_at=_utc(row[7]),
+                observed_at=_utc(row[8]),
+                ingested_at=_utc(row[9]),
+                quality_flags=tuple(row[10] or ()),
+            )
+            for row in rows
+        }
+
     async def upsert_device_location_events(
         self,
         events: Iterable[DeviceLocationEvent],

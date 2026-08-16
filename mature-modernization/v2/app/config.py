@@ -143,6 +143,13 @@ class Settings:
     aee_password: str
     aee_login_timeout_seconds: float
     aee_connect_timeout_seconds: float
+    mcs8_host: str
+    mcs8_ws_port: int
+    mcs8_api_port: int
+    mcs8_username: str
+    mcs8_password: str
+    mcs8_timeout_seconds: float
+    mcs8_login_timeout_seconds: float
     feature_dashboard_v2: bool
     feature_realtime_readonly: bool
     feature_realtime_audio: bool
@@ -180,6 +187,23 @@ class Settings:
         return (
             self.realtime_aee_is_configured()
             and self.realtime_canary_is_configured()
+        )
+
+    def mcs8_is_configured(self) -> bool:
+        """True when the MCS8 native server-side data channel is configured.
+
+        The MCS8 native channel is the supported server-side data path for
+        DEVICE snapshot / MEDIA / ALARM collection (identified in
+        ``M4_P3_2_ACCESS_PATH_DIAGNOSTIC_20260816.md``). Credentials live only
+        in the protected environment; no value is logged or exposed here.
+        """
+
+        return bool(
+            self.mcs8_host
+            and self.mcs8_ws_port > 0
+            and self.mcs8_api_port > 0
+            and self.mcs8_username
+            and self.mcs8_password
         )
 
     @classmethod
@@ -330,6 +354,19 @@ class Settings:
             ),
             aee_connect_timeout_seconds=env_float(
                 "CHA_V2_AEE_CONNECT_TIMEOUT_SECONDS",
+                15.0,
+            ),
+            mcs8_host=os.getenv("CHA_V2_MCS8_HOST", "").strip(),
+            mcs8_ws_port=env_int("CHA_V2_MCS8_WS_PORT", 7711),
+            mcs8_api_port=env_int("CHA_V2_MCS8_API_PORT", 7712),
+            mcs8_username=os.getenv("CHA_V2_MCS8_USERNAME", "").strip(),
+            mcs8_password=os.getenv("CHA_V2_MCS8_PASSWORD", ""),
+            mcs8_timeout_seconds=env_float(
+                "CHA_V2_MCS8_TIMEOUT_SECONDS",
+                20.0,
+            ),
+            mcs8_login_timeout_seconds=env_float(
+                "CHA_V2_MCS8_LOGIN_TIMEOUT_SECONDS",
                 15.0,
             ),
             feature_dashboard_v2=env_bool("CHA_V2_FEATURE_DASHBOARD_V2"),

@@ -218,6 +218,95 @@ def normalize_device_status_events(
     )
 
 
+def normalize_mcs8_device_snapshot(
+    rows: Iterable[Mapping[str, Any]],
+    *,
+    observed_at: dt.datetime,
+    ingested_at: dt.datetime,
+) -> DeviceStatusNormalizationResult:
+    """Normalize an MCS8 ``GetDevListByGroupId`` current-status snapshot.
+
+    MCS8 native ``GetDevListByGroupId`` returns the **current** device status
+    (``nOnline`` = online/offline) at snapshot time. This is a status snapshot,
+    NOT a historical transition feed (unlike AEE ``DevOnlineList``). Every
+    output event is a candidate current-state observation; the caller decides
+    whether it represents an initial observation or a polling-observed
+    transition by comparing against the store's latest known state.
+
+    ``occurred_at`` is set equal to ``observed_at`` because a snapshot has no
+    independent upstream event time; the observation time is the state time.
+    """
+
+    observed, ingested = _normalize_lifecycle_times(
+        observed_at,
+        ingested_at,
+    )
+    source_rows = list(rows)
+    events: list[DeviceStatusEvent] = []
+    invalid_row_count = 0
+
+    for row in source_rows:
+        device_id = _optional_text(
+            _first_value(row, ("szIDNO", "devId", "DevId"))
+        )
+        raw_online = _first_value(row, ("nOnline", "online"))
+        online_code = _optional_int(raw_online)
+        if not device_id or online_code is None:
+            invalid_row_count += 1
+            continue
+
+        flags: set[str] = {
+            "mcs8_device_snapshot",
+            "snapshot_no_upstream_event_time",
+        }
+        online: bool | None
+        if online_code == 1:
+            online = True
+        elif online_code == 0:
+            online = False
+        else:
+            online = None
+            flags.add("non_online_status_map_partial")
+            flags.add("online_state_unknown")
+
+        raw_device_type = _first_value(row, ("deviceType", "nDevType"))
+        device_type_code = _optional_int(raw_device_type)
+        if _is_present(raw_device_type) and device_type_code is None:
+            flags.add("invalid_device_type_ignored")
+
+        events.append(
+            DeviceStatusEvent(
+                source_system="mcs8",
+                source_record_id=None,
+                device_id=device_id,
+                group_id=_optional_text(row.get("groupId")),
+                device_type_code=device_type_code,
+                status_code=online_code,
+                online=online,
+                occurred_at=observed,
+                observed_at=observed,
+                ingested_at=ingested,
+                quality_flags=tuple(sorted(flags)),
+            )
+        )
+
+    result_flags: set[str] = set()
+    if invalid_row_count:
+        result_flags.add("invalid_rows_ignored")
+    if any(
+        "non_online_status_map_partial" in event.quality_flags
+        for event in events
+    ):
+        result_flags.add("non_online_status_map_partial")
+
+    return DeviceStatusNormalizationResult(
+        events=tuple(events),
+        source_row_count=len(source_rows),
+        invalid_row_count=invalid_row_count,
+        quality_flags=tuple(sorted(result_flags)),
+    )
+
+
 def normalize_device_location_events(
     rows: Iterable[Mapping[str, Any]],
     *,
@@ -389,6 +478,7 @@ def normalize_media_files(
     observed_at: dt.datetime,
     ingested_at: dt.datetime,
     include_restricted: bool = False,
+    source_system: str = "aee",
 ) -> MediaFileNormalizationResult:
     observed, ingested = _normalize_lifecycle_times(
         observed_at,
@@ -559,7 +649,7 @@ def normalize_media_files(
 
         files.append(
             MediaFile(
-                source_system="aee",
+                source_system=source_system,
                 source_record_id=source_record_id,
                 device_id=device_id,
                 group_id=_optional_text(row.get("groupId")),
@@ -635,6 +725,7 @@ def normalize_alarm_events(
     observed_at: dt.datetime,
     ingested_at: dt.datetime,
     include_restricted: bool = False,
+    source_system: str = "aee",
 ) -> AlarmNormalizationResult:
     observed, ingested = _normalize_lifecycle_times(
         observed_at,
@@ -735,7 +826,7 @@ def normalize_alarm_events(
 
         events.append(
             AlarmEvent(
-                source_system="aee",
+                source_system=source_system,
                 source_record_id=source_record_id,
                 device_id=device_id,
                 group_id=_optional_text(row.get("groupId")),
