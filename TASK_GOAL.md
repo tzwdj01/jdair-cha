@@ -480,14 +480,16 @@ Realtime 产品范围冻结：
 
 ## M4 — Inspection Data Center & AEE Data Capability Integration
 
-状态：`M4 ACTIVE / P2 DATA PATH VALIDATED / P2.5 PERSISTENCE & COLLECTION READINESS IN PROGRESS`
+状态：`M4 ACTIVE / P2 DATA PATH VALIDATED / P2.5 BLOCKED — POSTGRESQL ENVIRONMENT REQUIRED`
 
 （不得宣布 M4 COMPLETE。P0 数据能力获取已在授权 AEE 会话下完成 live 验证，
 AEE 数据 API 已确认 TOKEN-ONLY / 无 Cookie 可用；P1 历史数据 contract /
 repository / 指标 / Dashboard API 已具备；P2 真实 ONE SHOT 数据链路已
-验证（DATA PATH VALIDATED）。当前执行 M4 P2.5 — PERSISTENCE & COLLECTION
-READINESS：PostgreSQL 真机 rehearsal、source identity/idempotency 风险收口、
-非生产 low-rate scheduler soak。Production activation 未授权。）
+验证（DATA PATH VALIDATED）。M4 P2.5 — PERSISTENCE & COLLECTION READINESS
+的 identity/dedup 审计、RealtimeView persistence contract、memory/live
+ingestion 与 metrics reconciliation 均 PASS；当前唯一未验证项为真实
+PostgreSQL persistence，等待项目负责人提供安全隔离 PostgreSQL 环境
+（OWNER ACTION REQUIRED）。Production activation 未授权。）
 
 名称：
 
@@ -1708,8 +1710,8 @@ M4 Done Criteria：
 ## In Progress
 
 * `ACTIVE MILESTONE: M4`。
-* 状态：`M4 ACTIVE / P2 DATA PATH VALIDATED / P2.5 IN PROGRESS`
-  （不宣布 M4 COMPLETE）。
+* 状态：`M4 ACTIVE / P2 DATA PATH VALIDATED / P2.5 BLOCKED — POSTGRESQL
+  ENVIRONMENT REQUIRED`（不宣布 M4 COMPLETE）。
 * `M4 P2.5 — PERSISTENCE & COLLECTION READINESS`：
   * source identity / idempotency 风险收口（Media identity、Device dedup
     审计）已完成；
