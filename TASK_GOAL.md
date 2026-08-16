@@ -378,6 +378,42 @@ Last updated: 2026-08-16
   TOKEN-ONLY VERIFIED / LONG-LIVED SERVER TOKEN LIFECYCLE NOT YET
   LIVE-SOAK VERIFIED）。
 * 当前全量 V2 自动化回归为 `225 tests PASS`。
+* P3.1（2026-08-16）：CHA live `/api/flights`（total=39）与
+  `/api/routine-tasks`（total=48）字段取证完成；`taskid`/`flightId`/`acno`/
+  `flightNo`/`std`/`sta`/`atd`/`ata`/`taskTypeName`/`taskstsName`/`bay`/
+  `startPlanDate`/`outFlightNo`/`outDate`/`dep3code`/`arr3code` 等定级
+  AVAILABLE；`fxWorker`/`wxWorker`/`*Emp` RESTRICTED（值未持久化）。
+* P3.1：`InspectionBusinessCandidateService`（SOURCE_DIRECT 候选 + DERIVED
+  辅助）+ `AuthorizedUser` admin 管理（list/add/enable/disable + 审计）+
+  Realtime“记录监察结果”入口 + PG-backed 全链路 rehearsal 全部 PASS。
+* 当前全量 V2 回归 `231 tests PASS`。
+* `M4 P3.1 — INSPECTION WORKFLOW INTEGRATION & BUSINESS DATA VERIFICATION`
+  已启动（P2.5 PASS / P3 product foundation PASS / Production activation
+  NOT AUTHORIZED；PRODUCTION ACTIVATION READINESS: CONDITIONAL）。
+* P3.1 live 业务字段取证（授权 CHA 会话，cha.jdair.top，只读）：
+  `/api/flights`（2026-08-16 total=39）与 `/api/routine-tasks`
+  （total=48）真实字段已捕获；`flightId/acno/flightNo/std/sta/etd/atd/
+  eta/ata/dep3code/arr3code` 与 `taskid/acno/taskTypeName/taskstsName/
+  bay/startPlanDate/outFlightNo/outDate` 等定级 AVAILABLE；
+  `fxWorker/wxWorker/fxWorkerEmp/wxWorkerEmp` 定级 RESTRICTED（值未持久化）；
+  `dorI/dd/fc/oxygen*` 等 UNKNOWN/PARTIAL。详见
+  `docs/aee/M4_P3_FLIGHTS_ROUTINE_TASKS_EVIDENCE.md` 与
+  `DATA_AVAILABILITY_MATRIX.md` §8.1/8.2。
+* P3.1 `InspectionBusinessCandidateService` 已实现：按监察时间/设备/可选
+  飞机/站点返回 Routine Task / Flight 候选（SOURCE_DIRECT；DERIVED 仅辅助，
+  不自动确认）；`sanitize_task_raw` 剔除人员字段；已测试。
+* P3.1 `AuthorizedUser` 管理最小闭环：admin-only
+  list/add/enable/disable + `authorized_user_audit_events` 审计
+  （operator/timestamp/target/action），普通用户 403；已测试。
+* P3.1 Realtime 页面“记录监察结果”入口：m3_realtime tile 新增按钮，点击
+  以当前流 device/session/stream/timestamps 创建监察草稿并跳转
+  `/dashboard/inspections`。
+* P3.1 PG-backed Inspection 全链路 rehearsal（WSL PG）：auth →
+  realtime view → create（含 view linkage）→ submit → correct（原提交信息
+  保留，audit=CREATED/SUBMITTED/CORRECTED）→ query → metrics → CSV/XLSX
+  导出（无敏感字段）→ DB 行数对账 全部 PASS。
+* Production Activation Plan 已按 P3.1 结果修订（A–K 检查清单）。
+* 当前全量 V2 自动化回归为 `232 tests PASS`。
 
 ---
 
@@ -534,7 +570,7 @@ Realtime 产品范围冻结：
 
 ## M4 — Inspection Data Center & AEE Data Capability Integration
 
-状态：`M4 ACTIVE / P2.5 PASS / P3 INSPECTION WORKFLOW & PRODUCTION DATA ACTIVATION READINESS IN PROGRESS`
+状态：`M4 ACTIVE / P2.5 PASS / P3 PRODUCT FOUNDATION PASS / P3.1 INSPECTION WORKFLOW INTEGRATION & BUSINESS DATA VERIFICATION IN PROGRESS`
 
 （不得宣布 M4 COMPLETE。P0 数据能力获取已在授权 AEE 会话下完成 live 验证，
 AEE 数据 API 已确认 TOKEN-ONLY / 无 Cookie 可用；P1 历史数据 contract /
@@ -542,9 +578,12 @@ repository / 指标 / Dashboard API 已具备；P2 真实 ONE SHOT 数据链路�
 验证（DATA PATH VALIDATED）。M4 P2.5 — PERSISTENCE & COLLECTION READINESS
 已全部 PASS：PostgreSQL rehearsal（migration/ingest/idempotency/metrics/
 backup-restore/rollback）、PG-backed Dashboard API、non-production
-LOW-RATE scheduler soak 均通过。当前执行 M4 P3 — INSPECTION WORKFLOW &
-PRODUCTION DATA ACTIVATION READINESS（产品能力允许非生产开发/验证；
-Production data activation 未授权，不得修改生产。）
+LOW-RATE scheduler soak 均通过；P3 product foundation PASS（InspectionRecord
+模型/store/service/API/Dashboard/导出/审计）。当前执行 M4 P3.1 —
+INSPECTION WORKFLOW INTEGRATION & BUSINESS DATA VERIFICATION（Realtime →
+InspectionRecord → Aircraft/Flight/Station/Routine Task → Issue →
+PostgreSQL → Query/Dashboard/Export 最后一公里）。PRODUCTION ACTIVATION
+READINESS: CONDITIONAL；Production data activation 未授权，不得修改生产。）
 
 名称：
 
@@ -1776,16 +1815,18 @@ M4 Done Criteria：
 ## In Progress
 
 * `ACTIVE MILESTONE: M4`。
-* 状态：`M4 ACTIVE / P2.5 PASS / P3 IN PROGRESS`（不宣布 M4 COMPLETE）。
-* `M4 P3 — INSPECTION WORKFLOW & PRODUCTION DATA ACTIVATION READINESS`：
-  * CHA AuthorizedUser 授权边界模型 + store（memory/postgres）已实现；
-  * InspectionRecord 模型 + migration 0002 + store + workflow service
-    （DRAFT/SUBMITTED/CORRECTED + 审计 + 修正留痕）已实现；
-  * inspection API（分页查询/详情/创建/更新/提交/修正）+ metrics +
-    CSV/XLSX 导出 + `/dashboard/inspections` 页面已实现（非生产）；
-  * Flights/Routine Tasks 字段取证文档已产出（结构化字段保持
-    UNKNOWN/DERIVABLE，不猜测）；
-  * Production Data Activation Plan 已形成提案（未执行）。
+* 状态：`M4 ACTIVE / P2.5 PASS / P3 PRODUCT FOUNDATION PASS / P3.1 IN
+  PROGRESS`（不宣布 M4 COMPLETE）。
+* `M4 P3.1 — INSPECTION WORKFLOW INTEGRATION & BUSINESS DATA VERIFICATION`：
+  * Flights/Routine Tasks **live 字段取证完成**（CHA 会话，只读；字段
+    定级见证据文档 + DATA_AVAILABILITY_MATRIX §8.1/8.2）；
+  * `InspectionBusinessCandidateService` 已实现（SOURCE_DIRECT 候选，
+    DERIVED 仅辅助）；
+  * `AuthorizedUser` admin 管理最小闭环（list/add/enable/disable + 审计）；
+  * Realtime 页面“记录监察结果”入口已接（当前流 → 监察草稿）；
+  * PG-backed Inspection 全链路 rehearsal（auth → realtime view →
+    create → submit → correct → query → metrics → CSV/XLSX → 对账）PASS；
+  * Production Activation Plan 已按 P3.1 结果修订（A–K）。
 * 生产数据激活：`NOT AUTHORIZED`；P3 产品能力：`AUTHORIZED FOR
   NON-PRODUCTION IMPLEMENTATION`。
 * 服务端 AEE token provider 生命周期/刷新仍待服务端集成验证（live
@@ -1794,15 +1835,14 @@ M4 Done Criteria：
 
 ## Next
 
-1. `P3`（进行中）：InspectionRecord 数据层/服务/API/页面/导出已完成；
-   剩余：真实 Flights/Routine Tasks 样本取证（需授权 live 会话）、
-   Inspection 创建入口与现有 realtime 页面联动、PG-backed inspections
-   Dashboard/导出 rehearsal。
-2. `P3` 待办：服务端 AEE token provider 生命周期/刷新验证（不记录
+1. `P3.1`（进行中，接近完成）：live 取证、候选服务、USER_CONFIRMED/
+   MANUAL_ENTRY、realtime 联动、authorized-user 管理、PG-backed 全链路
+   rehearsal、导出/审计 rehearsal 均已 PASS。
+2. `P3.1` 完成 gate：P3.1 Completion Gate 全项满足后输出
+   `M4 P3.1 PASS / READY FOR CONTROLLED PRODUCTION ACTIVATION`，然后停止；
+   生产激活仍 NOT AUTHORIZED。
+3. `P3.1` 待办：服务端 AEE token provider 生命周期/刷新验证（不记录
    Token/Cookie/密码）；live token-expiry 观察。
-3. `P3` 完成条件：inspection 全链路（PG 持久化 + API + Dashboard + 导出 +
-   audit）在非生产 rehearsal 验证 PASS 后，输出
-   `READY FOR CONTROLLED PRODUCTION DATA ACTIVATION` 或 `BLOCKED`。
 4. 保持 Production Realtime、Audio、Control、AccountPool 关闭；不开启
    inspection/ingestion 生产开关；不执行生产数据激活。
 

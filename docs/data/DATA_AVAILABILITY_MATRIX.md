@@ -166,6 +166,50 @@ CHA can begin collecting its own explicitly scoped events prospectively.
 | flight video coverage rate | DERIVABLE | normalized relations | current Dashboard returns `None` | define numerator/denominator |
 | task video coverage rate | DERIVABLE | normalized relations | current Dashboard returns `None` | define numerator/denominator |
 
+### 8.1 Flight row fields (LIVE VERIFIED 2026-08-16, authorized CHA session)
+
+`/api/flights` (same-origin, read-only) returned `total=39` for 2026-08-16.
+Row fields observed live:
+
+| Field | Status | Notes |
+| --- | --- | --- |
+| `flightId` | AVAILABLE | stable source id |
+| `acno` | AVAILABLE | aircraft number |
+| `flightNo` | AVAILABLE | flight number |
+| `flightDate` / `sta` / `std` / `etd` / `atd` / `eta` / `ata` | AVAILABLE | planned/estimated/actual times |
+| `dep3code` / `arr3code` | AVAILABLE | city/airport display (business location) |
+| `departureAirport` / `arrivalAirport` | AVAILABLE | airport codes (ZGSZ/ZBAD) |
+| `status` | AVAILABLE | flight status label (code map PARTIAL) |
+| `dorI` | PARTIAL / UNKNOWN | domestic/international marker |
+| `focUser` | RESTRICTED | operator reference when populated |
+| `dd` / `fc` / `nonWork` | UNKNOWN / PARTIAL | codes |
+
+### 8.2 Routine-task row fields (LIVE VERIFIED 2026-08-16)
+
+`/api/routine-tasks` returned `total=48` for 2026-08-16. Row fields observed
+live:
+
+| Field | Status | Notes |
+| --- | --- | --- |
+| `taskid` | AVAILABLE | stable task source id |
+| `acno` | AVAILABLE | aircraft number |
+| `taskType` / `taskTypeName` | AVAILABLE | task type code + label |
+| `tasksts` / `taskstsName` | AVAILABLE | task status code + label (code map partial) |
+| `bay` | AVAILABLE | bay / station-like |
+| `startPlanDate` | AVAILABLE | planned start |
+| `outFlightNo` / `outDate` / `outDateType` | AVAILABLE | outbound flight + time (date-type map partial) |
+| `inFlightNo` / `inDate` / `inDateType` | AVAILABLE | inbound flight + time (nullable) |
+| `outFlight` / `inFlight` | AVAILABLE | route city display (business location) |
+| `acType` / `engType` | AVAILABLE | aircraft/engine type |
+| `flightDate` / `cobt` | AVAILABLE / PARTIAL | task flight date / pushback time |
+| `workPackage` | PARTIAL / UNKNOWN | work package |
+| `dd` / `fc` / `nonWork` / `doneNonWork` / `repeatWork` | UNKNOWN / PARTIAL | codes |
+| `alarmCount` / `oxygenT` / `oxygenP` / `oxygenPb` / `oxygenY` | UNKNOWN / PARTIAL | operational codes |
+| `fxWorker` / `fxWorkerEmp` / `wxWorker` / `wxWorkerEmp` | RESTRICTED | worker names + employee numbers (not persisted) |
+
+Inspection candidate service (`InspectionBusinessCandidateService`) consumes
+the live fields above (SOURCE_DIRECT only; DERIVED remains auxiliary).
+
 ## 9. Data availability decisions
 
 1. Current online state is `AVAILABLE`. AEE online transition rows are also an
