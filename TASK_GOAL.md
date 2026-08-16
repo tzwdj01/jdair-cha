@@ -267,7 +267,40 @@ Last updated: 2026-08-16
     `error_code=SOURCE_INGEST_FAILED` 记录在报告内，不中断其它 source，
     不产生半成品状态；重试幂等（新增回归测试）；
   * 修复 `test_store_sinks.py` 中一个固定窗口 vs “now” 的时间炸弹测试。
-* 当前全量 V2 自动化回归为 `210 tests PASS`。
+* `M4 P2 — STAGING PERSISTENCE, LIVE INGESTION & METRIC VALIDATION` 已启动。
+* `2026-08-16` P2 真实 ONE SHOT vertical slice（授权 AEE 会话，浏览器内
+  脱敏抓取，不接触 Token）：
+  * `DevOnlineList` 3 天窗口 `error=200`，1857 行；
+  * `RecordFileList` 3 天窗口 `error=200`，805 行；
+  * `AlarmList` 3 天窗口 `error=200`，46 行；
+  * 管道（normalizer → memory repository → ingestor → metrics）一次摄入：
+    device_status accepted=1857 invalid=0、media accepted=805 invalid=0、
+    alarms accepted=46 invalid=0；completed=True；
+  * 同窗口二次摄入 stored 行数不膨胀（1857/803/46 保持一致；
+    media 805→803 为 source-record-id 幂等合并，2 条同源重复 id）；
+  * 设备指标对账：54 台设备，真实 `1→0→1` 案例（如 `WXB301`：
+    offline_transitions=14、`conflicting_status_same_time` 同秒冲突被显式
+    标记）、`WXB305`（offline_transitions=17）；结果 deterministic；
+  * 媒体对账：43 台设备、image=17/audio=6/video=782、
+    video_duration=251306 秒（raw seconds）、size=147,809,843,624 字节
+    （raw bytes）、partial=False；
+  * 告警对账：46 条全部保留（alarmType=2×1 / 205×44 / 206×1），
+    205/206 之外按 UNKNOWN 保留 raw value 不丢弃；
+  * 覆盖语义：requested=4 days → available=4 days → FULL。
+* 历史覆盖语义已接入 service + API + Dashboard：
+  每个 overview 返回 `coverage{requested_window_days,
+  available_coverage_days, completeness(FULL/PARTIAL/EMPTY),
+  coverage_start_date, coverage_end_date}`；7d/30d 只有少量数据时按
+  PARTIAL 展示，不伪装完整统计；Dashboard 新增 meta 条显示数据更新时间
+  （Asia/Shanghai）、数据覆盖、源数据新鲜度与质量标记。
+* 数据源隔离已实现：collector 按 source 独立收集（fail-closed /
+  fail-isolated），单源失败以 `status="error"` + `error_code` 记录，不阻塞
+  其它源；scheduler 报告显式暴露 source status / error code /
+  last_successful_at / completeness。
+* 当前全量 V2 自动化回归为 `213 tests PASS`。
+* `POSTGRESQL_REHEARSAL_BLOCKED`：当前开发环境无 Docker/PostgreSQL、
+  `psql`/`pg_dump`/`pg_restore`，无法执行真实 PostgreSQL rehearsal。
+  该 blocker 只阻塞 PostgreSQL PASS，不阻塞其它 P2 代码与验证。
 
 ---
 
@@ -424,11 +457,12 @@ Realtime 产品范围冻结：
 
 ## M4 — Inspection Data Center & AEE Data Capability Integration
 
-状态：`M4 ACTIVE / DATA ACQUISITION VERIFIED / P1 IN PROGRESS`
+状态：`M4 ACTIVE / DATA ACQUISITION VERIFIED / P1 FOUNDATIONS COMPLETE / P2 IN PROGRESS`
 
 （不得宣布 M4 COMPLETE。P0 数据能力获取已在授权 AEE 会话下完成 live 验证，
-且 AEE 数据 API 已确认 TOKEN-ONLY / 无 Cookie 可用。当前执行 M4 P1 —
-Historical Data Ingestion & First Data Products。）
+AEE 数据 API 已确认 TOKEN-ONLY / 无 Cookie 可用；P1 历史数据 contract /
+repository / 指标 / Dashboard API 已具备。当前执行 M4 P2 — STAGING
+PERSISTENCE, LIVE INGESTION & METRIC VALIDATION。）
 
 名称：
 
@@ -1446,43 +1480,47 @@ M4 Done Criteria：
   `error_code=SOURCE_INGEST_FAILED` 报告、不中断其它 source、重试幂等；
   新增失败安全回归测试。
 * 修复 `tests/test_store_sinks.py` 固定窗口 vs “now” 的时间炸弹测试。
+* P2：真实 ONE SHOT vertical slice 已执行并通过
+  （DevOnlineList 1857 / RecordFileList 805 / AlarmList 46，`error=200`；
+  二次摄入不膨胀；设备 1→0→1 与同秒冲突显式标记；媒体 raw 秒/字节对账；
+  告警 raw code 保留不丢弃）。
+* P2：数据源隔离（collector per-source fail-closed + scheduler 报告
+  source status/error_code/completeness）已实现并测试。
+* P2：历史覆盖语义（requested/available/completeness）已接入
+  service + API + Dashboard（Asia/Shanghai 展示、meta 条显示更新时间/
+  覆盖/新鲜度/质量标记）。
+* `POSTGRESQL_REHEARSAL_BLOCKED` 已登记（无隔离 PostgreSQL runtime）。
+* 当前全量 V2 回归 `213 tests PASS`。
 
 ## In Progress
 
 * `ACTIVE MILESTONE: M4`。
-* 状态：`M4 ACTIVE / DATA ACQUISITION VERIFIED / P1 IN PROGRESS`
-  （不宣布 M4 COMPLETE）。
-* `M4 P1 — Historical Data Ingestion & First Data Products`：
-  基于 live 验证的 DevOnlineList / RecordFileList / AlarmList 与 CHA
-  RealtimeViewEvent，沉淀第一批历史数据资产并输出第一批专题指标。
-* 正在把已验证的 AEE/CHA 字段语义固化为窄 contracts、normalized historical
-  records、page completeness、data-quality evidence 和确定性统计边界。
-* 正在为已完成的 DeviceStatus、DeviceLocation、MediaFile、RealtimeView 和
-  Alarm 应用层 contracts 编写 PostgreSQL schema/migration files 和
-  driver-agnostic repository 抽象及单元测试；当前不启用生产 sink，也不以
-  SQLite 或未执行 SQL 代替 PostgreSQL 验收。
-* 正在补齐 AEE HTTP Token-only sufficiency/lifecycle、device online status
-  map、alarm lifecycle/code maps/retention、media code maps 和用户活动数据证据。
-* 正在准备 PostgreSQL repository/migration 的隔离运行条件；当前尚未开始
-  production 或本地假替代 migration。
-* `P2`：Legacy media→flight/task 自动匹配已降级，仅在获得 AMRO 脱敏样例、
-  stable identity、时区证据、correction lifecycle 和人工确认正负样本后恢复。
+* 状态：`M4 ACTIVE / P2 IN PROGRESS`（不宣布 M4 COMPLETE）。
+* `M4 P2 — STAGING PERSISTENCE, LIVE INGESTION & METRIC VALIDATION`：
+  * 真实 ONE SHOT vertical slice 已完成（memory repository）；
+  * PostgreSQL rehearsal `POSTGRESQL_REHEARSAL_BLOCKED`（无隔离 runtime），
+    待隔离 PostgreSQL 环境后补齐 migration/backup/restore/rollback；
+  * 服务端 AEE token provider / secret injection 最小边界已实现，生命周期/
+    刷新待服务端集成验证；
+  * LOW-RATE CONTROLLED SCHEDULER SOAK 设计待 ONE SHOT + PostgreSQL +
+    metric reconciliation 全部 PASS 后在非生产执行。
+* `P2`：Legacy media→flight/task 自动匹配保持降级（P2），不恢复。
 
 ## Next
 
-1. `P0`（已完成）：数据能力 live 验证 + TOKEN-ONLY/无 Cookie 认证边界确认。
-2. `P0` 剩余（低优先级）：AEE 长期 Token 的服务端最小暴露与生命周期/刷新验证
-   （不记录 Token/Cookie/密码）。
-3. `P1`（进行中）：固化并测试 DeviceStatusEvent / MediaFile / RealtimeViewEvent
-   / AlarmEvent 的 contract、repository、幂等摄入与确定性指标；
-   本轮已补充 `end_at_source`、API `meta` 信封与 resilient one-shot
-   ingestion。
-4. `P1`：获得隔离 PostgreSQL 环境后执行 migration/backup/restore/rollback
-   rehearsal；当前只保留 DRAFT schema 与 repository contract。
-5. `P1`：继续 Alarm 只读取证完整 alarm/status/deal code map、生命周期、删除
-   语义和 retention；不能标记语义 VERIFIED 的保持 `UNKNOWN`。
-6. 保持 Production Realtime、Audio、Control、AccountPool 关闭；不开启
-   inspection/ingestion 生产开关。
+1. `P2`（已完成本轮）：真实 ONE SHOT vertical slice、数据源隔离、历史覆盖
+   语义、Dashboard meta 展示。
+2. `P2` 待办：获得安全隔离 PostgreSQL runtime 后执行真实
+   migration/backup/restore/rollback rehearsal（当前
+   `POSTGRESQL_REHEARSAL_BLOCKED`，只阻塞 PG PASS）。
+3. `P2` 待办：服务端 AEE token provider 生命周期/刷新验证（不记录
+   Token/Cookie/密码）。
+4. `P2` 待办：ONE SHOT + PostgreSQL + metric reconciliation 全部 PASS 后，
+   在非生产设计并执行 LOW-RATE CONTROLLED SCHEDULER SOAK（配置化周期、
+   source-level backoff、overlap window/watermark）。
+5. 保持 Production Realtime、Audio、Control、AccountPool 关闭；不开启
+   inspection/ingestion 生产开关；不执行生产数据激活（只提
+   PRODUCTION DATA ACTIVATION PLAN）。
 
 ## Blocked
 
@@ -1491,9 +1529,13 @@ M4 Done Criteria：
   `AEE VERIFICATION REQUIRED` 或 `UNKNOWN`，但不阻塞无依赖的 CHA 审计和模型设计。
 * production DB migration 在没有 rehearsal、backup、rollback 和明确授权前
   `BLOCKED`。
-* 当前开发机缺少 Docker/PostgreSQL、`psql`、`pg_dump` 和 `pg_restore`；
-  因此隔离 PostgreSQL migration/backup/restore rehearsal 在该环境
-  `BLOCKED`。这不阻塞纯 contracts、normalizer、fixture 和无数据库单元测试。
+* `POSTGRESQL_REHEARSAL_BLOCKED`：当前开发机缺少 Docker/PostgreSQL、
+  `psql`、`pg_dump` 和 `pg_restore`，因此隔离 PostgreSQL
+  migration/backup/restore rehearsal 在该环境 `BLOCKED`。
+  最小所需环境：一个安全、隔离、非生产的 PostgreSQL 实例（版本与生产规划
+  一致，建议 14+），具备只读迁移权限、备份/恢复工具链（`pg_dump`/
+  `pg_restore`）和一个可丢弃的 schema 命名空间。该 blocker 只阻塞
+  PostgreSQL PASS，不阻塞其它 P2 代码与验证。
 * 正式 AEE 数据 Adapter 的**服务端** Token provider、生命周期和刷新策略在
   形成合法服务端证据前 `BLOCKED`。浏览器 live 证据已确认数据 API 为
   `TOKEN_REQUIRED` 且 **TOKEN-ONLY / 无 Cookie 可返回数据**（`error=200`）；
