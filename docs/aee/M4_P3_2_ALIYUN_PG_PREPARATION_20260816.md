@@ -2,7 +2,50 @@
 
 Date: `2026-08-16`
 
-Status: `BLOCKED — OWNER ACTION REQUIRED — TAILSCALE AUTH`
+Status: `PRODUCTION POSTGRESQL SERVER READY FOR MIGRATION`
+
+## Update (2026-08-16, post-Tailscale auth)
+
+Owner completed Tailscale authentication; preparation continued:
+
+* Tailscale ready: Aliyun `100.117.170.25` (usa-ali) joined the tailnet with
+  CHA `100.74.86.85` (cn-edge). `tailscale ping` shows a **direct** path
+  (pong via `111.228.15.31:41641`, ~160 ms); TCP over Tailscale 40/40
+  handshakes **0% loss** (public-path baseline ~2.5%).
+* Swap: 2 GiB active (`swapon --show`), fstab persisted.
+* DNS fixed on Aliyun (systemd-resolved eth0 → 223.5.5.5/8.8.8.8); apt sources
+  switched from unreachable `mirrors.cloud.aliyuncs.com` to
+  `archive.ubuntu.com` (Aliyun intranet mirror is not reachable from this
+  US-region instance).
+* PostgreSQL 14.23 installed (Ubuntu official repo); psql/pg_dump/pg_restore
+  14.23 verified; `SELECT version()` OK.
+* Network hardening: `listen_addresses = localhost,100.117.170.25`;
+  pg_hba.conf rewritten minimal (postgres peer local; `cha_m4_app,
+  cha_m4_migrator` only from `100.74.86.85/32` scram; localhost scram;
+  reject `0.0.0.0/0` and `::/0`); public `47.251.105.9:5432` closed (own
+  public-IP vantage).
+* Production DB/roles created: `cha_m4` DB (owner `cha_m4_migrator`),
+  schema `inspection`, roles `cha_m4_app` (DML) + `cha_m4_migrator` (DDL);
+  scram connection verified over localhost for both roles. Passwords live
+  only in `/etc/cha_pg_secrets_cha_m4` (0600) on the Aliyun host.
+
+## Notes / observation required
+
+* CHA SSH (`jdair.top`) authentication is currently failing for the provided
+  credential (Aliyun host with the same password works), so the live
+  CHA-originated → Aliyun PG connection has not been exercised this session;
+  TCP path over Tailscale is 0% loss. Validate at the next gate (app wiring)
+  or once CHA SSH is available.
+* A `sing-box` process is running on the Aliyun host (existing service, ~49
+  MB RSS) — recorded as an existing service on the PG node; not modified.
+* Remote backup destination is not yet provided → marked
+  `REMOTE BACKUP DESTINATION REQUIRED BEFORE CANARY COMPLETION`.
+
+## Not performed (next gates)
+
+Migrations 0001/0002, production ONE SHOT, scheduler, AuthorizedUser,
+Inspection workflow, CHA current/nginx/systemd changes — all deferred to the
+next gate.
 
 This round prepares the Aliyun PG server (no migration / scheduler /
 Inspection workflow; no production change on CHA). PostgreSQL install is
