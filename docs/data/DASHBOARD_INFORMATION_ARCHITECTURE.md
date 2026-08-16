@@ -17,6 +17,28 @@ Realtime Video is a supporting drill-down action. The main value is:
 * device/media/flight/task relationships;
 * transparent freshness and data quality.
 
+### 1.1 Data domains (long-term, registered 2026-08-16)
+
+The final CHA Dashboard revolves around these data domains:
+
+1. 设备运行（device operations）;
+2. 视频上传（media/files）;
+3. 实时监察使用（realtime usage）;
+4. 监察业务记录（inspection records）;
+5. 告警/异常（alarms/exceptions）;
+6. 飞机/航班/维修任务（aircraft/flights/maintenance tasks）;
+7. 地点/地图（locations/map）;
+8. 数据质量（data quality）。
+
+Positioning:
+
+* 总览页负责“发现问题”；
+* 专题页负责“分析问题”；
+* Inspection 页面负责“形成监察结论和业务留痕”。
+
+Inspection records are planned in M4 P3; nothing in this section is
+implemented before P2.5 completes.
+
 ## 2. First-release pages
 
 ### `/dashboard` — Inspection overview
@@ -113,6 +135,24 @@ Add only when sources are verified:
 * `/dashboard/flights`
 * `/dashboard/map`
 * `/dashboard/data-quality`
+* `/dashboard/inspections` (planned, M4 P3) — 监察业务记录
+
+Planned `/dashboard/inspections` metrics (all computed from real
+`InspectionRecord` / `RealtimeViewEvent`, no mock KPI):
+
+* 今日监察次数、监察总时长、参与监察人数；
+* 每账号监察次数/时长；
+* 每设备被监察次数/时长；
+* 涉及飞机数量、涉及航班数量、涉及维修任务数量；
+* 发现问题次数 / 无问题次数 / 问题发现率；
+* 问题类型分布、问题设备排行、问题飞机排行、问题站点排行、问题趋势。
+
+Query scope for inspection records (P3): time range, inspector, account,
+device, aircraft_no, flight_no, station, maintenance task, has_issue,
+issue_type, issue_level.
+
+Export (P3 first phase): CSV / XLSX with permission control; never export
+Token / Cookie / Secret / internal media credential.
 
 The Legacy record “reference information” helper is not a verified coverage
 source. Its active path currently generates routine-task candidates only.

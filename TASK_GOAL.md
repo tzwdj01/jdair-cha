@@ -518,6 +518,174 @@ Realtime 所能提供的监察数据，形成 CHA 自己的长期监察数据资
 6. CHA 的最终价值是形成独有、可追溯、可验证的监察数据资产。
 7. Realtime Video 仅作为监察数据平台的业务下钻入口，不再作为 M4 主要研发方向。
 
+### M4 核心业务目标补充：CHA 独有监察业务数据模型与监察记录工作流（2026-08-16 更新）
+
+CHA 不只是复制 AEE 的设备/视频/告警能力。CHA 要在 AEE/MCS8/Legacy 数据能力
+之上，形成自己的监察业务数据关系：
+
+人员 + 设备 + 视频 + 飞机 + 地点 + 维修任务 + 问题 + 时间
+
+最终形成可长期沉淀、查询、统计、审计和导出的监察业务数据资产。该关系模型是
+M4 后半段（P3）的重要核心目标。
+
+长期关系模型：
+
+```text
+Inspector / User
+    ↓ Inspection
+    ↓ Device
+    ↓ Realtime / Historical Video
+```
+
+同时关联：Aircraft、Location / Station、Flight、Maintenance Task、Issue、
+Time。业务上允许形成：人员 → 监察某设备/视频 → 对应某架飞机 → 某个站点/
+地点 → 某个航班 → 某项维修任务 → 是否发现问题 → 问题内容 → 发生/监察时间。
+
+飞机 / 航班 / 站点 / 维修任务数据来源：
+
+* 优先从已存在的 Flights / Routine Tasks 接口获取结构化业务信息；
+* 重点调查并标准化：`aircraft_no`、`flight_no`、`station`、`city/airport`、
+  `task_id`、`task_type`、`task_name`、`task_status`、`planned_start`、
+  `planned_end`、`actual_start`、`actual_end`、`department`、`team`、
+  `related_device`（如上游真实存在）、其它稳定业务 identity；
+* 所有字段必须基于真实接口证据，状态标记
+  `AVAILABLE` / `DERIVABLE` / `RESTRICTED` / `NOT_AVAILABLE` / `UNKNOWN`；
+* 不得根据页面显示、文件名、时间接近程度或猜测自动生成飞机/维修任务关系。
+
+Routine Task 作为主要业务关联来源：
+
+* 优先验证 Routine Task 是否存在稳定：任务 ID、飞机号、站点、航班号、
+  维修任务类型、任务名称、计划时间、实际时间、任务状态、执行部门/班组；
+* 字段真实存在 → 通过标准 Adapter 接入；字段不存在 → 不得自动推导并冒充
+  source truth。
+
+InspectionRecord（P3 规划正式建立）：
+
+一次由 CHA 授权监察人员确认并提交的业务监察记录。建议字段：
+`inspection_id`、`inspector_user_id`、`inspector_username`、`device_id`、
+`realtime_session_id`、`realtime_view_event_id`、`media_file_id`（可选）、
+`aircraft_no`、`routine_task_id`（可选）、`routine_task_source_id`（可选）、
+`maintenance_task_text`、`flight_no`（可选）、`station`、`location_text`、
+`inspection_started_at`、`inspection_ended_at`、`inspection_duration_seconds`、
+`has_issue`、`issue_type`、`issue_level`、`issue_description`、`remark`、
+`status`、`created_at`、`created_by`、`updated_at`、`updated_by`、
+`submitted_at`。
+
+字段来源原则（三类）：
+
+* `A 系统自动生成`：监察账号、设备、session、stream、开始/结束时间、
+  监察时长、首帧结果——不得由普通用户手工伪造；
+* `B 上游业务接口带入`：飞机号、航班号、站点、Routine Task、维修任务——
+  优先从 Flights / Routine Tasks 搜索、选择和关联，必须保留 `source`、
+  `source_id`、`source_updated_at`、`association_method`；
+* `C 监察人员填写`：是否发现问题、问题类型、问题描述、备注——允许业务人员
+  填写。
+
+人工选择优先于未验证自动匹配：
+
+* 在 Flight/Routine Task 自动关联规则充分验证前，禁止自动替用户确定飞机/
+  航班/维修任务；
+* P3 第一版推荐：系统提供候选项 + 用户人工确认（输入/选择飞机号 → 查询
+  对应时间范围 Routine Task → 显示候选 → 由监察人员选择）；
+* 允许手工填写飞机号 / 维修任务文本作为 fallback；
+* 不得用 Legacy 未验证 score 直接自动确认关联关系。
+
+关联证据（association_method）：
+
+* `USER_CONFIRMED`（用户选择）；
+* `SOURCE_DIRECT`（接口直接返回且具有稳定 ID）；
+* `MANUAL_ENTRY`（手工填写）；
+* `DERIVED` / `UNKNOWN`；
+* 不得把 `DERIVED` 显示成 `CONFIRMED`。
+
+地点模型：
+
+* 业务地点（station / airport / city）与设备地点（GPS / device location）
+  不得混为同一字段；
+* 未来允许展示“维修任务站点 + 设备实际 GPS”以判断设备是否出现在预期业务
+  区域，但无业务规则和坐标系验证前不得自动判定“地点异常”。
+
+问题记录：
+
+* `has_issue = true/false`；为 `true` 时必须可记录 `issue_type` /
+  `issue_level` / `issue_description`；
+* `issue_occurred_at`、`video_offset_seconds`、`snapshot_reference` 等后续
+  扩展不在当前 P2.5 提前实现。
+
+用户身份与 CHA 授权：
+
+* AEE 登录成功 ≠ 允许访问 CHA；
+* P3 必须建立 CHA 自己的授权边界：只有存在于 CHA `authorized user list`
+  且 `enabled=true` 的 AEE account 才允许进入 CHA；
+* `inspector_user_id` / `inspector_username` 必须由 CHA 当前登录会话服务端
+  确定，不得允许普通用户自行填写“监察人”。
+
+RealtimeViewEvent 与 InspectionRecord 分离：
+
+* 两个独立模型，不合并成一个大表；
+* `RealtimeViewEvent` 回答“谁看了哪个设备、什么时候、多久、是否成功”；
+* `InspectionRecord` 回答“为什么看、对应哪架飞机/站点/航班/维修工作、
+  有没有问题、问题是什么”；
+* 关系允许 `InspectionRecord` → one or more `RealtimeViewEvent`。
+
+监察记录查询（P3 / Dashboard 后续）：
+
+时间范围、监察人员、账号、设备、飞机号、航班号、站点、维修任务、
+是否发现问题、问题类型、问题等级。
+
+监察记录 Dashboard（后续新增 `/dashboard/inspections`）：
+
+今日监察次数、监察总时长、参与监察人数、每账号监察次数/时长、
+每设备被监察次数/时长、涉及飞机/航班/维修任务数量、发现问题次数/无问题
+次数/问题发现率、问题类型分布、问题设备/飞机/站点排行、问题趋势。
+所有指标必须由真实 `InspectionRecord` / `RealtimeViewEvent` 计算，不得生成
+模拟 KPI。
+
+监察记录导出（后续）：
+
+第一阶段 CSV / XLSX；导出字段至少：`inspection_id`、监察日期、监察人、
+账号、设备、飞机号、航班号、站点、维修任务、开始/结束时间、监察时长、
+是否发现问题、问题类型、问题等级、问题描述、备注。所有导出受 CHA 权限
+控制，不得输出 Token / Cookie / Secret / 内部 media credential。
+
+审计与修改：
+
+* 监察记录属于正式业务记录，禁止普通用户提交后无痕覆盖历史；
+* 至少保存 `created_by` / `created_at` / `updated_by` / `updated_at`；
+* 推荐状态 `DRAFT` / `SUBMITTED` / `CORRECTED`；
+* 已提交记录被修改必须留下 correction/audit 信息。
+
+### M4 后续路线（2026-08-16 更新）
+
+当前阶段（不变）：`M4 P2.5 — Persistence & Collection Readiness`
+（PostgreSQL rehearsal、identity/dedup 审计、non-production low-rate
+scheduler soak）。继续执行，不改变。
+
+P2.5 PASS 后：`M4 P3 — Production Data Activation & Inspection Workflow`
+
+P3 重点（规划，未启动）：
+
+1. 生产只读数据采集灰度；
+2. CHA authorized user access control；
+3. RealtimeViewEvent 长期积累；
+4. InspectionRecord；
+5. Routine Task / Flight 候选选择；
+6. 人工确认飞机/航班/维修任务关系；
+7. 问题记录；
+8. Inspection Dashboard（`/dashboard/inspections`）；
+9. 查询；
+10. 导出（CSV/XLSX）；
+11. Audit。
+
+P3 明确暂不实现（本次仅更新规划，不提前实现）：
+
+* InspectionRecord UI；
+* CHA user ACL；
+* Routine Task automatic matcher；
+* Inspection Dashboard；
+* export；
+* issue workflow。
+
 M4 工作流：
 
 1. 审计当前 CHA 数据能力：
@@ -1383,6 +1551,14 @@ M4 Done Criteria：
 11. Remaining Data Gaps 和 `AEE VERIFICATION REQUIRED` 明确登记。
 12. 没有 secrets、虚假指标、无来源字段或未经批准的媒体架构升级。
 13. 形成 M4 Completion Report，但不得自动进入 M5。
+14. 将“CHA 独有监察业务数据模型与监察记录工作流”纳入 M4 正式范围：
+    * 形成并维护 人员/设备/视频/飞机/地点/维修任务/问题/时间 的关系模型文档；
+    * Flights / Routine Tasks 业务字段基于真实接口证据完成
+      `AVAILABLE`/`DERIVABLE`/`RESTRICTED`/`NOT_AVAILABLE`/`UNKNOWN` 标注；
+    * P3 的 `InspectionRecord` 模型、字段来源三分类、
+      `association_method`、业务地点/设备地点分离、问题记录、CHA 授权
+      边界、审计状态已作为正式验收方向登记；
+    * 不得把 `DERIVED` 显示为 `CONFIRMED`，不得无证据自动生成业务关系。
 
 ---
 
