@@ -58,6 +58,29 @@ class ConfigTests(unittest.TestCase):
             settings.realtime_canary_user_allowed("realtime-tester")
         )
         self.assertFalse(settings.realtime_is_configured())
+        self.assertEqual(settings.mcs8_host, "")
+        self.assertFalse(settings.mcs8_is_configured())
+
+    def test_mcs8_is_configured_only_when_complete(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "CHA_V2_MCS8_HOST": "116.198.18.19",
+                "CHA_V2_MCS8_WS_PORT": "7711",
+                "CHA_V2_MCS8_API_PORT": "7712",
+                "CHA_V2_MCS8_USERNAME": "test-user",
+                "CHA_V2_MCS8_PASSWORD": "test-password",
+            },
+            clear=False,
+        ):
+            settings = Settings.from_env()
+            self.assertTrue(settings.mcs8_is_configured())
+        with patch.dict(
+            os.environ,
+            {"CHA_V2_MCS8_HOST": "116.198.18.19"},
+            clear=False,
+        ):
+            self.assertFalse(Settings.from_env().mcs8_is_configured())
 
     def test_realtime_canary_allowlist_is_explicit_and_casefolded(
         self,
