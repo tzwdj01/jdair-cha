@@ -570,7 +570,7 @@ Realtime 产品范围冻结：
 
 ## M4 — Inspection Data Center & AEE Data Capability Integration
 
-状态：`M4 ACTIVE / P2.5 PASS / P3 FOUNDATION PASS / P3.1 PASS / P3.2 IN PROGRESS — PRODUCTION POSTGRESQL SERVER PREFLIGHT: REVIEW REQUIRED`
+状态：`M4 ACTIVE / P2.5 PASS / P3 FOUNDATION PASS / P3.1 PASS / P3.2 SERVER PREPARATION IN PROGRESS — BLOCKED: OWNER ACTION REQUIRED — TAILSCALE AUTH`
 
 （不得宣布 M4 COMPLETE。P0 数据能力获取已在授权 AEE 会话下完成 live 验证，
 AEE 数据 API 已确认 TOKEN-ONLY / 无 Cookie 可用；P1 历史数据 contract /
@@ -597,16 +597,15 @@ InspectionRecord 保存、backup/health/audit。不授权全用户开放/32 路/
 
 项目负责人已提供新的独立 PostgreSQL 候选服务器：`PRODUCTION POSTGRESQL
 CANDIDATE = ALIYUN SILICON VALLEY SERVER`（47.251.105.9）。
-当前执行 `SERVER + NETWORK PREFLIGHT`（只读，不安装）。Preflight 结论：
-服务器为干净专用节点（仅 sshd + Aliyun 内置 agent；无 PG/MySQL/Docker/
-宝塔/Web）；1.6 GiB RAM（无 swap）、35 G 可用磁盘；CHA↔Aliyun 同路由 TCP
-RTT ≈150ms 稳定、10/10 无丢包（ICMP 被 CHA 云防火墙屏蔽）→ 网络分类
-`ACCEPTABLE FOR CANARY`；TCP 5432 对公网未开放（CHA 侧已确认关闭）。
-待关闭项（REVIEW REQUIRED）：Aliyun Security Group 5432 公网关闭与 SSH
-受限（OS 层 ufw/iptables 为空、依赖安全组）、Aliyun 安装 Tailscale 接入
-tailnet、Aliyun 增加 swap、CHA SSH 本次认证被限流需复确认 + 直接
-CHA→Aliyun TCP 探针与真实 Dashboard 延迟实测、备份位置确认。
-详见 `docs/aee/M4_P3_2_ALIYUN_PG_PREFLIGHT_20260816.md`。）
+Preflight 已 PASS（干净专用节点；网络 ACCEPTABLE FOR CANARY）。
+`SERVER PREPARATION` 已执行：Security Group 经验证（5432 公网关闭，含
+自身公网 IP 视角；SSH 22 可达；owner 已确认控制台配置）、2 GiB swap 已
+创建并 fstab 持久化、Tailscale 1.102.2 已安装。当前阻塞：Tailscale 加入
+tailnet 需项目负责人交互授权（一次性设备登录链接）。PG 安装按授权规则
+在 Tailscale READY 前不进行。备份：远端备份目的地未提供 → 标记
+`REMOTE BACKUP DESTINATION REQUIRED BEFORE CANARY COMPLETION`。
+详见 `docs/aee/M4_P3_2_ALIYUN_PG_PREFLIGHT_20260816.md` 与
+`M4_P3_2_ALIYUN_PG_PREPARATION_20260816.md`。）
 
 名称：
 
@@ -1839,31 +1838,38 @@ M4 Done Criteria：
 
 * `ACTIVE MILESTONE: M4`。
 * 状态：`M4 ACTIVE / P2.5 PASS / P3 FOUNDATION PASS / P3.1 PASS /
-  P3.2 IN PROGRESS — PRODUCTION POSTGRESQL SERVER PREFLIGHT: REVIEW REQUIRED`
+  P3.2 SERVER PREPARATION IN PROGRESS — BLOCKED: OWNER ACTION REQUIRED —
+  TAILSCALE AUTH`
   （不宣布 M4 COMPLETE）。
 * `M4 P3.2 — CONTROLLED PRODUCTION DATA ACTIVATION & CANARY`：
-  * Aliyun Silicon Valley PG 候选服务器只读 preflight 完成：干净专用节点
-    （2 vCPU / 1.6 GiB 无 swap / 35 G 可用 / 仅 sshd+Aliyun agent）；
-  * CHA↔Aliyun 网络基线：TCP RTT ≈150ms 稳定、10/10 无丢包；ICMP 被 CHA
-    云防火墙屏蔽 → `ACCEPTABLE FOR CANARY`；
-  * 未安装任何软件、未改生产；`REVIEW REQUIRED` 待关闭项已列出。
+  * Security Group 经验证：5432 公网关闭（本地 + 自身公网 IP 视角）、
+    22 可达；owner 已确认控制台配置；
+  * 2 GiB swap 已创建并 fstab 持久化（`swapon --show` 验证）；
+  * Tailscale 1.102.2 已安装；加入 CHA tailnet 需 owner 交互授权
+    （一次性设备登录链接）——当前阻塞点；
+  * PG 安装按授权规则在 Tailscale READY 前不进行；migration/scheduler/
+    Inspection 均未执行；备份远端目的地未提供（Canary 完成前必须）。
 * 生产数据激活：`AUTHORIZED — CONTROLLED CANARY ONLY`（受 preflight 闸门
   约束）。
 
 ## Next
 
-1. `P3.2` preflight 待关闭项：Aliyun Security Group（SSH 受限、5432 公网
-   关闭）、Aliyun 安装 Tailscale 接入 tailnet、Aliyun 增加 swap、CHA SSH
-   复确认 + 直接 CHA→Aliyun TCP 探针与真实 Dashboard 延迟实测、备份位置
-   确认。关闭后重新评估 → `PRODUCTION POSTGRESQL SERVER PREFLIGHT PASS`
-   或保持 REVIEW REQUIRED。
-2. 关闭后：生产完整备份（时间戳 + SHA256 manifest + rollback point）
+1. `P3.2` owner action：完成 Aliyun Tailscale 设备认证（打开一次性登录
+   链接并登录 CHA tailnet，Aliyun 上执行 `tailscale up`），然后确认
+   CHA(100.74.86.85) ↔ Aliyun Tailscale IP 双向可达 + 延迟；提供远端备份
+   目的地（或确认标记 `REMOTE BACKUP DESTINATION REQUIRED BEFORE CANARY
+   COMPLETION`）。
+2. Tailscale READY 后：安装 PostgreSQL 14 → 网络加固（localhost +
+   Tailscale IP，pg_hba 最小，公网 5432 复测关闭）→ 创建 production
+   DB/roles（按已批准 plan）→ 标记 `PRODUCTION POSTGRESQL SERVER READY
+   FOR MIGRATION`。
+3. 下一 gate：生产完整备份（时间戳 + SHA256 manifest + rollback point）
    → PG 初始化/migration 0001+0002 → secret 注入 → 生产 ONE SHOT → 幂等/
    对账 → LOW-RATE scheduler → AuthorizedUser Canary → Inspection Canary
    → 备份/监控/kill switch。
-3. `P3.2` 待办：服务端 AEE token provider 生命周期/刷新验证（不记录
+4. `P3.2` 待办：服务端 AEE token provider 生命周期/刷新验证（不记录
    Token/Cookie/密码）；live token-expiry 观察。
-4. 保持 Production Realtime、Audio、Control、AccountPool 关闭；不开启
+5. 保持 Production Realtime、Audio、Control、AccountPool 关闭；不开启
    inspection/ingestion 生产开关；不执行生产数据激活。
 
 ## Blocked
