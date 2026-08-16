@@ -337,6 +337,14 @@ class InspectionAPITests(unittest.IsolatedAsyncioTestCase):
             "quality_flags",
             meta["quality"],
         )
+        self.assertEqual(
+            meta["coverage"]["requested_window_days"],
+            1,
+        )
+        self.assertGreaterEqual(
+            meta["coverage"]["available_coverage_days"],
+            1,
+        )
         overview = payload["data"]["overview"]
         self.assertEqual(overview["current_online_count"], 1)
         self.assertEqual(overview["current_unknown_count"], 1)
@@ -413,6 +421,26 @@ class InspectionAPITests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             dict(aggregation["alarm_type_counts"]),
             {205: 1},
+        )
+
+    async def test_historical_coverage_is_partial_for_longer_request(
+        self,
+    ) -> None:
+        app = _app(_settings(feature=True), await _seeded_service())
+        response = await _request(
+            app,
+            "/api/v2/inspection/devices?days=7",
+        )
+        self.assertEqual(response.status_code, 200)
+        coverage = response.json()["data"]["meta"]["coverage"]
+        self.assertEqual(coverage["requested_window_days"], 7)
+        self.assertLessEqual(
+            coverage["available_coverage_days"],
+            7,
+        )
+        self.assertIn(
+            coverage["completeness"],
+            {"FULL", "PARTIAL", "EMPTY"},
         )
 
     async def test_data_quality_endpoint(self) -> None:

@@ -5,6 +5,7 @@ import unittest
 
 from app.data.aee_adapter import AEEPageResult
 from app.data.aee_collector import AEEInspectionCollector
+from app.data.aee_http import AEEDataHTTPError
 
 
 UTC = dt.timezone.utc
@@ -156,6 +157,65 @@ class AEEInspectionCollectorTests(unittest.IsolatedAsyncioTestCase):
                 self.end,
                 self.start,
             )
+
+    async def test_single_source_failure_does_not_block_other_sources(
+        self,
+    ) -> None:
+        adapter = _FailingDeviceAdapter()
+        collector = AEEInspectionCollector(
+            adapter,
+            enterprise_id="ENT-1",
+            time_type=0,
+            group_with_child=0,
+            include_alarms=True,
+        )
+        collected = await collector.collect(
+            self.start,
+            self.end,
+        )
+
+        self.assertEqual(
+            collected["device_status"].status,
+            "error",
+        )
+        self.assertEqual(
+            collected["device_status"].error_code,
+            "AEE_DATA_UPSTREAM_REJECTED",
+        )
+        self.assertEqual(
+            collected["device_status"].rows,
+            (),
+        )
+        self.assertEqual(
+            collected["media_files"].status,
+            "ok",
+        )
+        self.assertEqual(
+            collected["alarms"].status,
+            "ok",
+        )
+        self.assertEqual(
+            collected["media_files"].rows[0]["devId"],
+            "WX1",
+        )
+        self.assertEqual(
+            collected["alarms"].rows[0]["alarmType"],
+            205,
+        )
+        called = [name for name, _ in adapter.calls]
+        self.assertEqual(
+            called,
+            ["dev_online", "record_files", "alarms"],
+        )
+
+
+class _FailingDeviceAdapter(_FakeAdapter):
+    def list_device_online(self, **kwargs) -> AEEPageResult:
+        self.calls.append(("dev_online", kwargs))
+        raise AEEDataHTTPError(
+            "AEE_DATA_UPSTREAM_REJECTED",
+            "simulated upstream rejection",
+        )
 
 
 if __name__ == "__main__":

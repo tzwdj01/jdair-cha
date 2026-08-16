@@ -129,6 +129,7 @@ class InspectionIngestor:
         *,
         observed_at: dt.datetime,
         ingested_at: dt.datetime,
+        source_errors: Mapping[str, str] | None = None,
     ) -> IngestionReport:
         """Orchestrate every source and keep the run resumable.
 
@@ -172,6 +173,19 @@ class InspectionIngestor:
                         ingested_at=ingested_at,
                     ),
                     "alarms",
+                )
+            )
+
+        for source, error_code in sorted(
+            dict(source_errors or {}).items()
+        ):
+            results.append(
+                SourceIngestionResult(
+                    source=source,
+                    accepted_count=0,
+                    invalid_row_count=0,
+                    quality_flags=("source_collection_failed",),
+                    error_code=error_code,
                 )
             )
         completed = all(

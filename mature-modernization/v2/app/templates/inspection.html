@@ -30,6 +30,11 @@
     .empty { color: #8a97a5; font-size: 13px; padding: 12px 0; }
     .notice { border: 1px solid #e6c35c; background: #fff8e6; color: #6b5200; border-radius: 6px; padding: 10px 12px; font-size: 13px; margin-bottom: 12px; }
     .flag { display: inline-block; background: #eef3f8; border: 1px solid #d4dee7; border-radius: 10px; font-size: 11px; padding: 2px 7px; margin: 2px 3px 0 0; color: #4a5a6b; }
+    .meta-line { width: 100%; font-size: 12px; color: #5f7385; background: #f2f6fa; border: 1px solid #dbe5ee; border-radius: 6px; padding: 8px 10px; margin-bottom: 12px; line-height: 1.7; }
+    .meta-line b { color: #12395a; }
+    .coverage-full { color: #1c7a3d; font-weight: 700; }
+    .coverage-partial { color: #8a6d1a; font-weight: 700; }
+    .coverage-empty { color: #b23b3b; font-weight: 700; }
     .state-on { color: #1c7a3d; font-weight: 700; }
     .state-unknown { color: #8a6d1a; font-weight: 700; }
     .state-off { color: #b23b3b; font-weight: 700; }
@@ -63,6 +68,7 @@
       <button id="refresh">刷新</button>
       <span id="scopeText" class="empty"></span>
     </div>
+    <div id="metaText" class="meta-line" style="display:none"></div>
     <div id="notice" class="notice" style="display:none"></div>
     <div id="content"></div>
   </main>
@@ -112,11 +118,49 @@
       return items.map((f) => `<span class="flag">${esc(f)}</span>`).join("");
     }
 
+    function fmtLocal(value) {
+      if (!value) return "--";
+      const d = new Date(value);
+      if (Number.isNaN(d.getTime())) return esc(String(value));
+      return d.toLocaleString("zh-CN", { timeZone: "Asia/Shanghai", hour12: false });
+    }
+
+    function renderMeta(data) {
+      const meta = (data && data.meta) || {};
+      const box = byId("metaText");
+      if (!meta.generated_at && !meta.coverage && !meta.quality) {
+        box.style.display = "none";
+        return;
+      }
+      const cov = meta.coverage || {};
+      const quality = meta.quality || {};
+      const freshness = meta.freshness || {};
+      const freshKeys = Object.keys(freshness).filter((k) => freshness[k] != null);
+      let covHtml = "--";
+      if (cov.completeness) {
+        const cls = "coverage-" + String(cov.completeness).toLowerCase();
+        covHtml = `<span class="${cls}">${esc(cov.completeness)}</span>` +
+          `（可用 ${esc(cov.available_coverage_days == null ? "--" : cov.available_coverage_days)} / 请求 ${esc(cov.requested_window_days == null ? "--" : cov.requested_window_days)} 天` +
+          (cov.coverage_start_date ? `，${esc(cov.coverage_start_date)} ~ ${esc(cov.coverage_end_date || "")}` : "") + "）";
+      }
+      const flagsHtml = (quality.quality_flags || []).map((f) => `<span class="flag">${esc(f)}</span>`).join("");
+      box.innerHTML =
+        "<b>数据更新时间：</b>" + fmtLocal(meta.generated_at) +
+        "（北京时间 Asia/Shanghai）&nbsp;|&nbsp;<b>数据覆盖：</b>" + covHtml +
+        (freshKeys.length
+          ? "&nbsp;|&nbsp;<b>源数据新鲜度：</b>" +
+            freshKeys.map((k) => `${esc(k)}=${fmtLocal(freshness[k])}`).join("，")
+          : "") +
+        (flagsHtml ? "&nbsp;|&nbsp;<b>质量标记：</b>" + flagsHtml : "");
+      box.style.display = "block";
+    }
+
     async function load() {
       const days = byId("days").value;
       const tab = ACTIVE;
       showNotice("");
       byId("content").innerHTML = '<div class="empty">正在加载…</div>';
+      byId("metaText").style.display = "none";
       const url = ENDPOINTS[tab] + "?days=" + days;
       let response;
       try {
@@ -145,8 +189,9 @@
       const data = payload.data || {};
       const scope = data.scope || {};
       if (scope.start) {
-        byId("scopeText").textContent = "范围：" + scope.start + " ~ " + scope.end;
+        byId("scopeText").textContent = "范围（北京时间）：" + fmtLocal(scope.start) + " ~ " + fmtLocal(scope.end);
       }
+      renderMeta(data);
       if (tab === "devices") renderDevices(data.overview || {});
       else if (tab === "media") renderMedia(data.overview || {});
       else if (tab === "realtime") renderRealtime(data.overview || {}, data.runtime || null);

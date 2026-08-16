@@ -2,14 +2,17 @@ from __future__ import annotations
 
 import asyncio
 import datetime as dt
+import logging
 from typing import Any, Mapping
 
 from .aee_adapter import AEEReadOnlyDataAdapter
+from .aee_http import AEEDataHTTPError
 from .pagination import CollectedSource, collect_aee_pages
 
 
 UTC = dt.timezone.utc
 SHANGHAI = dt.timezone(dt.timedelta(hours=8), name="Asia/Shanghai")
+logger = logging.getLogger("uvicorn.error.cha.inspection.collector")
 
 
 class AEEInspectionCollector:
@@ -25,6 +28,11 @@ class AEEInspectionCollector:
     collection, matching the live-verified request shape (the page sends 0/0).
     Alarm collection is opt-in via ``include_alarms``; alarms are never
     collected unless explicitly requested.
+
+    Each source is collected independently (fail-closed, fail-isolated): a
+    failure in one source yields a ``CollectedSource`` with
+    ``status="error"`` and an ``error_code`` instead of aborting the other
+    sources. The scheduler report exposes the per-source status.
     """
 
     def __init__(
@@ -60,13 +68,6 @@ class AEEInspectionCollector:
         self._is_deleted = is_deleted
         self._include_alarms = include_alarms
 
-    async def collect(
-        self,
-        start: dt.datetime,
-        end: dt.datetime,
-    ) -> Mapping[str, CollectedSource]:
-        return await asyncio.to_thread(self._collect_sync, start, end)
-
     def _collect_sync(
         self,
         start: dt.datetime,
@@ -77,50 +78,43 @@ class AEEInspectionCollector:
         if end_utc <= start_utc:
             raise ValueError("end must be after start")
 
-        device = collect_aee_pages(
-            lambda page, page_size: self._adapter.list_device_online(
-                start=start_utc,
-                end=end_utc,
-                source_timezone=self._source_timezone,
-                enterprise_id=self._enterprise_id,
-                group_id=self._group_id,
-                page=page,
-                page_size=page_size,
-            ),
-            page_size=self._page_size,
-            max_pages=self._max_pages,
-            max_records=self._max_records,
-        )
-        files = collect_aee_pages(
-            lambda page, page_size: self._adapter.list_record_files(
-                start=start_utc,
-                end=end_utc,
-                source_timezone=self._source_timezone,
-                time_type=self._time_type,
-                group_with_child=self._group_with_child,
-                group_id=self._group_id,
-                device_id="",
-                time_selector=self._time_selector,
-                is_deleted=self._is_deleted,
-                page=page,
-                page_size=page_size,
-            ),
-            page_size=self._page_size,
-            max_pages=self._max_pages,
-            max_records=self._max_records,
-        )
+        collected_at = dt.datetime.now(UTC)
         result: dict[str, CollectedSource] = {
-            "device_status": CollectedSource.from_collection(
+            "device_status": self._collect_source(
                 "device_status",
-                device,
+                collected_at,
+                lambda page, page_size: self._adapter.list_device_online(
+                    start=start_utc,
+                    end=end_utc,
+                    source_timezone=self._source_timezone,
+                    enterprise_id=self._enterprise_id,
+                    group_id=self._group_id,
+                    page=page,
+                    page_size=page_size,
+                ),
             ),
-            "media_files": CollectedSource.from_collection(
+            "media_files": self._collect_source(
                 "media_files",
-                files,
+                collected_at,
+                lambda page, page_size: self._adapter.list_record_files(
+                    start=start_utc,
+                    end=end_utc,
+                    source_timezone=self._source_timezone,
+                    time_type=self._time_type,
+                    group_with_child=self._group_with_child,
+                    group_id=self._group_id,
+                    device_id="",
+                    time_selector=self._time_selector,
+                    is_deleted=self._is_deleted,
+                    page=page,
+                    page_size=page_size,
+                ),
             ),
         }
         if self._include_alarms:
-            alarms = collect_aee_pages(
+            result["alarms"] = self._collect_source(
+                "alarms",
+                collected_at,
                 lambda page, page_size: self._adapter.list_alarms(
                     start=start_utc,
                     end=end_utc,
@@ -131,15 +125,50 @@ class AEEInspectionCollector:
                     page=page,
                     page_size=page_size,
                 ),
+            )
+        return result
+
+    def _collect_source(
+        self,
+        source: str,
+        collected_at: dt.datetime,
+        fetch_page,
+    ) -> CollectedSource:
+        try:
+            collection = collect_aee_pages(
+                fetch_page,
                 page_size=self._page_size,
                 max_pages=self._max_pages,
                 max_records=self._max_records,
             )
-            result["alarms"] = CollectedSource.from_collection(
-                "alarms",
-                alarms,
+        except AEEDataHTTPError as exc:
+            logger.warning(
+                "aee_source_collection_failed source=%s error_code=%s",
+                source,
+                exc.code,
             )
-        return result
+            return CollectedSource.failed(source, exc.code)
+        except Exception:
+            logger.exception(
+                "aee_source_collection_failed source=%s",
+                source,
+            )
+            return CollectedSource.failed(
+                source,
+                "AEE_SOURCE_COLLECTION_FAILED",
+            )
+        return CollectedSource.from_collection(
+            source,
+            collection,
+            last_successful_at=collected_at,
+        )
+
+    async def collect(
+        self,
+        start: dt.datetime,
+        end: dt.datetime,
+    ) -> Mapping[str, CollectedSource]:
+        return await asyncio.to_thread(self._collect_sync, start, end)
 
 
 def _aware_utc(value: dt.datetime, name: str) -> dt.datetime:

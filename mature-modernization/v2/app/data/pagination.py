@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import datetime as dt
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
@@ -41,12 +42,17 @@ class CollectedSource:
     duplicate_source_id_count: int
     complete: bool
     quality_flags: tuple[str, ...]
+    status: str = "ok"
+    error_code: str | None = None
+    last_successful_at: dt.datetime | None = None
 
     @classmethod
     def from_collection(
         cls,
         source: str,
         collection: AEEPageCollection,
+        *,
+        last_successful_at: dt.datetime | None = None,
     ) -> "CollectedSource":
         return cls(
             source=source,
@@ -58,6 +64,37 @@ class CollectedSource:
             duplicate_source_id_count=collection.duplicate_source_id_count,
             complete=collection.complete,
             quality_flags=collection.quality_flags,
+            status="ok",
+            error_code=None,
+            last_successful_at=last_successful_at,
+        )
+
+    @classmethod
+    def failed(
+        cls,
+        source: str,
+        error_code: str,
+    ) -> "CollectedSource":
+        """A source whose upstream collection failed (fail-closed).
+
+        The source is preserved in the result set with ``status="error"`` so
+        the report can expose which source failed and why, instead of
+        aborting the whole run or silently treating the source as empty.
+        """
+
+        return cls(
+            source=source,
+            rows=(),
+            records_total=None,
+            pages_fetched=0,
+            fetched_source_count=0,
+            invalid_row_count=0,
+            duplicate_source_id_count=0,
+            complete=False,
+            quality_flags=("source_collection_failed",),
+            status="error",
+            error_code=error_code,
+            last_successful_at=None,
         )
 
 

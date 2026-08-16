@@ -46,6 +46,28 @@ class _FakeCollector:
         }
 
 
+class _PartiallyFailingCollector:
+    async def collect(self, start, end):
+        del start, end
+        return {
+            "device_status": CollectedSource.failed(
+                "device_status",
+                "AEE_DATA_UPSTREAM_REJECTED",
+            ),
+            "media_files": _collected(
+                "media_files",
+                [
+                    {
+                        "id": "file-1",
+                        "devId": "WX1",
+                        "fType": 3,
+                        "startTime": "2026-08-15 00:30:00+00:00",
+                    }
+                ],
+            ),
+        }
+
+
 def _collected(source, rows):
     return CollectedSource(
         source=source,
@@ -117,6 +139,54 @@ class InspectionIngestionSchedulerTests(unittest.IsolatedAsyncioTestCase):
                 start=dt.datetime(2026, 8, 15, 1, tzinfo=UTC),
                 end=dt.datetime(2026, 8, 15, 0, tzinfo=UTC),
             )
+
+    async def test_failed_source_is_reported_and_does_not_block_others(
+        self,
+    ) -> None:
+        scheduler = InspectionIngestionScheduler(
+            _PartiallyFailingCollector(),
+            InspectionIngestor(self.store),
+        )
+        start = dt.datetime(2026, 8, 15, 0, tzinfo=UTC)
+        end = dt.datetime(2026, 8, 15, 1, tzinfo=UTC)
+        scheduled = await scheduler.run_once(start=start, end=end)
+
+        results = {
+            item.source: item
+            for item in scheduled.report.results
+        }
+        self.assertEqual(
+            results["device_status"].error_code,
+            "AEE_DATA_UPSTREAM_REJECTED",
+        )
+        self.assertIn(
+            "source_collection_failed",
+            results["device_status"].quality_flags,
+        )
+        self.assertEqual(results["media_files"].accepted_count, 1)
+        self.assertFalse(scheduled.report.completed)
+
+        by_source = {
+            item.source: item
+            for item in scheduled.sources
+        }
+        self.assertEqual(by_source["device_status"].status, "error")
+        self.assertEqual(
+            by_source["device_status"].error_code,
+            "AEE_DATA_UPSTREAM_REJECTED",
+        )
+        self.assertEqual(by_source["media_files"].status, "ok")
+
+        statuses = await self.store.fetch_device_status_events(
+            start=start,
+            end=end,
+        )
+        files = await self.store.fetch_media_files(
+            start=start,
+            end=end,
+        )
+        self.assertEqual(len(statuses), 0)
+        self.assertEqual(len(files), 1)
 
 
 if __name__ == "__main__":

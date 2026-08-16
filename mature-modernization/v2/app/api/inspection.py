@@ -286,6 +286,7 @@ def create_inspection_router(
             )
             quality["total_rows"] = overview.total_rows
 
+        coverage = getattr(overview, "coverage", None)
         return {
             "generated_at": (
                 _json_safe(generated_at)
@@ -294,6 +295,11 @@ def create_inspection_router(
             ),
             "freshness": freshness,
             "quality": quality,
+            "coverage": (
+                _json_safe(coverage)
+                if coverage is not None
+                else None
+            ),
         }
 
     @router.get("/api/v2/inspection/devices")
@@ -322,6 +328,7 @@ def create_inspection_router(
             start=scope_start,
             end=scope_end,
             device_ids=device_ids,
+            requested_window_days=days,
         )
         return envelope(
             request,
@@ -401,6 +408,7 @@ def create_inspection_router(
             start=scope_start,
             end=scope_end,
             device_ids=_device_ids(device),
+            requested_window_days=days,
         )
         return envelope(
             request,
@@ -440,6 +448,7 @@ def create_inspection_router(
             end=scope_end,
             device_ids=_device_ids(device),
             usernames=_ids(user),
+            requested_window_days=days,
         )
         runtime = None
         if realtime_manager is not None:
@@ -508,6 +517,7 @@ def create_inspection_router(
             start=scope_start,
             end=scope_end,
             device_ids=_device_ids(device),
+            requested_window_days=days,
         )
         return envelope(
             request,
@@ -545,6 +555,7 @@ def create_inspection_router(
             start=scope_start,
             end=scope_end,
             device_ids=_device_ids(device),
+            requested_window_days=days,
         )
         return envelope(
             request,

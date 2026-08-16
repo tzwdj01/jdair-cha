@@ -27,6 +27,23 @@ SHANGHAI = dt.timezone(dt.timedelta(hours=8), name="Asia/Shanghai")
 
 
 @dataclass(frozen=True, slots=True)
+class HistoricalCoverage:
+    """Actual data coverage for a requested window.
+
+    ``completeness`` is one of ``FULL``, ``PARTIAL`` or ``EMPTY`` and is
+    derived from distinct business-local calendar days that actually carry
+    stored events. A 30-day request with only 3 days of history is reported
+    as PARTIAL (3/30), never as a complete 30-day statistic.
+    """
+
+    requested_window_days: int
+    available_coverage_days: int
+    completeness: str
+    coverage_start_date: str | None
+    coverage_end_date: str | None
+
+
+@dataclass(frozen=True, slots=True)
 class DeviceLatestStatus:
     device_id: str
     latest_status_code: int | None
@@ -70,6 +87,7 @@ class DeviceOverview:
     generated_at: dt.datetime
     scope_start: dt.datetime
     scope_end: dt.datetime
+    coverage: HistoricalCoverage
     uptime: DeviceUptimeAggregationResult
     latest_by_device: tuple[DeviceLatestStatus, ...]
     groups: tuple[DeviceGroupMetric, ...]
@@ -83,6 +101,7 @@ class MediaOverview:
     generated_at: dt.datetime
     scope_start: dt.datetime
     scope_end: dt.datetime
+    coverage: HistoricalCoverage
     media: MediaAggregationResult
     groups: tuple[MediaGroupMetric, ...]
     long_no_upload_devices: tuple[DeviceThresholdHit, ...]
@@ -97,6 +116,7 @@ class RealtimeOverview:
     generated_at: dt.datetime
     scope_start: dt.datetime
     scope_end: dt.datetime
+    coverage: HistoricalCoverage
     aggregation: RealtimeViewAggregationResult
     latest_closed_at: dt.datetime | None
 
@@ -106,6 +126,7 @@ class AlarmOverview:
     generated_at: dt.datetime
     scope_start: dt.datetime
     scope_end: dt.datetime
+    coverage: HistoricalCoverage
     aggregation: AlarmAggregationResult
     latest_occurred_at: dt.datetime | None
 
@@ -115,6 +136,7 @@ class LocationOverview:
     generated_at: dt.datetime
     scope_start: dt.datetime
     scope_end: dt.datetime
+    coverage: HistoricalCoverage
     aggregation: DeviceLocationAggregationResult
     stale_location_devices: tuple[DeviceThresholdHit, ...]
     stale_location_governed: bool
@@ -193,6 +215,7 @@ class InspectionDataService:
         start: dt.datetime,
         end: dt.datetime,
         device_ids: Iterable[str] | None = None,
+        requested_window_days: int | None = None,
     ) -> DeviceOverview:
         events = await self._store.fetch_device_status_events(
             start=start,
@@ -225,6 +248,13 @@ class InspectionDataService:
             generated_at=dt.datetime.now(UTC),
             scope_start=_aware(start).astimezone(UTC),
             scope_end=_aware(end).astimezone(UTC),
+            coverage=_historical_coverage(
+                (event.occurred_at for event in events),
+                window_start=start,
+                window_end=end,
+                business_tz=self._business_tz,
+                requested_window_days=requested_window_days,
+            ),
             uptime=uptime,
             latest_by_device=tuple(
                 sorted(latest, key=lambda item: item.device_id)
@@ -241,6 +271,7 @@ class InspectionDataService:
         start: dt.datetime,
         end: dt.datetime,
         device_ids: Iterable[str] | None = None,
+        requested_window_days: int | None = None,
         as_of: dt.datetime | None = None,
     ) -> MediaOverview:
         files = await self._store.fetch_media_files(
@@ -300,6 +331,21 @@ class InspectionDataService:
             generated_at=dt.datetime.now(UTC),
             scope_start=_aware(start).astimezone(UTC),
             scope_end=_aware(end).astimezone(UTC),
+            coverage=_historical_coverage(
+                (
+                    timestamp
+                    for item in files
+                    for timestamp in (
+                        item.created_at_source,
+                        item.uploaded_at_source,
+                    )
+                    if timestamp is not None
+                ),
+                window_start=start,
+                window_end=end,
+                business_tz=self._business_tz,
+                requested_window_days=requested_window_days,
+            ),
             media=media,
             groups=_media_groups(files),
             long_no_upload_devices=tuple(hits),
@@ -327,6 +373,7 @@ class InspectionDataService:
         end: dt.datetime,
         device_ids: Iterable[str] | None = None,
         usernames: Iterable[str] | None = None,
+        requested_window_days: int | None = None,
     ) -> RealtimeOverview:
         events = await self._store.fetch_realtime_view_events(
             start=start,
@@ -338,6 +385,13 @@ class InspectionDataService:
             generated_at=dt.datetime.now(UTC),
             scope_start=_aware(start).astimezone(UTC),
             scope_end=_aware(end).astimezone(UTC),
+            coverage=_historical_coverage(
+                (event.closed_at for event in events),
+                window_start=start,
+                window_end=end,
+                business_tz=self._business_tz,
+                requested_window_days=requested_window_days,
+            ),
             aggregation=aggregate_realtime_views(events),
             latest_closed_at=max(
                 (
@@ -354,6 +408,7 @@ class InspectionDataService:
         start: dt.datetime,
         end: dt.datetime,
         device_ids: Iterable[str] | None = None,
+        requested_window_days: int | None = None,
     ) -> AlarmOverview:
         events = await self._store.fetch_alarm_events(
             start=start,
@@ -364,6 +419,13 @@ class InspectionDataService:
             generated_at=dt.datetime.now(UTC),
             scope_start=_aware(start).astimezone(UTC),
             scope_end=_aware(end).astimezone(UTC),
+            coverage=_historical_coverage(
+                (event.occurred_at for event in events),
+                window_start=start,
+                window_end=end,
+                business_tz=self._business_tz,
+                requested_window_days=requested_window_days,
+            ),
             aggregation=aggregate_alarm_events(events),
             latest_occurred_at=max(
                 (
@@ -380,6 +442,7 @@ class InspectionDataService:
         start: dt.datetime,
         end: dt.datetime,
         device_ids: Iterable[str] | None = None,
+        requested_window_days: int | None = None,
         as_of: dt.datetime | None = None,
     ) -> LocationOverview:
         events = await self._store.fetch_device_location_events(
@@ -414,6 +477,13 @@ class InspectionDataService:
             generated_at=dt.datetime.now(UTC),
             scope_start=_aware(start).astimezone(UTC),
             scope_end=_aware(end).astimezone(UTC),
+            coverage=_historical_coverage(
+                (event.gps_occurred_at for event in events),
+                window_start=start,
+                window_end=end,
+                business_tz=self._business_tz,
+                requested_window_days=requested_window_days,
+            ),
             aggregation=aggregation,
             stale_location_devices=tuple(hits),
             stale_location_governed=governed,
@@ -863,3 +933,43 @@ def _aware(value: dt.datetime) -> dt.datetime:
     if value.tzinfo is None or value.utcoffset() is None:
         raise ValueError("scope times must be timezone-aware")
     return value
+
+
+def _historical_coverage(
+    timestamps: Iterable[dt.datetime],
+    *,
+    window_start: dt.datetime,
+    window_end: dt.datetime,
+    business_tz: dt.tzinfo,
+    requested_window_days: int | None,
+) -> HistoricalCoverage:
+    start_utc = _aware(window_start).astimezone(UTC)
+    end_utc = _aware(window_end).astimezone(UTC)
+    if requested_window_days is None:
+        requested_window_days = max(1, round((end_utc - start_utc).days))
+
+    days: set[dt.date] = set()
+    for timestamp in timestamps:
+        aware = _aware(timestamp)
+        if start_utc <= aware.astimezone(UTC) <= end_utc:
+            days.add(aware.astimezone(business_tz).date())
+
+    available = len(days)
+    if available == 0:
+        completeness = "EMPTY"
+    elif available >= requested_window_days:
+        completeness = "FULL"
+    else:
+        completeness = "PARTIAL"
+
+    return HistoricalCoverage(
+        requested_window_days=requested_window_days,
+        available_coverage_days=available,
+        completeness=completeness,
+        coverage_start_date=(
+            min(days).isoformat() if days else None
+        ),
+        coverage_end_date=(
+            max(days).isoformat() if days else None
+        ),
+    )
