@@ -570,7 +570,7 @@ Realtime 产品范围冻结：
 
 ## M4 — Inspection Data Center & AEE Data Capability Integration
 
-状态：`M4 ACTIVE / P2.5 PASS / P3 FOUNDATION PASS / P3.1 PASS / P3.2 ACCESS PATH IDENTIFIED — SUPPORTED SERVER-SIDE ACCESS CANDIDATE`
+状态：`M4 ACTIVE / P2.5 PASS / P3 FOUNDATION PASS / P3.1 PASS / P3.2 PRODUCTION MCS8 ONE SHOT PASS — READY FOR LOW-RATE SCHEDULER CANARY`
 
 （不得宣布 M4 COMPLETE。P0 数据能力获取已在授权 AEE 会话下完成 live 验证，
 AEE 数据 API 已确认 TOKEN-ONLY / 无 Cookie 可用；P1 历史数据 contract /
@@ -611,7 +611,19 @@ smoke；pg_dump+restore）。生产 ONE SHOT 尝试被阻塞：JD Cloud WAF (JFE
 （recordsTotal=7）实测可用；`GetDevListByGroupId` 返回 114 设备
 （含 nOnline）可替代 DevOnlineList。M4 adapter 复用该通道即可，无需
 WAF 变更。详见
-`docs/aee/M4_P3_2_ACCESS_PATH_DIAGNOSTIC_20260816.md`。）
+`docs/aee/M4_P3_2_ACCESS_PATH_DIAGNOSTIC_20260816.md`。
+
+`2026-08-17` **MCS8 NATIVE ADAPTER 已实现并真机验证**：MCS8ServerAuthProvider
+（WS :7711 → token）+ MCS8DataHTTPClient（REST :7712，token+SessionId）+
+MCS8ReadOnlyDataAdapter（DEVICE snapshot / MEDIA / ALARM）+ 诚实 polling
+语义（INITIAL_OBSERVATION / CHA_OBSERVED_TRANSITION，同状态不新增）。
+CHA scratch 只读验证 PASS：MCS8 auth → DEVICE 114（14 online/100 offline）
+→ MEDIA 8 → ALARM 2。**Browser/AEE 前端 vs MCS8 native 对账一致**
+（media recordsTotal=6=6、alarm=2=2、devs 相同）。**生产 ONE SHOT
+PASS**：DEVICE 114 / MEDIA 8 / ALARM 2 写入 cha_m4/inspection，幂等重跑
+无膨胀（device 二次 stored=0），PG 行数对账一致，metrics 对账一致。
+未启用 scheduler；未激活 AuthorizedUser / Inspection workflow；生产
+app/current/nginx/systemd 未改动。）
 
 名称：
 
@@ -1844,27 +1856,35 @@ M4 Done Criteria：
 
 * `ACTIVE MILESTONE: M4`。
 * 状态：`M4 ACTIVE / P2.5 PASS / P3 FOUNDATION PASS / P3.1 PASS /
-  P3.2 ACCESS PATH IDENTIFIED — SUPPORTED SERVER-SIDE ACCESS CANDIDATE`
+  P3.2 PRODUCTION MCS8 ONE SHOT PASS — READY FOR LOW-RATE SCHEDULER CANARY`
   （不宣布 M4 COMPLETE）。
 * `M4 P3.2 — CONTROLLED PRODUCTION DATA ACTIVATION & CANARY`：
   * SERVER PREPARATION + PG MIGRATION & CONNECTIVITY PASS（migration 到
     cha_m4、CHA→Aliyun PG 真连接、secret、DML smoke、pg_dump/restore）；
-  * **生产 ONE SHOT BLOCKED**：CHA 生产服务器 → AEE 前端数据 API 服务端
-    请求被 JD Cloud WAF (JFE) 返回 HTTP 493（source-IP 策略）；未尝试 WAF
-    绕过/浏览器爬 token daemon。
   * **ACCESS PATH DIAGNOSTIC PASS**：识别受支持服务器端候选——MCS8 原生
     服务器 `116.198.18.19`（WS 登录 :7711 → REST :7712，token+SessionId），
     RecordFileList / AlarmList 实测 200，设备在线以 GetDevListByGroupId
-    替代。M4 adapter 应切换至该通道（仍待实现与验证）。
+    替代。
+  * **MCS8 NATIVE ADAPTER IMPLEMENTED**：`MCS8ServerAuthProvider` /
+    `MCS8DataHTTPClient` / `MCS8ReadOnlyDataAdapter` /
+    `MCS8DeviceSnapshotProcessor`（honest polling semantics）/
+    `MCS8InspectionCollector` / `scripts/m4_mcs8_oneshot.py`；normalizer
+    `source_system` 参数（media/alarm 默认 "aee"，MCS8 用 "mcs8"）；
+    store `fetch_latest_device_statuses`。
+  * **PRODUCTION MCS8 ONE SHOT PASS（2026-08-17）**：CHA scratch 只读
+    live 验证 PASS；Browser/AEE vs MCS8 native 对账一致；生产写入
+    cha_m4/inspection：DEVICE 114 / MEDIA 8 / ALARM 2；幂等重跑无膨胀；
+    PG 行数与 metrics 对账一致。生产 app/current/nginx/systemd 未改动。
+    AEE 前端数据 API 服务端（aee.jdcloud.com）仍受 JFE 493 限制，但
+    MCS8 native 通道不受影响。
 * 观察项：远端备份目的地未提供（Canary 完成前必须）。
 * 生产数据激活：`AUTHORIZED — CONTROLLED CANARY ONLY`。
 
 ## Next
 
-1. `P3.2`：将 M4 `AEEReadOnlyDataAdapter` 的 AEE 数据通道切换到受支持的
-   MCS8 原生服务器 `116.198.18.19`（复用 Legacy `call_mcs8_api` 语义），
-   只读验证三源（RecordFileList / AlarmList / 设备在线=GetDevListByGroupId），
-   然后重试生产 ONE SHOT（脚本/模块/secret 已在 CHA 就绪）。
+1. `P3.2`：等待项目负责人授权 LOW-RATE SCHEDULER CANARY（只读 AEE/MCS8
+   数据采集，不提高频率，不扩大数据域）。ONE SHOT 脚本/模块/secret 已在
+   CHA scratch `/opt/cha-m4-canary` 就绪。
 2. ONE SHOT 解除后：LOW-RATE scheduler → AuthorizedUser Canary →
    Inspection Canary → RealtimeViewEvent 采集 → 备份/监控/kill switch。
 3. `P3.2` 观察项：提供远端备份目的地（否则标记 `REMOTE BACKUP DESTINATION
