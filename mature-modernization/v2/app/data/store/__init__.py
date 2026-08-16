@@ -6,11 +6,13 @@ about AEE HTTP, WebRTC runtime state or browser data.
 """
 
 from .memory import MemoryInspectionStore
+from .postgres import PostgresInspectionStore
 from .repository import InspectionStore
 from .sinks import StoreViewEventSink
 
 __all__ = [
     "InspectionStore",
     "MemoryInspectionStore",
+    "PostgresInspectionStore",
     "StoreViewEventSink",
 ]
