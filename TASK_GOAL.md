@@ -350,6 +350,34 @@ Last updated: 2026-08-16
   新增 `tests/test_postgres_store.py`（无 PG 时自动 skip，有 rehearsal PG
   时执行真机往返测试）。
 * 当前全量 V2 自动化回归为 `217 tests PASS`。
+* `M4 P3 — INSPECTION WORKFLOW & PRODUCTION DATA ACTIVATION READINESS` 已启动
+  （产品能力允许非生产实现；生产数据激活未授权）。
+* P3 数据层：`AuthorizedUser` / `InspectionRecord` / `InspectionRecordViewLink`
+  / `InspectionAuditEvent` dataclass（`app/data/inspection_records.py`）；
+  migration `0002_inspection_workflow.sql`（authorized_users /
+  inspection_records / inspection_record_views / inspection_audit_events）；
+  `InspectionRecordStore` 抽象 + Memory + Postgres 实现。
+* P3 业务层：`InspectionRecordService`（create_draft / update_draft / submit /
+  correct / list(分页过滤) / dashboard_metrics），强制服务端身份、
+  DRAFT→SUBMITTED→CORRECTED 生命周期、审计事件、修正保留原提交信息。
+* P3 API：`/api/v2/inspections`（列表分页/详情/创建/更新/提交/修正）、
+  `/api/v2/inspections/export`（CSV/XLSX，受 CHA 授权控制，无 Token/Cookie/
+  Secret/凭据字段）、`/api/v2/inspections/metrics`、`/api/v2/dashboard/
+  inspections` 页面（`app/templates/inspections.html`）。
+* P3 授权边界：所有 inspections 端点校验当前登录账号是否在
+  `AuthorizedUser`（enabled=true + 有效期）；`inspector_username` 由服务端
+  会话确定，客户端不可自填。
+* P3 Flights/Routine Tasks 取证：`docs/aee/M4_P3_FLIGHTS_ROUTINE_TASKS_
+  EVIDENCE.md`（Legacy `/api/flights`、`/api/routine-tasks` 代码/静态证据；
+  `taskid`/`inFlight`/`outFlight`/`outDate`/`inDate`/`startPlanDate` 已代码
+  确认；`aircraft_no`/`flight_no`/`station`/任务类型等结构化字段待真实
+  样本，保持 UNKNOWN/DERIVABLE，不猜测）。
+* P3 Production Data Activation Plan：`docs/aee/M4_P3_PRODUCTION_DATA_
+  ACTIVATION_PLAN.md`（生产 PG 部署建议、secret 注入、备份/迁移/回滚、
+  AEE token provisioning/rotation、scheduler cadence 提案、Token 风险：
+  TOKEN-ONLY VERIFIED / LONG-LIVED SERVER TOKEN LIFECYCLE NOT YET
+  LIVE-SOAK VERIFIED）。
+* 当前全量 V2 自动化回归为 `225 tests PASS`。
 
 ---
 
@@ -506,7 +534,7 @@ Realtime 产品范围冻结：
 
 ## M4 — Inspection Data Center & AEE Data Capability Integration
 
-状态：`M4 ACTIVE / P2 DATA PATH VALIDATED / P2.5 PERSISTENCE & COLLECTION READINESS PASS`
+状态：`M4 ACTIVE / P2.5 PASS / P3 INSPECTION WORKFLOW & PRODUCTION DATA ACTIVATION READINESS IN PROGRESS`
 
 （不得宣布 M4 COMPLETE。P0 数据能力获取已在授权 AEE 会话下完成 live 验证，
 AEE 数据 API 已确认 TOKEN-ONLY / 无 Cookie 可用；P1 历史数据 contract /
@@ -514,8 +542,9 @@ repository / 指标 / Dashboard API 已具备；P2 真实 ONE SHOT 数据链路�
 验证（DATA PATH VALIDATED）。M4 P2.5 — PERSISTENCE & COLLECTION READINESS
 已全部 PASS：PostgreSQL rehearsal（migration/ingest/idempotency/metrics/
 backup-restore/rollback）、PG-backed Dashboard API、non-production
-LOW-RATE scheduler soak 均通过。Production activation 未授权；P3 仍为
-PLANNED ONLY / NOT STARTED。）
+LOW-RATE scheduler soak 均通过。当前执行 M4 P3 — INSPECTION WORKFLOW &
+PRODUCTION DATA ACTIVATION READINESS（产品能力允许非生产开发/验证；
+Production data activation 未授权，不得修改生产。）
 
 名称：
 
@@ -1747,30 +1776,33 @@ M4 Done Criteria：
 ## In Progress
 
 * `ACTIVE MILESTONE: M4`。
-* 状态：`M4 ACTIVE / P2 DATA PATH VALIDATED / P2.5 PERSISTENCE & COLLECTION
-  READINESS PASS`（不宣布 M4 COMPLETE）。
-* `M4 P2.5 — PERSISTENCE & COLLECTION READINESS`：
-  * source identity / idempotency 风险收口（Media identity、Device dedup
-    审计）已完成；
-  * PostgreSQL 真机 rehearsal：migration/ONE SHOT ingest/idempotency/
-    metrics/backup-restore/rollback 全部 PASS（`PostgresInspectionStore` +
-    现有 normalizer/ingestor，disposable WSL PG 14.23）；
-  * PG-backed Dashboard API（5 端点）验证 PASS，memory==PG 无指标漂移；
-  * NON-PRODUCTION LOW-RATE SCHEDULER SOAK 执行 PASS（3 次重叠窗口 +
-    单源失败注入：无增长、source isolation、恢复、请求量有界）；
-  * 服务端 AEE token provider 生命周期/刷新仍待服务端集成验证（live
-    token-expiry 观察不在本次受控 soak 内）。
-* `P2.5`：Legacy media→flight/task 自动匹配保持降级（P2），不恢复。
+* 状态：`M4 ACTIVE / P2.5 PASS / P3 IN PROGRESS`（不宣布 M4 COMPLETE）。
+* `M4 P3 — INSPECTION WORKFLOW & PRODUCTION DATA ACTIVATION READINESS`：
+  * CHA AuthorizedUser 授权边界模型 + store（memory/postgres）已实现；
+  * InspectionRecord 模型 + migration 0002 + store + workflow service
+    （DRAFT/SUBMITTED/CORRECTED + 审计 + 修正留痕）已实现；
+  * inspection API（分页查询/详情/创建/更新/提交/修正）+ metrics +
+    CSV/XLSX 导出 + `/dashboard/inspections` 页面已实现（非生产）；
+  * Flights/Routine Tasks 字段取证文档已产出（结构化字段保持
+    UNKNOWN/DERIVABLE，不猜测）；
+  * Production Data Activation Plan 已形成提案（未执行）。
+* 生产数据激活：`NOT AUTHORIZED`；P3 产品能力：`AUTHORIZED FOR
+  NON-PRODUCTION IMPLEMENTATION`。
+* 服务端 AEE token provider 生命周期/刷新仍待服务端集成验证（live
+  token-expiry 观察保留）。
+* `P3`：Legacy media→flight/task 自动匹配保持禁止（候选+人工确认）。
 
 ## Next
 
-1. `P2.5`（已完成）：identity/dedup 审计、epoch-zero 哨兵修复、PostgreSQL
-   rehearsal 全项 PASS、PG-backed Dashboard、non-production LOW-RATE SOAK。
-2. `P3 — Production Data Activation & Inspection Workflow`：**PLANNED ONLY /
-   NOT STARTED**。须由项目负责人明确授权后才开始；当前只允许维护
-   `PRODUCTION DATA ACTIVATION PLAN` 提案。
-3. 待办（不阻塞）：服务端 AEE token provider 生命周期/刷新验证；live
-   token-expiry 观察（在授权 live 环境中自然观察，不逆向认证协议）。
+1. `P3`（进行中）：InspectionRecord 数据层/服务/API/页面/导出已完成；
+   剩余：真实 Flights/Routine Tasks 样本取证（需授权 live 会话）、
+   Inspection 创建入口与现有 realtime 页面联动、PG-backed inspections
+   Dashboard/导出 rehearsal。
+2. `P3` 待办：服务端 AEE token provider 生命周期/刷新验证（不记录
+   Token/Cookie/密码）；live token-expiry 观察。
+3. `P3` 完成条件：inspection 全链路（PG 持久化 + API + Dashboard + 导出 +
+   audit）在非生产 rehearsal 验证 PASS 后，输出
+   `READY FOR CONTROLLED PRODUCTION DATA ACTIVATION` 或 `BLOCKED`。
 4. 保持 Production Realtime、Audio、Control、AccountPool 关闭；不开启
    inspection/ingestion 生产开关；不执行生产数据激活。
 
@@ -1783,11 +1815,12 @@ M4 Done Criteria：
   `BLOCKED`。
 * `POSTGRESQL_REHEARSAL_BLOCKED` 已解除（2026-08-16 授权隔离 WSL PG 14.23
   rehearsal 全部 PASS）。剩余：
-  * 生产 DB migration 未获授权前 `BLOCKED`（需 rehearsal/backup/rollback +
-    明确授权）；
+  * 生产 DB migration / 生产 scheduler / 生产 ACL / 生产 InspectionRecord
+    未获授权前 `BLOCKED`；
   * 服务端 AEE token provider 生命周期/刷新仍 `AEE VERIFICATION REQUIRED`
     （浏览器侧 TOKEN-ONLY 已 live 确认）；
-  * P3 未授权前 `NOT STARTED`。
+  * Flights/Routine Tasks 结构化字段在获得真实脱敏样本前保持
+    `UNKNOWN`/`DERIVABLE`。
 * 正式 AEE 数据 Adapter 的**服务端** Token provider、生命周期和刷新策略在
   形成合法服务端证据前 `BLOCKED`。浏览器 live 证据已确认数据 API 为
   `TOKEN_REQUIRED` 且 **TOKEN-ONLY / 无 Cookie 可返回数据**（`error=200`）；
