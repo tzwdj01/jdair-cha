@@ -570,7 +570,7 @@ Realtime 产品范围冻结：
 
 ## M4 — Inspection Data Center & AEE Data Capability Integration
 
-状态：`M4 ACTIVE / P2.5 PASS / P3 FOUNDATION PASS / P3.1 PASS / P3.2 PG MIGRATION & CHA CONNECTIVITY PASS — READY FOR INITIAL ONE SHOT`
+状态：`M4 ACTIVE / P2.5 PASS / P3 FOUNDATION PASS / P3.1 PASS / P3.2 ONE SHOT BLOCKED — AEE SERVER-SIDE ACCESS WAF 493`
 
 （不得宣布 M4 COMPLETE。P0 数据能力获取已在授权 AEE 会话下完成 live 验证，
 AEE 数据 API 已确认 TOKEN-ONLY / 无 Cookie 可用；P1 历史数据 contract /
@@ -598,19 +598,16 @@ InspectionRecord 保存、backup/health/audit。不授权全用户开放/32 路/
 项目负责人已提供新的独立 PostgreSQL 候选服务器：`PRODUCTION POSTGRESQL
 CANDIDATE = ALIYUN SILICON VALLEY SERVER`（47.251.105.9）。
 Preflight 已 PASS（干净专用节点；网络 ACCEPTABLE FOR CANARY）。
-SERVER PREPARATION PASS；PG MIGRATION & CHA CONNECTIVITY gate PASS：
-（1）migration 0001+0002 已由 `cha_m4_migrator` 应用到生产 `cha_m4`/
-`inspection`（RC=0；10 表、48 索引、9 uq 唯一索引、10 约束）；（2）
-`cha_m4_app` 最小 DML 权限验证（非 superuser、不能建 schema）；（3）CHA
-真机（cn-edge 100.74.86.85）经 Tailscale 到 Aliyun PG 真连接 PASS
-（14.23/cha_m4/cha_m4_app）；连接延迟 ~1.85–2.66s/次（短连接风险记录，
-池化留后）；（4）CHA secret 文件 `/etc/cha-pg-secrets`（0600，host 用
-Tailscale IP），app 未重启；（5）DML smoke test（BEGIN/INSERT/ROLLBACK
-无残留）；（6）pg_dump+SHA256+disposable restore 验证 PASS。传输 =
-Tailscale/WireGuard 加密 + PG SSL enabled；公网 5432 关闭。
-远端备份目的地未提供（`REMOTE BACKUP DESTINATION REQUIRED BEFORE CANARY
-COMPLETION`）。详见
-`docs/aee/M4_P3_2_PG_MIGRATION_CONNECTIVITY_20260816.md`。）
+SERVER PREPARATION PASS；PG MIGRATION & CHA CONNECTIVITY gate PASS
+（migration 0001+0002 → cha_m4；CHA→Aliyun PG 真连接；secret 0600；DML
+smoke；pg_dump+restore）。生产 ONE SHOT 尝试被阻塞：
+**JD Cloud WAF (JFE) 对 CHA 生产服务器 → aee.jdcloud.com 的服务端请求返回
+HTTP 493 Forbidden**（即使带正确 token + 浏览器 UA/Referer）。浏览器内
+TOKEN-ONLY 验证可行，但生产服务器端路径被 WAF 拦截。按授权“token/auth
+failure 立即停止”，本轮 `BLOCKED`；未尝试 WAF 绕过/浏览器爬 token
+daemon。选项：JD Cloud WAF 白名单 CHA 服务器 IP / 确认受支持的服务器端
+访问通道后重试。详见
+`docs/aee/M4_P3_2_ONE_SHOT_AEE_BLOCKED_20260816.md`。）
 
 名称：
 
@@ -1843,29 +1840,28 @@ M4 Done Criteria：
 
 * `ACTIVE MILESTONE: M4`。
 * 状态：`M4 ACTIVE / P2.5 PASS / P3 FOUNDATION PASS / P3.1 PASS /
-  P3.2 PG MIGRATION & CHA CONNECTIVITY PASS — READY FOR INITIAL ONE SHOT`
+  P3.2 ONE SHOT BLOCKED — AEE SERVER-SIDE ACCESS WAF 493`
   （不宣布 M4 COMPLETE）。
 * `M4 P3.2 — CONTROLLED PRODUCTION DATA ACTIVATION & CANARY`：
-  * SERVER PREPARATION PASS（SG/swap/Tailscale/PG14.23/加固/DB+roles）；
-  * PG MIGRATION & CONNECTIVITY gate PASS：migration 0001+0002 应用到生产
-    `cha_m4`/`inspection`（10 表/48 索引/9 uq/10 约束）；`cha_m4_app` 最小
-    DML；CHA 真机 → Aliyun PG 真连接 PASS（14.23/cha_m4/cha_m4_app，经
-    Tailscale）；CHA secret 0600 就绪（app 未重启）；DML smoke test 无残留；
-    pg_dump+SHA256+disposable restore 验证 PASS；传输 = Tailscale/WireGuard
-    + PG SSL enabled；公网 5432 关闭。
-* 观察项：连接延迟 ~1.85–2.66s/次（短连接风险 → 池化留后）；远端备份
-  目的地未提供（Canary 完成前必须）。
+  * SERVER PREPARATION + PG MIGRATION & CONNECTIVITY PASS（migration 到
+    cha_m4、CHA→Aliyun PG 真连接、secret、DML smoke、pg_dump/restore）；
+  * **生产 ONE SHOT BLOCKED**：CHA 生产服务器 → AEE 数据 API 服务端请求被
+    JD Cloud WAF (JFE) 返回 HTTP 493；三源均 `AEE_DATA_HTTP_ERROR`；未尝试
+    WAF 绕过/浏览器爬 token daemon。
+* 观察项：远端备份目的地未提供（Canary 完成前必须）；AEE 服务器端访问需
+  JD Cloud WAF 白名单或受支持通道。
 * 生产数据激活：`AUTHORIZED — CONTROLLED CANARY ONLY`。
 
 ## Next
 
-1. 下一 gate（需 owner 授权执行）：生产 ONE SHOT（DevOnlineList/
-   RecordFileList/AlarmList → 归一化 → `cha_m4` → metrics 对账 + 幂等）→
-   LOW-RATE scheduler（enable/disable + 观察）→ AuthorizedUser Canary
-   allowlist → Inspection Canary → RealtimeViewEvent 采集 → 备份/监控/
-   kill switch。
-2. `P3.2` 观察项：提供远端备份目的地（否则标记 `REMOTE BACKUP DESTINATION
-   REQUIRED BEFORE CANARY COMPLETION`）；连接延迟实测 → 连接池优化候选。
+1. `P3.2` 阻塞：`AEE SERVER-SIDE ACCESS BLOCKED (JFE 493)`。需项目负责人
+   协调 JD Cloud WAF/JFE 对 CHA 生产服务器 IP 的放行，或确认受支持的
+   服务器端数据访问通道（网关/白名单），然后重试生产 ONE SHOT（脚本/模块/
+   secret 已在 CHA 就绪）。
+2. ONE SHOT 解除后：LOW-RATE scheduler → AuthorizedUser Canary →
+   Inspection Canary → RealtimeViewEvent 采集 → 备份/监控/kill switch。
+3. `P3.2` 观察项：提供远端备份目的地（否则标记 `REMOTE BACKUP DESTINATION
+   REQUIRED BEFORE CANARY COMPLETION`）。
 3. `P3.2` 待办：服务端 AEE token provider 生命周期/刷新验证（不记录
    Token/Cookie/密码）；live token-expiry 观察。
 4. 保持 Production Realtime、Audio、Control、AccountPool 关闭；不开启
