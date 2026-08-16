@@ -150,6 +150,17 @@ Current CHA normalization boundary:
 * normalization is implemented and tested but is not yet persisted, exposed
   through an API or connected to production ingestion.
 
+Epoch-zero sentinel note (LIVE VERIFIED 2026-08-16):
+
+* a small number of `RecordFileList` rows carry `startTime/fileTime` equal to
+  `1970-01-01 08:00:00` (business-local, i.e. epoch-zero UTC) as a
+  missing-capture-time sentinel;
+* the normalizer maps this observed sentinel to `None` for
+  `created_at_source`/`end_at_source`/`uploaded_at_source` and records
+  `epoch_zero_source_time_ignored`, so range queries and PostgreSQL indexes
+  are not polluted; the row remains queryable by its valid upload time;
+* this is an observed source behavior, not a guessed rule.
+
 ## 5. Realtime fields
 
 These are CHA-owned fields derived from the existing M3 session manager, not
