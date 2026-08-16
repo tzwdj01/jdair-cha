@@ -13,7 +13,11 @@ from fastapi.responses import HTMLResponse, JSONResponse, Response
 from pydantic import BaseModel, Field
 
 from ..config import Settings
-from ..data.inspection_records import InspectionRecordFilter
+from ..data.inspection_records import (
+    InspectionRecordFilter,
+    build_authorized_user,
+    build_user_audit_event,
+)
 from ..data.store import InspectionRecordStore
 from ..services.inspection_records import InspectionRecordService
 
@@ -80,6 +84,17 @@ class CorrectBody(BaseModel):
     remark: str | None = None
 
 
+class AuthorizedUserBody(BaseModel):
+    aee_account_id: str
+    username: str
+    display_name: str | None = None
+    department: str | None = None
+    role: str | None = None
+    enabled: bool = True
+    valid_from: dt.datetime | None = None
+    valid_until: dt.datetime | None = None
+
+
 def create_inspections_router(
     settings: Settings,
     service: InspectionRecordService,
@@ -133,6 +148,50 @@ def create_inspections_router(
                 status_code=403,
             )
         return (user_id, username), None
+
+    async def require_admin(
+        request: Request,
+    ) -> tuple[tuple[str | None, str] | None, JSONResponse | None]:
+        identity, error = await require_authorized(request)
+        if error is not None:
+            return None, error
+        user_id, username = identity
+        user = await record_store.get_authorized_user(username=username)
+        if user is None or str(user.role or "").strip().casefold() != "admin":
+            return None, envelope(
+                request,
+                {
+                    "code": "admin_forbidden",
+                    "message": "admin privilege is required",
+                },
+                ok=False,
+                status_code=403,
+            )
+        return (user_id, username), None
+
+    async def _record_user_audit(
+        *,
+        operator_user_id: str | None,
+        operator_username: str,
+        target_username: str,
+        action: str,
+        summary: str | None,
+    ) -> None:
+        await record_store.append_user_audit_event(
+            build_user_audit_event(
+                action=action,
+                operator_user_id=operator_user_id,
+                operator_username=operator_username,
+                target_username=target_username,
+                summary=summary,
+            )
+        )
+
+    def require_admin_route(request: Request):
+        blocked = gate(request)
+        if blocked is not None:
+            return blocked
+        return None
 
     def gate(request: Request) -> JSONResponse:
         if not settings.feature_inspection_v2:
@@ -318,6 +377,134 @@ def create_inspections_router(
                 },
             },
         )
+
+    @router.get("/api/v2/inspections/authorized-users")
+    async def list_authorized_users(request: Request) -> JSONResponse:
+        blocked = require_admin_route(request)
+        if blocked is not None:
+            return blocked
+        identity, error = await require_admin(request)
+        if error is not None:
+            return error
+        users = await record_store.list_authorized_users()
+        return envelope(
+            request,
+            {
+                "items": [
+                    {
+                        "username": user.username,
+                        "aee_account_id": user.aee_account_id,
+                        "display_name": user.display_name,
+                        "department": user.department,
+                        "role": user.role,
+                        "enabled": user.enabled,
+                    }
+                    for user in users
+                ]
+            },
+        )
+
+    @router.post("/api/v2/inspections/authorized-users")
+    async def add_authorized_user(
+        request: Request,
+        body: AuthorizedUserBody,
+    ) -> JSONResponse:
+        blocked = require_admin_route(request)
+        if blocked is not None:
+            return blocked
+        operator_id, operator_name, auth_error = await _admin_identity(request)
+        if auth_error is not None:
+            return auth_error
+        user = build_authorized_user(
+            aee_account_id=body.aee_account_id,
+            username=body.username,
+            display_name=body.display_name,
+            department=body.department,
+            role=body.role,
+            enabled=body.enabled,
+            valid_from=body.valid_from,
+            valid_until=body.valid_until,
+        )
+        await record_store.upsert_authorized_user(user)
+        await _record_user_audit(
+            operator_user_id=operator_id,
+            operator_username=operator_name,
+            target_username=user.username,
+            action="USER_ADDED",
+            summary=f"role={user.role or ''} enabled={user.enabled}",
+        )
+        return envelope(
+            request,
+            {"username": user.username, "enabled": user.enabled},
+            status_code=201,
+        )
+
+    @router.post("/api/v2/inspections/authorized-users/{username}/enable")
+    async def enable_authorized_user(
+        request: Request,
+        username: str,
+    ) -> JSONResponse:
+        return await _set_user_enabled(request, username, enabled=True)
+
+    @router.post("/api/v2/inspections/authorized-users/{username}/disable")
+    async def disable_authorized_user(
+        request: Request,
+        username: str,
+    ) -> JSONResponse:
+        return await _set_user_enabled(request, username, enabled=False)
+
+    async def _set_user_enabled(
+        request: Request,
+        username: str,
+        *,
+        enabled: bool,
+    ) -> JSONResponse:
+        blocked = require_admin_route(request)
+        if blocked is not None:
+            return blocked
+        operator_id, operator_name, auth_error = await _admin_identity(request)
+        if auth_error is not None:
+            return auth_error
+        user = await record_store.get_authorized_user(username=username)
+        if user is None:
+            return envelope(
+                request,
+                {"code": "not_found"},
+                ok=False,
+                status_code=404,
+            )
+        updated = build_authorized_user(
+            aee_account_id=user.aee_account_id,
+            username=user.username,
+            display_name=user.display_name,
+            department=user.department,
+            role=user.role,
+            enabled=enabled,
+            valid_from=user.valid_from,
+            valid_until=user.valid_until,
+            created_at=user.created_at,
+        )
+        await record_store.upsert_authorized_user(updated)
+        await _record_user_audit(
+            operator_user_id=operator_id,
+            operator_username=operator_name,
+            target_username=user.username,
+            action="USER_ENABLED" if enabled else "USER_DISABLED",
+            summary=None,
+        )
+        return envelope(
+            request,
+            {"username": user.username, "enabled": enabled},
+        )
+
+    async def _admin_identity(
+        request: Request,
+    ) -> tuple[str | None, str, JSONResponse | None]:
+        identity, error = await require_admin(request)
+        if error is not None:
+            return None, "", error
+        user_id, username = identity
+        return user_id, username, None
 
     @router.post("/api/v2/inspections")
     async def create_draft(

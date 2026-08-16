@@ -122,6 +122,14 @@ def _app(username: str = "inspector-a"):
 async def _seed_authorized(store) -> None:
     await store.upsert_authorized_user(
         build_authorized_user(
+            aee_account_id="acc-admin",
+            username="admin-a",
+            role="admin",
+            enabled=True,
+        )
+    )
+    await store.upsert_authorized_user(
+        build_authorized_user(
             aee_account_id="acc-a",
             username="inspector-a",
             enabled=True,
@@ -281,6 +289,78 @@ class InspectionsAPITests(unittest.IsolatedAsyncioTestCase):
             "credential",
         ):
             self.assertNotIn(forbidden, text.lower())
+
+    async def test_authorized_user_admin_maintenance(self) -> None:
+        app, store = _app(username="admin-a")
+        await _seed_authorized(store)
+
+        listing = await _request(
+            app,
+            "GET",
+            "/api/v2/inspections/authorized-users",
+        )
+        self.assertEqual(listing.status_code, 200)
+        usernames = {
+            item["username"]
+            for item in listing.json()["data"]["items"]
+        }
+        self.assertIn("inspector-a", usernames)
+
+        added = await _request(
+            app,
+            "POST",
+            "/api/v2/inspections/authorized-users",
+            {
+                "aee_account_id": "acc-new",
+                "username": "inspector-new",
+                "role": "inspector",
+                "enabled": True,
+            },
+        )
+        self.assertEqual(added.status_code, 201)
+        self.assertTrue(
+            await store.is_account_authorized(
+                username="inspector-new",
+                at=dt.datetime.now(UTC),
+            )
+        )
+
+        disabled = await _request(
+            app,
+            "POST",
+            "/api/v2/inspections/authorized-users/inspector-new/disable",
+        )
+        self.assertEqual(disabled.status_code, 200)
+        self.assertFalse(
+            await store.is_account_authorized(
+                username="inspector-new",
+                at=dt.datetime.now(UTC),
+            )
+        )
+
+        audit = await store.list_user_audit_events(
+            target_username="inspector-new",
+        )
+        actions = [event.action for event in audit]
+        self.assertEqual(
+            actions,
+            ["USER_ADDED", "USER_DISABLED"],
+        )
+        self.assertEqual(audit[0].operator_username, "admin-a")
+
+    async def test_non_admin_cannot_manage_users(self) -> None:
+        app, store = _app(username="inspector-a")
+        await _seed_authorized(store)
+        response = await _request(
+            app,
+            "GET",
+            "/api/v2/inspections/authorized-users",
+        )
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(
+            response.json()["data"]["code"],
+            "admin_forbidden",
+        )
 
 
 if __name__ == "__main__":

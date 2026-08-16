@@ -115,4 +115,21 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_inspection_audit_id
 CREATE INDEX IF NOT EXISTS ix_inspection_audit_inspection
     ON inspection_audit_events (inspection_id, acted_at);
 
+CREATE TABLE IF NOT EXISTS authorized_user_audit_events (
+    id BIGSERIAL PRIMARY KEY,
+    audit_id TEXT NOT NULL,
+    action TEXT NOT NULL,
+    operator_user_id TEXT,
+    operator_username TEXT NOT NULL,
+    target_username TEXT NOT NULL,
+    acted_at TIMESTAMPTZ NOT NULL,
+    summary TEXT
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_user_audit_id
+    ON authorized_user_audit_events (audit_id);
+
+CREATE INDEX IF NOT EXISTS ix_user_audit_target_time
+    ON authorized_user_audit_events (target_username, acted_at);
+
 COMMIT;

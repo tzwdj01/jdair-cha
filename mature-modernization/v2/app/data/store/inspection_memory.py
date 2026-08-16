@@ -5,6 +5,7 @@ from typing import Iterable
 
 from ..inspection_records import (
     AuthorizedUser,
+    AuthorizedUserAuditEvent,
     InspectionAuditEvent,
     InspectionRecord,
     InspectionRecordFilter,
@@ -30,6 +31,7 @@ class MemoryInspectionRecordStore(InspectionRecordStore):
         self._records: dict[str, InspectionRecord] = {}
         self._views: dict[tuple[str, str], InspectionRecordViewLink] = {}
         self._audit: dict[str, InspectionAuditEvent] = {}
+        self._user_audit: dict[str, AuthorizedUserAuditEvent] = {}
 
     async def upsert_authorized_user(self, user: AuthorizedUser) -> int:
         self._users[user.aee_account_id] = user
@@ -192,3 +194,26 @@ class MemoryInspectionRecordStore(InspectionRecordStore):
             if event.inspection_id == inspection_id
         ]
         return tuple(sorted(events, key=lambda event: event.acted_at))
+
+    async def append_user_audit_event(
+        self,
+        event: AuthorizedUserAuditEvent,
+    ) -> int:
+        self._user_audit[event.audit_id] = event
+        return 1
+
+    async def list_user_audit_events(
+        self,
+        *,
+        target_username: str | None = None,
+    ) -> tuple[AuthorizedUserAuditEvent, ...]:
+        events = list(self._user_audit.values())
+        if target_username:
+            events = [
+                event
+                for event in events
+                if event.target_username == target_username
+            ]
+        return tuple(
+            sorted(events, key=lambda event: (event.acted_at, event.audit_id))
+        )

@@ -5,6 +5,7 @@ from abc import ABC, abstractmethod
 
 from ..inspection_records import (
     AuthorizedUser,
+    AuthorizedUserAuditEvent,
     InspectionAuditEvent,
     InspectionRecord,
     InspectionRecordFilter,
@@ -96,3 +97,18 @@ class InspectionRecordStore(ABC):
         inspection_id: str,
     ) -> tuple[InspectionAuditEvent, ...]:
         """Return audit events for a record, oldest first."""
+
+    @abstractmethod
+    async def append_user_audit_event(
+        self,
+        event: AuthorizedUserAuditEvent,
+    ) -> int:
+        """Append an authorized-user administration audit event."""
+
+    @abstractmethod
+    async def list_user_audit_events(
+        self,
+        *,
+        target_username: str | None = None,
+    ) -> tuple[AuthorizedUserAuditEvent, ...]:
+        """Return user administration audit events, oldest first."""

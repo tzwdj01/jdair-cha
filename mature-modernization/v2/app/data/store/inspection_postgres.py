@@ -14,6 +14,7 @@ except ImportError:  # pragma: no cover
 
 from ..inspection_records import (
     AuthorizedUser,
+    AuthorizedUserAuditEvent,
     InspectionAuditEvent,
     InspectionRecord,
     InspectionRecordFilter,
@@ -490,6 +491,68 @@ class PostgresInspectionRecordStore(InspectionRecordStore):
         )
         return tuple(_row_to_audit(row) for row in rows)
 
+    async def append_user_audit_event(
+        self,
+        event: AuthorizedUserAuditEvent,
+    ) -> int:
+        return await asyncio.to_thread(
+            self._append_user_audit_event_sync,
+            event,
+        )
+
+    def _append_user_audit_event_sync(
+        self,
+        event: AuthorizedUserAuditEvent,
+    ) -> int:
+        sql = f"""
+        INSERT INTO {self._qualify('authorized_user_audit_events')}
+            (audit_id, action, operator_user_id, operator_username,
+             target_username, acted_at, summary)
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
+        ON CONFLICT (audit_id) DO NOTHING
+        """
+        with self._connect() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    sql,
+                    (
+                        event.audit_id,
+                        event.action,
+                        event.operator_user_id,
+                        event.operator_username,
+                        event.target_username,
+                        _utc(event.acted_at),
+                        event.summary,
+                    ),
+                )
+            connection.commit()
+        return 1
+
+    async def list_user_audit_events(
+        self,
+        *,
+        target_username: str | None = None,
+    ) -> tuple[AuthorizedUserAuditEvent, ...]:
+        return await asyncio.to_thread(
+            self._list_user_audit_events_sync,
+            target_username,
+        )
+
+    def _list_user_audit_events_sync(
+        self,
+        target_username: str | None,
+    ) -> tuple[AuthorizedUserAuditEvent, ...]:
+        sql = f"SELECT * FROM {self._qualify('authorized_user_audit_events')}"
+        params: list[Any] = []
+        if target_username:
+            sql += " WHERE target_username = %s"
+            params.append(target_username)
+        sql += " ORDER BY acted_at, audit_id"
+        return tuple(
+            _row_to_user_audit(row)
+            for row in self._select(sql, params)
+        )
+
 
 _USER_COLUMNS = (
     "aee_account_id",
@@ -544,6 +607,16 @@ _AUDIT_COLUMNS = (
     "action",
     "actor_user_id",
     "actor_username",
+    "acted_at",
+    "summary",
+)
+
+_USER_AUDIT_COLUMNS = (
+    "audit_id",
+    "action",
+    "operator_user_id",
+    "operator_username",
+    "target_username",
     "acted_at",
     "summary",
 )
@@ -612,6 +685,19 @@ def _row_to_audit(row: tuple[Any, ...]) -> InspectionAuditEvent:
         action=values["action"],
         actor_user_id=values["actor_user_id"],
         actor_username=values["actor_username"],
+        acted_at=_utc(values["acted_at"]),
+        summary=values["summary"],
+    )
+
+
+def _row_to_user_audit(row: tuple[Any, ...]) -> AuthorizedUserAuditEvent:
+    values = dict(zip(_USER_AUDIT_COLUMNS, row[1:]))
+    return AuthorizedUserAuditEvent(
+        audit_id=values["audit_id"],
+        action=values["action"],
+        operator_user_id=values["operator_user_id"],
+        operator_username=values["operator_username"],
+        target_username=values["target_username"],
         acted_at=_utc(values["acted_at"]),
         summary=values["summary"],
     )

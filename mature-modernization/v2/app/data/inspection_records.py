@@ -93,6 +93,17 @@ class InspectionAuditEvent:
 
 
 @dataclass(frozen=True, slots=True)
+class AuthorizedUserAuditEvent:
+    audit_id: str
+    action: str
+    operator_user_id: str | None
+    operator_username: str
+    target_username: str
+    acted_at: dt.datetime
+    summary: str | None
+
+
+@dataclass(frozen=True, slots=True)
 class InspectionRecordFilter:
     start: dt.datetime | None = None
     end: dt.datetime | None = None
@@ -245,6 +256,41 @@ def build_audit_event(
         action=normalized_action,
         actor_user_id=_optional_text(actor_user_id, 128),
         actor_username=_required_text(actor_username, "actor_username")[:128],
+        acted_at=_aware_utc(acted_at or dt.datetime.now(UTC), "acted_at"),
+        summary=_optional_text(summary, 500),
+    )
+
+
+def build_user_audit_event(
+    *,
+    action: str,
+    operator_user_id: str | None,
+    operator_username: str,
+    target_username: str,
+    acted_at: dt.datetime | None = None,
+    summary: str | None = None,
+    audit_id: str | None = None,
+) -> AuthorizedUserAuditEvent:
+    normalized_action = str(action or "").strip().upper()
+    if normalized_action not in {
+        "USER_ADDED",
+        "USER_UPDATED",
+        "USER_ENABLED",
+        "USER_DISABLED",
+    }:
+        raise ValueError("unsupported user audit action")
+    return AuthorizedUserAuditEvent(
+        audit_id=audit_id or f"uaud_{uuid.uuid4().hex[:16]}",
+        action=normalized_action,
+        operator_user_id=_optional_text(operator_user_id, 128),
+        operator_username=_required_text(
+            operator_username,
+            "operator_username",
+        )[:128],
+        target_username=_required_text(
+            target_username,
+            "target_username",
+        )[:128],
         acted_at=_aware_utc(acted_at or dt.datetime.now(UTC), "acted_at"),
         summary=_optional_text(summary, 500),
     )
