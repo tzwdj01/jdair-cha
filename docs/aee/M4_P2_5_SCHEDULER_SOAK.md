@@ -1,6 +1,6 @@
 # M4 P2.5 — Low-Rate Controlled Scheduler Soak (Design)
 
-Status: `DESIGNED / NOT STARTED`.
+Status: `EXECUTED 2026-08-16 (controlled, non-production) / PASS`.
 
 Soak may only start **after** all of the following are PASS:
 
@@ -11,9 +11,20 @@ Soak may only start **after** all of the following are PASS:
 * ONE SHOT PostgreSQL ingest PASS;
 * Metric reconciliation PASS.
 
-PostgreSQL rehearsal is currently `POSTGRESQL_REHEARSAL_BLOCKED`, so the soak
-has **not** started. It runs only in a **non-production** environment; the
-production scheduler stays disabled.
+It runs only in a **non-production** environment; the production scheduler
+stays disabled.
+
+Execution note (2026-08-16): after PostgreSQL migration, ONE SHOT ingest,
+idempotency, backup/restore, rollback, metrics reconciliation and
+PG-backed Dashboard all PASS, a controlled soak ran against the disposable
+`cha_m4_rehearsal` database: 3 overlapping runs of `InspectionIngestionScheduler`
+with `PostgresInspectionStore` and a deterministic fixture collector, with a
+device-status source failure injected on run 2. Results: no row growth
+(1857/805/46 stable), source isolation (media/alarms persisted, no loss),
+recovery on run 3 without inflation, bounded request volume (3 collection
+calls). A **live** AEE token-expiry observation is not part of this controlled
+soak (no server-side token was used); it remains a live-environment
+observation item.
 
 ## 1. Goal
 

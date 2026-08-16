@@ -324,6 +324,32 @@ Last updated: 2026-08-16
     ONE SHOT PG ingest、metric reconciliation）全部 PASS 前不启动；
     生产 scheduler 保持关闭。
 * 当前全量 V2 自动化回归为 `215 tests PASS`。
+* `2026-08-16` 项目负责人授权在开发机 WSL Ubuntu 建立隔离、可删除、
+  NON-PRODUCTION PostgreSQL rehearsal 环境（Ubuntu 22.04.5 + PostgreSQL
+  14.23，disposable `cha_m4_rehearsal` DB + `inspection_rehearsal` schema；
+  密码仅存 `/root/.pgpass` 0600，未进入 Git/文档/日志）。
+* M4 P2.5 PostgreSQL rehearsal 全部 PASS：
+  * migration `0001` 应用 + schema/index/constraint 检查通过；
+  * ONE SHOT ingest（`PostgresInspectionStore` + 现有 normalizer/ingestor）：
+    device_status 1857/1857、media_files 805/805、alarms 46/46、
+    realtime_view 1/1，report completed=True；
+  * 同窗口二次摄入不膨胀（idempotency PASS）；
+  * metrics reconciliation（memory == PG）四域全一致（含 coverage），
+    PG-backed Dashboard API（5 端点）均 200 + coverage 语义正确 → PASS；
+  * backup/restore：pg_dump+SHA256 → disposable target → pg_restore →
+    行数/指标一致 → PASS；
+  * rollback（forward-only 模型：fresh migration → restore backup）：
+    行/指标与参考一致，RTO ≈ 0.9s → PASS；
+  * NON-PRODUCTION LOW-RATE SCHEDULER SOAK（3 次重叠窗口 + 注入单源失败）：
+    无增长、source isolation、恢复、请求量有界 → PASS；
+  * rehearsal 过程中修复的失败点：`ON CONFLICT ON CONSTRAINT` 对 unique
+    index 无效（改为列推断）、`pg_restore` 因 PGHOST/pgpass 匹配问题挂起
+    （改为 PGHOST+PGPASSWORD 注入）。
+* 新增 `PostgresInspectionStore`（`app/data/store/postgres.py`）实现
+  `InspectionStore` 协议，连接配置仅来自 `CHA_PG_*`/`PGPASSWORD` 环境变量；
+  新增 `tests/test_postgres_store.py`（无 PG 时自动 skip，有 rehearsal PG
+  时执行真机往返测试）。
+* 当前全量 V2 自动化回归为 `217 tests PASS`。
 
 ---
 
@@ -480,16 +506,16 @@ Realtime 产品范围冻结：
 
 ## M4 — Inspection Data Center & AEE Data Capability Integration
 
-状态：`M4 ACTIVE / P2 DATA PATH VALIDATED / P2.5 BLOCKED — POSTGRESQL ENVIRONMENT REQUIRED`
+状态：`M4 ACTIVE / P2 DATA PATH VALIDATED / P2.5 PERSISTENCE & COLLECTION READINESS PASS`
 
 （不得宣布 M4 COMPLETE。P0 数据能力获取已在授权 AEE 会话下完成 live 验证，
 AEE 数据 API 已确认 TOKEN-ONLY / 无 Cookie 可用；P1 历史数据 contract /
 repository / 指标 / Dashboard API 已具备；P2 真实 ONE SHOT 数据链路已
 验证（DATA PATH VALIDATED）。M4 P2.5 — PERSISTENCE & COLLECTION READINESS
-的 identity/dedup 审计、RealtimeView persistence contract、memory/live
-ingestion 与 metrics reconciliation 均 PASS；当前唯一未验证项为真实
-PostgreSQL persistence，等待项目负责人提供安全隔离 PostgreSQL 环境
-（OWNER ACTION REQUIRED）。Production activation 未授权。）
+已全部 PASS：PostgreSQL rehearsal（migration/ingest/idempotency/metrics/
+backup-restore/rollback）、PG-backed Dashboard API、non-production
+LOW-RATE scheduler soak 均通过。Production activation 未授权；P3 仍为
+PLANNED ONLY / NOT STARTED。）
 
 名称：
 
@@ -1705,37 +1731,48 @@ M4 Done Criteria：
   `docs/aee/M4_P2_5_POSTGRESQL_REHEARSAL.md`。
 * P2.5：LOW-RATE SCHEDULER SOAK 设计文档
   `docs/aee/M4_P2_5_SCHEDULER_SOAK.md`（未启动，前置条件未全 PASS）。
-* 当前全量 V2 回归 `215 tests PASS`。
+* P2.5（2026-08-16 授权后执行）：PostgreSQL 真机 rehearsal 全部 PASS——
+  migration/schema/index/constraint 检查、ONE SHOT ingest（1857/805/46/1）、
+  二次摄入幂等、metrics reconciliation（memory==PG）、backup/restore
+  （pg_dump+SHA256+restore 行/指标一致）、rollback（RTO≈0.9s）、
+  PG-backed Dashboard API（5 端点 200 + coverage 语义）。
+* P2.5：NON-PRODUCTION LOW-RATE SCHEDULER SOAK 执行 PASS（3 次重叠窗口 +
+  单源失败注入：无增长、source isolation、恢复、请求量有界）。
+* P2.5：新增 `PostgresInspectionStore`
+  （`app/data/store/postgres.py`，`InspectionStore` 实现，连接仅来自
+  `CHA_PG_*`/`PGPASSWORD` 环境变量）+ `tests/test_postgres_store.py`
+  （无 PG 自动 skip，有 rehearsal PG 时真机往返测试）。
+* 当前全量 V2 回归 `217 tests PASS`。
 
 ## In Progress
 
 * `ACTIVE MILESTONE: M4`。
-* 状态：`M4 ACTIVE / P2 DATA PATH VALIDATED / P2.5 BLOCKED — POSTGRESQL
-  ENVIRONMENT REQUIRED`（不宣布 M4 COMPLETE）。
+* 状态：`M4 ACTIVE / P2 DATA PATH VALIDATED / P2.5 PERSISTENCE & COLLECTION
+  READINESS PASS`（不宣布 M4 COMPLETE）。
 * `M4 P2.5 — PERSISTENCE & COLLECTION READINESS`：
   * source identity / idempotency 风险收口（Media identity、Device dedup
     审计）已完成；
-  * PostgreSQL 真机 rehearsal：`POSTGRESQL ENVIRONMENT REQUIRED`（BLOCKED），
-    待提供隔离 PostgreSQL 后执行 migration/ingest/backup/restore/rollback；
-  * LOW-RATE SCHEDULER SOAK：设计完成，前置条件全部 PASS 前不启动；
-  * 服务端 AEE token provider 生命周期/刷新仍待服务端集成验证。
+  * PostgreSQL 真机 rehearsal：migration/ONE SHOT ingest/idempotency/
+    metrics/backup-restore/rollback 全部 PASS（`PostgresInspectionStore` +
+    现有 normalizer/ingestor，disposable WSL PG 14.23）；
+  * PG-backed Dashboard API（5 端点）验证 PASS，memory==PG 无指标漂移；
+  * NON-PRODUCTION LOW-RATE SCHEDULER SOAK 执行 PASS（3 次重叠窗口 +
+    单源失败注入：无增长、source isolation、恢复、请求量有界）；
+  * 服务端 AEE token provider 生命周期/刷新仍待服务端集成验证（live
+    token-expiry 观察不在本次受控 soak 内）。
 * `P2.5`：Legacy media→flight/task 自动匹配保持降级（P2），不恢复。
 
 ## Next
 
-1. `P2.5`（已完成）：Media identity + Device dedup 审计、epoch-zero 哨兵
-   修复、PG 环境探测（BLOCKED）、SOAK 设计。
-2. `P2.5` 待办：由项目负责人提供安全隔离 PostgreSQL runtime（≥14，
-   pg_dump/pg_restore 可用，独立 schema）后，执行
-   migration → ONE SHOT ingest → 幂等 → 查询 → backup/restore → rollback
-   rehearsal（见 `docs/aee/M4_P2_5_POSTGRESQL_REHEARSAL.md`）。
-3. `P2.5` 待办：服务端 AEE token provider 生命周期/刷新验证（不记录
-   Token/Cookie/密码）。
-4. `P2.5` 待办：前置条件全部 PASS 后，在非生产执行 LOW-RATE CONTROLLED
-   SCHEDULER SOAK（见 `docs/aee/M4_P2_5_SCHEDULER_SOAK.md`）。
-5. 保持 Production Realtime、Audio、Control、AccountPool 关闭；不开启
-   inspection/ingestion 生产开关；不执行生产数据激活（只提
-   PRODUCTION DATA ACTIVATION PLAN）。
+1. `P2.5`（已完成）：identity/dedup 审计、epoch-zero 哨兵修复、PostgreSQL
+   rehearsal 全项 PASS、PG-backed Dashboard、non-production LOW-RATE SOAK。
+2. `P3 — Production Data Activation & Inspection Workflow`：**PLANNED ONLY /
+   NOT STARTED**。须由项目负责人明确授权后才开始；当前只允许维护
+   `PRODUCTION DATA ACTIVATION PLAN` 提案。
+3. 待办（不阻塞）：服务端 AEE token provider 生命周期/刷新验证；live
+   token-expiry 观察（在授权 live 环境中自然观察，不逆向认证协议）。
+4. 保持 Production Realtime、Audio、Control、AccountPool 关闭；不开启
+   inspection/ingestion 生产开关；不执行生产数据激活。
 
 ## Blocked
 
@@ -1744,13 +1781,13 @@ M4 Done Criteria：
   `AEE VERIFICATION REQUIRED` 或 `UNKNOWN`，但不阻塞无依赖的 CHA 审计和模型设计。
 * production DB migration 在没有 rehearsal、backup、rollback 和明确授权前
   `BLOCKED`。
-* `POSTGRESQL ENVIRONMENT REQUIRED`（=`POSTGRESQL_REHEARSAL_BLOCKED`）：
-  当前开发机缺少 Docker/PostgreSQL、`psql`/`pg_dump`/`pg_restore`、Python
-  PG 驱动，5432 无监听；WSL Ubuntu 无 PG 二进制，安装需 root/admin 且
-  未经授权不自行安装。最小所需环境：一个安全、隔离、非生产的 PostgreSQL
-  实例（≥14，与生产规划兼容），独立 database/schema，`pg_dump`/
-  `pg_restore` 可用，可删除、无生产数据。该 blocker 只阻塞 PostgreSQL
-  PASS，不阻塞其它 P2/P2.5 代码与验证。
+* `POSTGRESQL_REHEARSAL_BLOCKED` 已解除（2026-08-16 授权隔离 WSL PG 14.23
+  rehearsal 全部 PASS）。剩余：
+  * 生产 DB migration 未获授权前 `BLOCKED`（需 rehearsal/backup/rollback +
+    明确授权）；
+  * 服务端 AEE token provider 生命周期/刷新仍 `AEE VERIFICATION REQUIRED`
+    （浏览器侧 TOKEN-ONLY 已 live 确认）；
+  * P3 未授权前 `NOT STARTED`。
 * 正式 AEE 数据 Adapter 的**服务端** Token provider、生命周期和刷新策略在
   形成合法服务端证据前 `BLOCKED`。浏览器 live 证据已确认数据 API 为
   `TOKEN_REQUIRED` 且 **TOKEN-ONLY / 无 Cookie 可返回数据**（`error=200`）；
