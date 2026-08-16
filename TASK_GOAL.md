@@ -570,7 +570,7 @@ Realtime 产品范围冻结：
 
 ## M4 — Inspection Data Center & AEE Data Capability Integration
 
-状态：`M4 ACTIVE / P2.5 PASS / P3 PRODUCT FOUNDATION PASS / P3.1 INSPECTION WORKFLOW INTEGRATION & BUSINESS DATA VERIFICATION IN PROGRESS`
+状态：`M4 ACTIVE / P2.5 PASS / P3 FOUNDATION PASS / P3.1 PASS / P3.2 BLOCKED — PRODUCTION POSTGRESQL CAPACITY DECISION REQUIRED`
 
 （不得宣布 M4 COMPLETE。P0 数据能力获取已在授权 AEE 会话下完成 live 验证，
 AEE 数据 API 已确认 TOKEN-ONLY / 无 Cookie 可用；P1 历史数据 contract /
@@ -578,12 +578,27 @@ repository / 指标 / Dashboard API 已具备；P2 真实 ONE SHOT 数据链路�
 验证（DATA PATH VALIDATED）。M4 P2.5 — PERSISTENCE & COLLECTION READINESS
 已全部 PASS：PostgreSQL rehearsal（migration/ingest/idempotency/metrics/
 backup-restore/rollback）、PG-backed Dashboard API、non-production
-LOW-RATE scheduler soak 均通过；P3 product foundation PASS（InspectionRecord
-模型/store/service/API/Dashboard/导出/审计）。当前执行 M4 P3.1 —
-INSPECTION WORKFLOW INTEGRATION & BUSINESS DATA VERIFICATION（Realtime →
-InspectionRecord → Aircraft/Flight/Station/Routine Task → Issue →
-PostgreSQL → Query/Dashboard/Export 最后一公里）。PRODUCTION ACTIVATION
-READINESS: CONDITIONAL；Production data activation 未授权，不得修改生产。）
+LOW-RATE scheduler soak 均通过；P3 product foundation PASS；P3.1
+INSPECTION WORKFLOW INTEGRATION & BUSINESS DATA VERIFICATION PASS（live
+业务字段取证、候选服务、authorized-user 管理、realtime 联动、PG-backed
+全链路 rehearsal、导出/审计 rehearsal）。
+
+项目负责人已明确授权：`M4 P3.2 — CONTROLLED PRODUCTION DATA ACTIVATION &
+CANARY`（有限、可回滚、分阶段生产授权）。仅授权：production PostgreSQL、
+rehearsal 过的 migration、AEE data secret provider、低频只读 ingestion
+scheduler、小规模 AuthorizedUser allowlist、Canary 用户 Inspection
+workflow、inspection Dashboard/API、RealtimeViewEvent 采集、
+InspectionRecord 保存、backup/health/audit。不授权全用户开放/32 路/PTZ/
+自动 matcher/Legacy 替换/破坏性操作。M4 NOT COMPLETE。
+
+`2026-08-16` 生产只读容量审计（jdair.top）结论：主机仅
+`2 vCPU / 1.9 GiB RAM`，当前已用 1.7 GiB、可用约 244 MiB、swap 已用
+752 MiB；已运行 openclaw/mcs8_web_panel/v2 uvicorn/airamro-proxy/
+aon-pc-proxy/dockerd/containerd/tailscaled 等；现有备份 303 MiB 位于
+同一系统盘。**容量不足以安全同机承载 PostgreSQL + CHA + scheduler +
+backup**。按 P3.2 授权范围（容量不足不得强行部署），本次激活在容量闸门
+处 `BLOCKED`，输出 `PRODUCTION POSTGRESQL CAPACITY DECISION REQUIRED`。
+详见 `docs/aee/M4_P3_2_PRODUCTION_AUDIT_20260816.md`。）
 
 名称：
 
@@ -1815,52 +1830,49 @@ M4 Done Criteria：
 ## In Progress
 
 * `ACTIVE MILESTONE: M4`。
-* 状态：`M4 ACTIVE / P2.5 PASS / P3 PRODUCT FOUNDATION PASS / P3.1 IN
-  PROGRESS`（不宣布 M4 COMPLETE）。
-* `M4 P3.1 — INSPECTION WORKFLOW INTEGRATION & BUSINESS DATA VERIFICATION`：
-  * Flights/Routine Tasks **live 字段取证完成**（CHA 会话，只读；字段
-    定级见证据文档 + DATA_AVAILABILITY_MATRIX §8.1/8.2）；
-  * `InspectionBusinessCandidateService` 已实现（SOURCE_DIRECT 候选，
-    DERIVED 仅辅助）；
-  * `AuthorizedUser` admin 管理最小闭环（list/add/enable/disable + 审计）；
-  * Realtime 页面“记录监察结果”入口已接（当前流 → 监察草稿）；
-  * PG-backed Inspection 全链路 rehearsal（auth → realtime view →
-    create → submit → correct → query → metrics → CSV/XLSX → 对账）PASS；
-  * Production Activation Plan 已按 P3.1 结果修订（A–K）。
-* 生产数据激活：`NOT AUTHORIZED`；P3 产品能力：`AUTHORIZED FOR
-  NON-PRODUCTION IMPLEMENTATION`。
-* 服务端 AEE token provider 生命周期/刷新仍待服务端集成验证（live
-  token-expiry 观察保留）。
-* `P3`：Legacy media→flight/task 自动匹配保持禁止（候选+人工确认）。
+* 状态：`M4 ACTIVE / P2.5 PASS / P3 FOUNDATION PASS / P3.1 PASS /
+  P3.2 BLOCKED — PRODUCTION POSTGRESQL CAPACITY DECISION REQUIRED`
+  （不宣布 M4 COMPLETE）。
+* `M4 P3.2 — CONTROLLED PRODUCTION DATA ACTIVATION & CANARY`：
+  * 生产只读审计完成（jdair.top）：`2 vCPU / 1.9 GiB RAM`，已用 1.7 GiB、
+    可用约 244 MiB、swap 已用 752 MiB；已有 openclaw/mcs8_web_panel/
+    airamro-proxy/aon-pc-proxy/dockerd/containerd/tailscaled 等常驻服务；
+    现有备份 303 MiB 位于同一系统盘；
+  * 按授权范围（容量不足不得强行部署）停止部署：未安装 PG、未应用
+    migration、未启用 scheduler/allowlist/Inspection、未写生产 Secret；
+  * 输出 `PRODUCTION POSTGRESQL CAPACITY DECISION REQUIRED`。
+* 生产数据激活：`AUTHORIZED — CONTROLLED CANARY ONLY`（但受容量闸门阻塞）。
 
 ## Next
 
-1. `P3.1`（进行中，接近完成）：live 取证、候选服务、USER_CONFIRMED/
-   MANUAL_ENTRY、realtime 联动、authorized-user 管理、PG-backed 全链路
-   rehearsal、导出/审计 rehearsal 均已 PASS。
-2. `P3.1` 完成 gate：P3.1 Completion Gate 全项满足后输出
-   `M4 P3.1 PASS / READY FOR CONTROLLED PRODUCTION ACTIVATION`，然后停止；
-   生产激活仍 NOT AUTHORIZED。
-3. `P3.1` 待办：服务端 AEE token provider 生命周期/刷新验证（不记录
+1. `P3.2` 阻塞：`PRODUCTION POSTGRESQL CAPACITY DECISION REQUIRED`。需项目
+   负责人决策：a) 云端托管 PostgreSQL；b) 独立 PG 服务器；c) 升级 CHA 主机
+   内存（建议 ≥4 GiB，最好 8 GiB）+ 分离备份盘；或组合方案；并指定非系统盘
+   备份位置。
+2. 容量决策后：生产完整备份（时间戳 + SHA256 manifest + rollback point）
+   → PG 初始化/migration 0001+0002 → secret 注入 → 生产 ONE SHOT → 幂等/
+   对账 → LOW-RATE scheduler → AuthorizedUser Canary → Inspection Canary
+   → 备份/监控/kill switch。
+3. `P3.2` 待办：服务端 AEE token provider 生命周期/刷新验证（不记录
    Token/Cookie/密码）；live token-expiry 观察。
 4. 保持 Production Realtime、Audio、Control、AccountPool 关闭；不开启
    inspection/ingestion 生产开关；不执行生产数据激活。
 
 ## Blocked
 
-* 当前无 M4 项目级 blocker。
+* 当前无 M4 项目级 blocker（除生产容量决策）。
 * 无法从合法 AEE 会话确认的接口和字段必须标记
   `AEE VERIFICATION REQUIRED` 或 `UNKNOWN`，但不阻塞无依赖的 CHA 审计和模型设计。
 * production DB migration 在没有 rehearsal、backup、rollback 和明确授权前
   `BLOCKED`。
 * `POSTGRESQL_REHEARSAL_BLOCKED` 已解除（2026-08-16 授权隔离 WSL PG 14.23
   rehearsal 全部 PASS）。剩余：
+  * 生产 PostgreSQL 容量决策未定前 `BLOCKED`
+    （`PRODUCTION POSTGRESQL CAPACITY DECISION REQUIRED`）；
   * 生产 DB migration / 生产 scheduler / 生产 ACL / 生产 InspectionRecord
-    未获授权前 `BLOCKED`；
+    在容量决策与后续授权落实前 `BLOCKED`；
   * 服务端 AEE token provider 生命周期/刷新仍 `AEE VERIFICATION REQUIRED`
     （浏览器侧 TOKEN-ONLY 已 live 确认）；
-  * Flights/Routine Tasks 结构化字段在获得真实脱敏样本前保持
-    `UNKNOWN`/`DERIVABLE`。
 * 正式 AEE 数据 Adapter 的**服务端** Token provider、生命周期和刷新策略在
   形成合法服务端证据前 `BLOCKED`。浏览器 live 证据已确认数据 API 为
   `TOKEN_REQUIRED` 且 **TOKEN-ONLY / 无 Cookie 可返回数据**（`error=200`）；
