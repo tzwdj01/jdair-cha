@@ -1,0 +1,2 @@
+Set WshShell = CreateObject("WScript.Shell")
+WshShell.Run "cmd /c " & Chr(34) & "C:\Users\jiajianpeng\AppData\Local\Programs\Python\Python314\python.exe -u " & Chr(34) & Chr(34) & "C:\Users\jiajianpeng\Documents\??????\run_server.py" & Chr(34) & Chr(34), 0, False
