@@ -23,7 +23,7 @@ CHA UI template or production runtime dependency.
 
 | Domain | AEE capability | Evidence | Classification | CHA status | M4 recommendation |
 | --- | --- | --- | --- | --- | --- |
-| authentication | `/api/v1/auth/Token` access token; AEE data helper sends it in custom `token` header | LIVE page requests + STATIC transport evidence | Class A | M3 server-side login exists; M4 read-only HTTP transport foundation added, not wired | verify token-only server call, lifetime and refresh without exposing credentials |
+| authentication | `/api/v1/auth/Token` access token; AEE data helper sends it in custom `token` header | TOKEN-ONLY LIVE VERIFIED (2026-08-16): token header + `credentials:'omit'` returns `error=200` on DevOnlineList/RecordFileList; no header returns `error=333` | Class A | M3 server-side login exists; M4 read-only HTTP transport foundation added, not wired | verify token lifetime/refresh and server-side token provider without exposing credentials |
 | permissions | `VIDEOMONITOR` controls device drag/play access | LIVE VERIFIED | Class A | Canary isolation is CHA-owned | catalog required permissions per read-only data capability |
 | device tree | device ID/name, online/status, alarm, GPS, network/storage projections | LIVE VERIFIED through `/api/v1/ext/DevTree`, fields partial | Class A | CHA devices expose a subset | build normalized read-only adapter after code-map and refresh semantics are captured |
 | device groups | group/tree organization | LIVE VERIFIED through `/api/v1/ext/DevTree`, semantics partial | Class A | CHA exposes maintenance group name/ID | catalog hierarchy and stable identifiers |
@@ -117,8 +117,12 @@ CHA UI template or production runtime dependency.
   same-origin `fetch` without the page-injected `token` header returned
   `error=333` (HTTP 200, no data) — confirming **TOKEN_REQUIRED**: the data
   API depends on the custom `token` header and does not accept the Cookie
-  alone. Access-token lifetime and refresh behavior still require a
-  sanitized server-side integration check.
+  alone. **TOKEN-ONLY LIVE VERIFIED (2026-08-16)**: a page-context `fetch`
+  with only the `token` header and `credentials:'omit'` (no Cookie sent)
+  returned `error=200` on `/api/v1/DevOnlineList` (716 rows) and
+  `/api/v1/RecordFileList` (347 rows), proving the server-style token-only
+  request works without a browser Cookie. Access-token lifetime, refresh and
+  the server-side token provider still require a sanitized integration check.
 
 ## AEE verification required
 
@@ -137,7 +141,7 @@ sanitized Network/WebSocket observation:
   semantics, retention and permissions;
 * user activity/session endpoint and privacy restrictions;
 * pagination/rate limits and supported server-side integration boundary.
-* token-only server-side access to each required read-only path, token
-  lifetime, 401 behavior and refresh/login frequency. Live browser evidence
-  already confirms the data API is token-header dependent (`error=333` when
-  the header is absent); server-side integration remains to be proven.
+* token-only server-side access to each required read-only path is
+  **LIVE VERIFIED** (token header without Cookie returns `error=200`); token
+  lifetime, 401 behavior, refresh/login frequency and the server-side token
+  provider remain to be validated.

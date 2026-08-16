@@ -15,6 +15,17 @@ fixtures derived from the sanitized samples were added under
 `tests/test_aee_live_fixtures.py`. No credential, Cookie or reusable token was
 recorded. Server-side token-lifecycle verification remains the next step.
 
+Token/Cookie boundary result (2026-08-16, same authorized session):
+
+* `fetch` without the page-injected `token` header → `error=333` (HTTP 200,
+  empty data): the data API is `TOKEN_REQUIRED`.
+* `fetch` with only the custom `token` header and `credentials:'omit'`
+  (no Cookie sent) → `error=200` on both `/api/v1/DevOnlineList` (716 rows)
+  and `/api/v1/RecordFileList` (347 rows): **token-only, no-Cookie requests
+  succeed**, which is the exact server-side contract CHA will use.
+* Token values were only ever referenced inside the page context; no value
+  was read, logged or recorded.
+
 This runbook turns the P0 `AEE VERIFICATION REQUIRED` items into concrete,
 lawful observation steps. It only observes the authorized AEE session that the
 project owner opens; it never bypasses permissions, never automates write

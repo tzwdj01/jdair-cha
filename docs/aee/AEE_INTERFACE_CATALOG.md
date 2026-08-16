@@ -39,7 +39,7 @@ Current sanitized evidence:
 | Live correlation | authorized DevTree, RecordFileList, AlarmList and DevOnlineList page requests succeeded through the same helper |
 | 401 behavior | the current page has bounded HTTP error handling; an explicit token-refresh contract was not found |
 | Token lifetime | `AEE VERIFICATION REQUIRED` |
-| Cookie dependency | live evidence: a same-origin `fetch` without the page-injected `token` header returns `error=333` (HTTP 200, empty data) — the data API is **TOKEN_REQUIRED**; the Cookie alone is not sufficient. Token-only server integration is not yet live-isolated |
+| Cookie dependency | **TOKEN-ONLY LIVE VERIFIED (2026-08-16)**: a page-context `fetch` with only the custom `token` header and `credentials:'omit'` (no Cookie sent) returned `error=200` on both `/api/v1/DevOnlineList` (716 rows) and `/api/v1/RecordFileList` (347 rows). A same-origin `fetch` without the `token` header returns `error=333` (HTTP 200, empty data). Conclusion: the data API works with the custom `token` header **without** a browser Cookie; a server-side caller needs only the token. Token lifetime/refresh and the exact server-side token provider remain to be validated |
 
 Security conclusion:
 
@@ -47,10 +47,12 @@ Security conclusion:
   `Authorization: Bearer <token>` contract;
 * CHA must use a server-side token provider and the evidenced custom `token`
   header;
+* live verification (2026-08-16) proves the custom `token` header alone is
+  sufficient (no browser Cookie needed) on DevOnlineList and RecordFileList;
 * token values, browser storage and credentials must never be returned to the
   CHA browser, logged or committed;
-* a token-only, read-only live integration check is still required before
-  enabling ingestion.
+* token lifetime, refresh and a server-side token provider remain to be
+  validated before enabling ingestion.
 
 CHA implementation status:
 

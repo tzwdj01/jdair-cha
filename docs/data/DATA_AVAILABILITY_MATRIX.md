@@ -63,6 +63,7 @@ the required source events. It does not mean the value already exists.
 | device name | AVAILABLE | row/catalog | normalized where possible | do not use name as identity |
 | upload time | AVAILABLE | `uploadTime/upLoadTime/endTime` | normalized UTC contract; not persisted | LIVE VERIFIED: `upLoadTime` non-null, observed minutes after capture (upload lag) |
 | create/shoot time | AVAILABLE | `startTime/fileTime/beginTime` or filename | verified field aliases normalized; no filename inference in M4 contract | LIVE VERIFIED: `startTime/fileTime` non-null and equal in observed rows |
+| end time | AVAILABLE | `endTime/finishTime` | normalized as `end_at_source` (contract + migration added) | LIVE VERIFIED: `endTime` non-null and equals capture start + duration (e.g. 04:11:33 + 301s → 04:16:33) |
 | duration | AVAILABLE | `duration/videoTime` | normalized as seconds for video only | LIVE VERIFIED: raw value is seconds (e.g. 301 video, 18 audio); preserve raw seconds |
 | size | AVAILABLE | `fileSize/fileLen/size` | normalized as bytes | LIVE VERIFIED: `fileLen` is bytes (e.g. 187109839); no display-unit rounding in storage |
 | file type | AVAILABLE | AEE `fType`/`lType` | raw code normalized in application contract | LIVE VERIFIED: `fType` 1/2/3 = image/audio/video (16/6/689 in window); code 4 remains static-only |
@@ -183,3 +184,8 @@ CHA can begin collecting its own explicitly scoped events prospectively.
    activity remains `UNKNOWN`.
 6. Missing values remain unknown/null. They must not be converted to zero for
    visual convenience.
+7. AEE data-API authentication is **TOKEN-ONLY** (live verified 2026-08-16):
+   a request carrying only the custom `token` header and no Cookie returns
+   `error=200` on DevOnlineList/RecordFileList; without the header it returns
+   `error=333`. CHA's server-side token provider must keep the token server-
+   side only; token lifetime/refresh still require validation.

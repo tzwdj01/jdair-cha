@@ -84,6 +84,7 @@ listed below.
 | `deviceName`, `devName` | device name | AVAILABLE | may be filled from catalog |
 | `title`, `fileName`, `name`, `fileTitle` | file title | AVAILABLE | AEE page uses `title`; Legacy has fallbacks |
 | `startTime`, `fileTime`, `beginTime` | create/shoot time | AVAILABLE | LIVE VERIFIED non-null business-local times; `startTime/fileTime` equal in observed rows |
+| `endTime`, `finishTime` | capture end time | AVAILABLE | LIVE VERIFIED non-null; equals `startTime` + `duration` in observed rows (e.g. 04:11:33 + 301s → 04:16:33) |
 | `uploadTime`, `upLoadTime`, `endTime` | upload/end time | AVAILABLE | LIVE VERIFIED non-null; `upLoadTime` observed minutes after capture (upload lag) |
 | `fileSize`, `fileLen`, `size` | size | AVAILABLE | LIVE VERIFIED: `fileLen` is bytes (e.g. 187109839 for a 301s video) |
 | `duration`, `videoTime` | duration | AVAILABLE | LIVE VERIFIED: raw value is seconds for video (e.g. 301) and audio (e.g. 18); non-video duration treated as N/A |

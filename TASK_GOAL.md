@@ -248,7 +248,26 @@ Last updated: 2026-08-16
 * 已将脱敏 live 样本固化为确定性 fixture 与回归测试，并完成 ONE SHOT
   INGESTION 一致性验证（source rows 5/3/4 = accepted = stored rows，
   invalid=0，重复摄入幂等）。
-* 当前全量 V2 自动化回归为 `209 tests PASS`。
+* `2026-08-16` P0 认证收尾 LIVE VERIFIED（TOKEN-ONLY）：
+  在授权 AEE 页面上下文中执行 `fetch`，只带自定义 `token` header 且
+  `credentials:'omit'`（不发送 Cookie）：
+  * `/api/v1/DevOnlineList` → HTTP 200、`error=200`、`recordsTotal=716`；
+  * `/api/v1/RecordFileList` → HTTP 200、`error=200`、`recordsTotal=347`；
+  * 不带 `token` header → `error=333`（HTTP 200 空数据）。
+  * 结论：AEE 数据 API 仅凭自定义 `token` header 即可返回数据，不依赖
+    Cookie；Token 值仅在页面上下文内引用，未读取、未记录、未提交。
+* M4 P1 已开始：第一批历史数据资产（DeviceStatusEvent / MediaFile /
+  RealtimeViewEvent / AlarmEvent）contract、repository、确定性指标、
+  Dashboard API/页面均已具备；本轮补充：
+  * `MediaFile` 增加 live 验证的 `end_at_source`（`endTime`）字段：
+    contract + normalizer + migration + 测试；
+  * inspection API 增加显式顶层 `meta` 信封
+    （`generated_at` / `freshness` / `quality`），不再返回裸 KPI；
+  * one-shot ingestion 改为按 source 独立持久化：单 source 失败以
+    `error_code=SOURCE_INGEST_FAILED` 记录在报告内，不中断其它 source，
+    不产生半成品状态；重试幂等（新增回归测试）；
+  * 修复 `test_store_sinks.py` 中一个固定窗口 vs “now” 的时间炸弹测试。
+* 当前全量 V2 自动化回归为 `210 tests PASS`。
 
 ---
 
@@ -405,10 +424,11 @@ Realtime 产品范围冻结：
 
 ## M4 — Inspection Data Center & AEE Data Capability Integration
 
-状态：`M4 ACTIVE / DATA ACQUISITION VERIFIED`
+状态：`M4 ACTIVE / DATA ACQUISITION VERIFIED / P1 IN PROGRESS`
 
-（不得宣布 M4 COMPLETE；仅确认 P0 数据能力获取已在授权 AEE 会话下完成
-live 验证。）
+（不得宣布 M4 COMPLETE。P0 数据能力获取已在授权 AEE 会话下完成 live 验证，
+且 AEE 数据 API 已确认 TOKEN-ONLY / 无 Cookie 可用。当前执行 M4 P1 —
+Historical Data Ingestion & First Data Products。）
 
 名称：
 
@@ -1415,12 +1435,26 @@ M4 Done Criteria：
   `AEEInspectionCollector` 强制 `time_type/group_with_child`、`include_alarms`
   显式开关；`status=0 → online=False`（DevOnlineList 最新状态与 status
   event 均已 live 确认）。
-* 当前全量 V2 回归 `209 tests PASS`。
+* 当前全量 V2 回归 `210 tests PASS`。
+* P0 认证收尾：AEE 数据 API **TOKEN-ONLY / 无 Cookie** live 验证通过
+  （DevOnlineList 716 行、RecordFileList 347 行均 `error=200`）。
+* P1：`MediaFile` 增加 live 验证的 `end_at_source`（`endTime`）字段
+  （contract + normalizer + migration + 测试）。
+* P1：inspection API 增加显式顶层 `meta` 信封
+  （`generated_at` / `freshness` / `quality` / completeness）。
+* P1：one-shot ingestion 改为 per-source 独立持久化，单 source 失败以
+  `error_code=SOURCE_INGEST_FAILED` 报告、不中断其它 source、重试幂等；
+  新增失败安全回归测试。
+* 修复 `tests/test_store_sinks.py` 固定窗口 vs “now” 的时间炸弹测试。
 
 ## In Progress
 
 * `ACTIVE MILESTONE: M4`。
-* 状态：`M4 ACTIVE / DATA ACQUISITION VERIFIED`（不宣布 M4 COMPLETE）。
+* 状态：`M4 ACTIVE / DATA ACQUISITION VERIFIED / P1 IN PROGRESS`
+  （不宣布 M4 COMPLETE）。
+* `M4 P1 — Historical Data Ingestion & First Data Products`：
+  基于 live 验证的 DevOnlineList / RecordFileList / AlarmList 与 CHA
+  RealtimeViewEvent，沉淀第一批历史数据资产并输出第一批专题指标。
 * 正在把已验证的 AEE/CHA 字段语义固化为窄 contracts、normalized historical
   records、page completeness、data-quality evidence 和确定性统计边界。
 * 正在为已完成的 DeviceStatus、DeviceLocation、MediaFile、RealtimeView 和
@@ -1436,18 +1470,18 @@ M4 Done Criteria：
 
 ## Next
 
-1. `P0`（已完成本轮）：`DeviceStatusEvent` / `MediaFile` 标准 contract 已固化
-   并测试；`DevOnlineList` / `RecordFileList` / `AlarmList` 已在授权 AEE
-   会话下 live 验证字段、时间语义、分页和 stable identity；token-header
-   依赖（`TOKEN_REQUIRED`）已确认。
-2. `P0` 剩余：AEE 长期 Token 的服务端最小暴露与生命周期/刷新验证（不记录
-   Token/Cookie/密码）。
-3. `P1`：继续 Alarm 只读取证完整 alarm/status/deal code map、生命周期、删除
+1. `P0`（已完成）：数据能力 live 验证 + TOKEN-ONLY/无 Cookie 认证边界确认。
+2. `P0` 剩余（低优先级）：AEE 长期 Token 的服务端最小暴露与生命周期/刷新验证
+   （不记录 Token/Cookie/密码）。
+3. `P1`（进行中）：固化并测试 DeviceStatusEvent / MediaFile / RealtimeViewEvent
+   / AlarmEvent 的 contract、repository、幂等摄入与确定性指标；
+   本轮已补充 `end_at_source`、API `meta` 信封与 resilient one-shot
+   ingestion。
+4. `P1`：获得隔离 PostgreSQL 环境后执行 migration/backup/restore/rollback
+   rehearsal；当前只保留 DRAFT schema 与 repository contract。
+5. `P1`：继续 Alarm 只读取证完整 alarm/status/deal code map、生命周期、删除
    语义和 retention；不能标记语义 VERIFIED 的保持 `UNKNOWN`。
-4. `PostgreSQL`：编写 5 张历史表的 schema/migration files 和
-   driver-agnostic repository 抽象 + 单元测试；获得隔离 PostgreSQL 后再执行
-   forward、rollback、backup、restore rehearsal。
-5. 保持 Production Realtime、Audio、Control、AccountPool 关闭；不开启
+6. 保持 Production Realtime、Audio、Control、AccountPool 关闭；不开启
    inspection/ingestion 生产开关。
 
 ## Blocked
@@ -1460,9 +1494,9 @@ M4 Done Criteria：
 * 当前开发机缺少 Docker/PostgreSQL、`psql`、`pg_dump` 和 `pg_restore`；
   因此隔离 PostgreSQL migration/backup/restore rehearsal 在该环境
   `BLOCKED`。这不阻塞纯 contracts、normalizer、fixture 和无数据库单元测试。
-* 正式 AEE 数据 Adapter 的登录所有权和**服务端** Token-only sufficiency、
-  生命周期、刷新策略在形成合法服务端证据前 `BLOCKED`。浏览器 live 证据已
-  确认数据 API 为 `TOKEN_REQUIRED`（无 `token` header 返回 `error=333`）；
+* 正式 AEE 数据 Adapter 的**服务端** Token provider、生命周期和刷新策略在
+  形成合法服务端证据前 `BLOCKED`。浏览器 live 证据已确认数据 API 为
+  `TOKEN_REQUIRED` 且 **TOKEN-ONLY / 无 Cookie 可返回数据**（`error=200`）；
   只读 HTTP transport 和无网络 normalizer 不受此阻塞；不得猜测 Bearer
   header、不得让浏览器长期持有 AEE 凭据、不得记录 Token/Cookie/密码。
 * media-to-flight/task 自动关系和 coverage rate 在缺少 AMRO 脱敏字段样例、
@@ -1488,10 +1522,11 @@ M4 Done Criteria：
   login/logout、session、last active、访问设备、Realtime 监察记录和观看时长。
 * AEE `/api/v1/*` 数据 API 认证边界：
   custom `token` header 已 live 确认（无 header → `error=333`，
-  `TOKEN_REQUIRED`）；仍需确认服务端 token-only 访问、是否还依赖 Cookie、
-  是否与 Realtime access token 完全同源、有效期、刷新方式、服务端最小暴露
-  方案，以及失败时的状态码/错误模型。只记录脱敏结论，不记录 Cookie、
-  Authorization、密码或可复用 Token。
+  `TOKEN_REQUIRED`），且 **TOKEN-ONLY / 无 Cookie 已 live 验证**
+  （DevOnlineList 716 行、RecordFileList 347 行均 `error=200`）；剩余：
+  服务端 token provider、是否与 Realtime access token 完全同源、有效期、
+  刷新方式、服务端最小暴露方案和 401/错误模型。只记录脱敏结论，不记录
+  Cookie、Authorization、密码或可复用 Token。
 * AEE 告警剩余语义：
   `alarmType` 205/206 与 `status` 字段承载已 live 确认；剩余：完整
   alarm/status/deal code map、level、lifecycle、删除语义、retention、
