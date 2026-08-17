@@ -570,7 +570,7 @@ Realtime 产品范围冻结：
 
 ## M4 — Inspection Data Center & AEE Data Capability Integration
 
-状态：`M4 ACTIVE / P2.5 PASS / P3 FOUNDATION PASS / P3.1 PASS / P3.2 PRODUCTION MCS8 ONE SHOT PASS — READY FOR LOW-RATE SCHEDULER CANARY`
+状态：`M4 COMPLETE / VERIFIED — INSPECTION DATA CENTER & REAL BUSINESS DATA ACCUMULATION ACTIVE`
 
 （不得宣布 M4 COMPLETE。P0 数据能力获取已在授权 AEE 会话下完成 live 验证，
 AEE 数据 API 已确认 TOKEN-ONLY / 无 Cookie 可用；P1 历史数据 contract /
@@ -1947,11 +1947,9 @@ M4 Done Criteria：
 
 ## In Progress
 
-* `ACTIVE MILESTONE: M4`。
-* 状态：`M4 ACTIVE / P2.5 PASS / P3 FOUNDATION PASS / P3.1 PASS /
-  P3.2 INSPECTION USER CANARY PASS — MULTI-PAGE OPERATIONAL DASHBOARD
-  CONSOLIDATED — REAL BUSINESS DATA ACCUMULATION ACTIVE`
-  （不宣布 M4 COMPLETE）。
+* `ACTIVE MILESTONE: M4`（M4 达到 Done Criteria；M5 不得自动开始）。
+* 状态：`M4 COMPLETE / VERIFIED — INSPECTION DATA CENTER & REAL BUSINESS
+  DATA ACCUMULATION ACTIVE`
 * `M4 P3.2 — CONTROLLED PRODUCTION DATA ACTIVATION & CANARY`：
   * SERVER PREPARATION + PG MIGRATION & CONNECTIVITY PASS（migration 到
     cha_m4、CHA→Aliyun PG 真连接、secret、DML smoke、pg_dump/restore）；
@@ -1995,8 +1993,6 @@ M4 Done Criteria：
     kill switch PASS。正式 runtime `/opt/jdair-cha/m4-scheduler`。
   * **PostgreSQL LOCAL BACKUP READY**：daily systemd timer pg_dump +
     SHA256 + 可读验证 + retention。
-  * **REMOTE BACKUP OWNER ACTION REQUIRED**：远端备份目标未提供（同盘
-    dump 仅 short-term local）。
   * **REMOTE BACKUP PASS（2026-08-18）**：Aliyun local + Tailscale 拉取到
     CHA remote-pg，双主机、SHA256 一致、可读；daily timer 含 off-host。
   * **INSPECTION USER CANARY PASS（2026-08-18）**：inspection-enabled v2
@@ -2009,21 +2005,50 @@ M4 Done Criteria：
     alarms/data_quality）全部生产 200；新增 flights-tasks 只读域
     （34 航班/41 任务真实数据）；inspections 标签复用真实监察记录；
     locations 定位统计（坐标受保护）。271 tests PASS。
-* 观察项：远端备份目的地未提供（Canary 完成前必须）。
 * 生产数据激活：`AUTHORIZED — CONTROLLED CANARY ONLY`。
+
+## M4 Completion
+
+`M4 COMPLETE / VERIFIED — 2026-08-18`。M4 Done Criteria 1–14 全部满足：
+
+1. AEE 数据能力清单 + 合法取证（AEE_CAPABILITY_MATRIX / INTERFACE_CATALOG /
+   FIELD_CATALOG + P0 live 取证）。
+2. CHA 数据能力清单 + Legacy 依赖审计
+   （CURRENT_CHA_DATA_CAPABILITIES / LEGACY_MEDIA_BUSINESS_REFERENCE_AUDIT）。
+3. 字段分类 AVAILABLE/DERIVABLE/RESTRICTED/NOT_AVAILABLE/UNKNOWN
+   （DATA_AVAILABILITY_MATRIX）。
+4. 历史沉淀来源/时间/保留（HISTORICAL_DATA_MODEL）。
+5. Dashboard 指标来源/刷新/新鲜度/异常（DASHBOARD_INFORMATION_ARCHITECTURE
+   + API meta 信封）。
+6. 历史模型建立并验证；不持久化 WebRTC runtime 临时状态。
+7. PostgreSQL migration rehearsal/backup/rollback PASS + 生产迁移 + 异地
+   备份（Tailscale off-host copy verified）。
+8. 第一版多页面 Dashboard：8 域（监察总览/设备/视频/实时监察/记录/
+   航班任务/定位/告警/数据质量）生产 200。
+9. Drill-down：总览 → 设备 → timeline（生产验证 200，含 status/media/
+   location 时间线）。
+10. 自动化 271 tests PASS、后端 health 200、数据质量、回归通过。
+11. Remaining Data Gaps / AEE VERIFICATION REQUIRED 明确登记。
+12. 无 secrets、无虚假指标、无无来源字段、无未批准媒体架构升级。
+13. M4 Completion Report 形成（`docs/aee/M4_COMPLETION_REPORT_20260818.md`）。
+14. CHA 独有监察业务数据模型与监察记录工作流纳入 M4：InspectionRecord、
+    association_method（SOURCE_DIRECT/USER_CONFIRMED/MANUAL_ENTRY）、
+    Flights/Routine Tasks 业务字段、人员/设备/飞机/地点/任务/问题/时间
+    关系模型、CHA 授权边界（enabled/disabled/admin）、审计；DERIVED 不
+    显示为 CONFIRMED、无自动 matcher。
+
+生产证据（2026-08-18）：scheduler systemd active（RSS ~36MB、持续正常）；
+PG：device 146 / media 50 / alarm 15 / realtime_view_events 2 /
+inspection_records 4 / authorized_users 2；8 域 Dashboard 与数据 API 全
+200；CSV/XLSX 导出；异地备份 SHA256 一致。M5 不得自动开始。
 
 ## Next
 
-1. `P3.2`：等待项目负责人授权下一 gate：**Inspection 全用户 rollout /
-   Dashboard final 使用反馈 / M4 closure**（不得自动进入）。
-2. 后续：AuthorizedUser Canary → Inspection Canary → RealtimeViewEvent
-   采集 → 备份/监控/kill switch → LONGER OBSERVATION。
-3. `P3.2` 观察项：提供远端备份目的地（否则标记 `REMOTE BACKUP DESTINATION
-   REQUIRED BEFORE CANARY COMPLETION`）。
-3. `P3.2` 待办：服务端 AEE token provider 生命周期/刷新验证（不记录
-   Token/Cookie/密码）；live token-expiry 观察。
-4. 保持 Production Realtime、Audio、Control、AccountPool 关闭；不开启
-   inspection/ingestion 生产开关；不执行生产数据激活。
+1. `NEXT MILESTONE`：等待项目负责人授权 M5（Device Control / 全用户
+   Inspection rollout 等），不得自动开始。
+2. 后续运营：LONGER OBSERVATION（scheduler 正式运行自然积累）；服务端
+   AEE token provider 生命周期/刷新验证（不记录 Token/Cookie/密码）；
+   保持 Production Realtime、Audio、Control、AccountPool 关闭。
 
 ## Blocked
 
