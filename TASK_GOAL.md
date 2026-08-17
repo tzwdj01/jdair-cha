@@ -641,7 +641,31 @@ transition 入库。kill switch PASS：ENABLED=false 立即退出、不采集、
 历史 PG / realtime / Legacy / Dashboard。生产 PG 保留全部真实采集数据
 （不清空）：device 137 = 114 initial + 23 cha_transitions、media 40、alarm 10。
 LONGER OBSERVATION 将在以后 scheduler 正式运行中自然获得。**未进入
-Inspection User Canary；未扩大 production rollout。**）
+Inspection User Canary；未扩大 production rollout。
+
+`2026-08-18` **PRODUCTION SCHEDULER OPERATIONALIZATION & REMOTE BACKUP**：
+
+* **正式 systemd 部署**：`jdair-cha-m4-scheduler.service`（Type=simple,
+  User=jdair-demo, EnvironmentFile=/etc/jdair-cha/m4-scheduler.env,
+  Restart=on-failure, enabled+active）运行 `m4_mcs8_scheduler.py`
+  （max_cycles=0 无限运行，period 600s，kill switch
+  `CHA_V2_INSPECTION_SCHEDULER_ENABLED`）。正式 runtime：
+  `/opt/jdair-cha/m4-scheduler`（独立 venv + app + scripts，jdair-demo 所有）。
+  journald 日志有界、脱敏（无 password/token/SessionId/PG 密码）。
+* **managed cycle PASS**：service 启动后首个 cycle 正常（DEVICE 114 /
+  MEDIA 10 / ALARM 5，0 invalid），PG 持续写入；restart 后从 PG latest
+  继续、不重新生成 INITIAL_OBSERVATION（114 基线保持，仅真实 transition
+  入库）；kill switch ENABLED=false 立即退出不采集、历史 PG/realtime/
+  Legacy/Dashboard 不受影响。
+* **PostgreSQL 本地备份**：`ops/cha_m4_pg_backup.sh` + systemd timer
+  `jdair-cha-m4-pg-backup.timer`（daily, Persistent=true）→ custom-format
+  pg_dump + SHA256 + pg_restore -l 可读验证 + 14 天 retention，写入
+  `/opt/jdair-cha/backups/pg/`。手动执行验证 PASS（46KB dump、SHA256、
+  TOC 110 项可读）。
+* **REMOTE BACKUP**：远端/off-host 备份目标仍未由项目负责人提供；
+  **OWNER ACTION REQUIRED — REMOTE BACKUP DESTINATION**。当前同盘
+  pg_dump 仅视为 short-term local backup，不得宣布 PRODUCTION BACKUP
+  COMPLETE。scheduler 正式运行不受影响。）
 
 名称：
 
@@ -1874,8 +1898,8 @@ M4 Done Criteria：
 
 * `ACTIVE MILESTONE: M4`。
 * 状态：`M4 ACTIVE / P2.5 PASS / P3 FOUNDATION PASS / P3.1 PASS /
-  P3.2 PRODUCTION LOW-RATE SCHEDULER CANARY: SHORT CANARY PASS — READY FOR
-  INSPECTION USER CANARY (separate gate)`
+  P3.2 PRODUCTION SCHEDULER ACTIVE (systemd) — READY FOR INSPECTION USER
+  CANARY (separate gate) / REMOTE BACKUP OWNER ACTION REQUIRED`
   （不宣布 M4 COMPLETE）。
 * `M4 P3.2 — CONTROLLED PRODUCTION DATA ACTIVATION & CANARY`：
   * SERVER PREPARATION + PG MIGRATION & CONNECTIVITY PASS（migration 到
@@ -1914,14 +1938,23 @@ M4 Done Criteria：
     * 生产 PG 保留真实数据（device 137 / media 40 / alarm 10）。
     * 状态：`SHORT CANARY PASS`；`LONGER OBSERVATION REQUIRED`（后续
       scheduler 正式运行自然获得）。
+  * **PRODUCTION SCHEDULER OPERATIONALIZED（systemd）**：
+    `jdair-cha-m4-scheduler.service` enabled+active（Restart=on-failure，
+    journald 日志有界脱敏）；managed cycle PASS；restart 从 PG latest 继续；
+    kill switch PASS。正式 runtime `/opt/jdair-cha/m4-scheduler`。
+  * **PostgreSQL LOCAL BACKUP READY**：daily systemd timer pg_dump +
+    SHA256 + 可读验证 + retention。
+  * **REMOTE BACKUP OWNER ACTION REQUIRED**：远端备份目标未提供（同盘
+    dump 仅 short-term local）。
 * 观察项：远端备份目的地未提供（Canary 完成前必须）。
 * 生产数据激活：`AUTHORIZED — CONTROLLED CANARY ONLY`。
 
 ## Next
 
-1. `P3.2`：等待项目负责人授权 **INSPECTION USER CANARY**（独立 gate）。
-   Scheduler 代码/脚本/secret 已在 CHA scratch `/opt/cha-m4-canary` 就绪；
-   正式 deployment 进程模型建议 systemd（setsid 已复验）。
+1. `P3.2`：等待项目负责人：
+   a) 授权 **INSPECTION USER CANARY**（独立 gate）；
+   b) 提供 **REMOTE BACKUP DESTINATION**（object storage 或另一受控
+      服务器），解除 `REMOTE BACKUP OWNER ACTION REQUIRED`。
 2. 后续：AuthorizedUser Canary → Inspection Canary → RealtimeViewEvent
    采集 → 备份/监控/kill switch → LONGER OBSERVATION。
 3. `P3.2` 观察项：提供远端备份目的地（否则标记 `REMOTE BACKUP DESTINATION

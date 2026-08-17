@@ -1,0 +1,9 @@
+[Unit]
+Description=CHA cha_m4 PostgreSQL daily local backup
+
+[Timer]
+OnCalendar=daily
+Persistent=true
+
+[Install]
+WantedBy=timers.target

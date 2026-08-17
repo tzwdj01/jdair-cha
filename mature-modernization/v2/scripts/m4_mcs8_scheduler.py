@@ -32,13 +32,23 @@ import datetime as dt
 import json
 import logging
 import os
+import signal
 import sys
 import time
+from pathlib import Path
 from typing import Any
 
-from app.data.mcs8_auth import MCS8ServerAuthProvider
-from app.data.store import PostgresInspectionStore
-from app.services.mcs8_scheduler import MCS8ProductionScheduler
+
+# Make the ``app`` package importable when run as
+# ``/opt/jdair-cha/m4-scheduler/scripts/m4_mcs8_scheduler.py`` (the release
+# root sits one directory above ``scripts/``).
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from app.data.mcs8_auth import MCS8ServerAuthProvider  # noqa: E402
+from app.data.store import PostgresInspectionStore  # noqa: E402
+from app.services.mcs8_scheduler import MCS8ProductionScheduler  # noqa: E402
 
 
 SHANGHAI = dt.timezone(dt.timedelta(hours=8), name="Asia/Shanghai")
@@ -163,9 +173,20 @@ async def _main() -> int:
     )
 
     started = time.perf_counter()
+    stop_event = asyncio.Event()
+    loop = asyncio.get_running_loop()
+    for signame in ("SIGTERM", "SIGINT"):
+        try:
+            loop.add_signal_handler(
+                getattr(signal, signame),
+                stop_event.set,
+            )
+        except (NotImplementedError, RuntimeError):  # pragma: no cover
+            pass
     results = await scheduler.run(
         period_seconds=period,
         max_cycles=max_cycles,
+        stop_event=stop_event,
     )
     elapsed = time.perf_counter() - started
 

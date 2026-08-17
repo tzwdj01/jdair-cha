@@ -282,6 +282,23 @@ class MCS8ProductionSchedulerTests(unittest.IsolatedAsyncioTestCase):
         self.assertGreaterEqual(len(results), 1)
         self.assertLess(len(results), 10)
 
+    async def test_run_zero_max_cycles_runs_until_stop(self) -> None:
+        adapter = _FakeAdapter()
+        scheduler, _, _ = _build(adapter)
+        stop = asyncio.Event()
+
+        async def stopper():
+            await asyncio.sleep(0.05)
+            stop.set()
+
+        asyncio.create_task(stopper())
+        results = await scheduler.run(
+            period_seconds=1,
+            max_cycles=0,
+            stop_event=stop,
+        )
+        self.assertGreaterEqual(len(results), 1)
+
 
 if __name__ == "__main__":
     unittest.main()

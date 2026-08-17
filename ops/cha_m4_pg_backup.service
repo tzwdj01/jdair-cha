@@ -1,0 +1,14 @@
+[Unit]
+Description=CHA cha_m4 PostgreSQL daily local backup (one-shot)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+EnvironmentFile=/etc/jdair-cha/m4-scheduler.env
+ExecStart=/bin/bash /opt/jdair-cha/backups/bin/cha_m4_pg_backup.sh
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

@@ -252,15 +252,17 @@ class MCS8ProductionScheduler:
         max_cycles: int,
         stop_event: asyncio.Event | None = None,
     ) -> tuple[CycleResult, ...]:
-        """Run up to ``max_cycles`` cycles spaced ``period_seconds`` apart."""
+        """Run cycles spaced ``period_seconds`` apart.
+
+        ``max_cycles`` may be 0/negative to run until ``stop_event`` is set
+        (long-running systemd service); otherwise it is a positive cap.
+        """
 
         if period_seconds <= 0:
             raise ValueError("period_seconds must be positive")
-        if max_cycles <= 0:
-            raise ValueError("max_cycles must be positive")
         stop = stop_event or asyncio.Event()
         completed: list[CycleResult] = []
-        for _ in range(max_cycles):
+        while True:
             if stop.is_set():
                 break
             result = await self.run_cycle()
@@ -268,11 +270,12 @@ class MCS8ProductionScheduler:
             self._write_state(result)
             if stop.is_set():
                 break
-            if len(completed) < max_cycles:
-                try:
-                    await asyncio.wait_for(stop.wait(), timeout=period_seconds)
-                except asyncio.TimeoutError:
-                    pass
+            if max_cycles > 0 and len(completed) >= max_cycles:
+                break
+            try:
+                await asyncio.wait_for(stop.wait(), timeout=period_seconds)
+            except asyncio.TimeoutError:
+                pass
         return tuple(completed)
 
     def _state_path(self) -> Path:

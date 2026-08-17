@@ -38,13 +38,20 @@ import datetime as dt
 import json
 import os
 import sys
+from pathlib import Path
 from typing import Any
 
-from app.data.mcs8_adapter import MCS8ReadOnlyDataAdapter
-from app.data.mcs8_auth import MCS8ServerAuthProvider
-from app.data.mcs8_collector import MCS8InspectionCollector
-from app.data.mcs8_http import MCS8DataHTTPClient
-from app.data.store import PostgresInspectionStore
+
+# Make the ``app`` package importable when run from ``scripts/``.
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from app.data.mcs8_adapter import MCS8ReadOnlyDataAdapter  # noqa: E402
+from app.data.mcs8_auth import MCS8ServerAuthProvider  # noqa: E402
+from app.data.mcs8_collector import MCS8InspectionCollector  # noqa: E402
+from app.data.mcs8_http import MCS8DataHTTPClient  # noqa: E402
+from app.data.store import PostgresInspectionStore  # noqa: E402
 
 
 UTC = dt.timezone.utc
