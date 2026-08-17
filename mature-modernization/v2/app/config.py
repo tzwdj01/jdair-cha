@@ -164,6 +164,7 @@ class Settings:
     feature_records_v2: bool
     feature_inspection_v2: bool
     inspection_store_mode: str
+    inspection_store_pg_enabled: bool
     inspection_thresholds: dict[str, float]
 
     def realtime_aee_is_configured(self) -> bool:
@@ -419,6 +420,10 @@ class Settings:
                 "CHA_V2_INSPECTION_STORE_MODE",
                 "",
             ).strip(),
+            inspection_store_pg_enabled=env_bool(
+                "CHA_V2_INSPECTION_STORE_PG_ENABLED",
+                False,
+            ),
             inspection_thresholds=env_positive_float_map(
                 "CHA_V2_INSPECTION_THRESHOLDS"
             ),

@@ -6,6 +6,8 @@ from ..data.store import (
     InspectionStore,
     MemoryInspectionRecordStore,
     MemoryInspectionStore,
+    PostgresInspectionRecordStore,
+    PostgresInspectionStore,
 )
 
 
@@ -14,13 +16,14 @@ def build_inspection_store(
 ) -> InspectionStore | None:
     """Build the inspection store for the current deployment.
 
-    Only the in-memory store is available today and it is intentionally
-    limited to non-production environments: it is process-local and loses all
-    history on restart, so it must never be used as a durable production data
-    asset. Production deployments return ``None`` until a durable PostgreSQL
-    store is wired and rehearsed.
+    In-memory store is limited to non-production. In production the
+    PostgreSQL store is wired only when the explicit production gate
+    ``CHA_V2_INSPECTION_STORE_PG_ENABLED=true`` is set (Canary-only); it is
+    never enabled by default.
     """
 
+    if settings.inspection_store_pg_enabled:
+        return PostgresInspectionStore(schema="inspection")
     if settings.environment == "production":
         return None
     mode = settings.inspection_store_mode.strip().casefold()
@@ -34,11 +37,14 @@ def build_inspection_record_store(
 ) -> InspectionRecordStore | None:
     """Build the M4 P3 inspection workflow store for the current deployment.
 
-    Only the in-memory store is available for non-production today; a durable
-    PostgreSQL-backed workflow store is wired after the P2.5 rehearsal gate.
-    Production returns ``None`` until explicitly authorized.
+    In-memory store is limited to non-production. In production the
+    PostgreSQL-backed workflow store is wired only when the explicit
+    production gate ``CHA_V2_INSPECTION_STORE_PG_ENABLED=true`` is set
+    (Canary-only); it is never enabled by default.
     """
 
+    if settings.inspection_store_pg_enabled:
+        return PostgresInspectionRecordStore(schema="inspection")
     if settings.environment == "production":
         return None
     mode = settings.inspection_store_mode.strip().casefold()

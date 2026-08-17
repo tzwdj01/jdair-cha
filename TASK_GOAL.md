@@ -662,10 +662,38 @@ Inspection User Canary；未扩大 production rollout。
   pg_dump + SHA256 + pg_restore -l 可读验证 + 14 天 retention，写入
   `/opt/jdair-cha/backups/pg/`。手动执行验证 PASS（46KB dump、SHA256、
   TOC 110 项可读）。
-* **REMOTE BACKUP**：远端/off-host 备份目标仍未由项目负责人提供；
-  **OWNER ACTION REQUIRED — REMOTE BACKUP DESTINATION**。当前同盘
-  pg_dump 仅视为 short-term local backup，不得宣布 PRODUCTION BACKUP
-  COMPLETE。scheduler 正式运行不受影响。）
+* **REMOTE BACKUP PASS — OFF-HOST COPY VERIFIED（2026-08-18）**：采用
+  Aliyun PG 本机 local pg_dump（`/opt/jdair-cha/backups/pg-local/`）+ 通过
+  **Tailscale 私密通道**拉取到 CHA `/opt/jdair-cha/backups/remote-pg/`
+  （key-based scp，密码不写入脚本）。双主机备份（Aliyun `iZrj...` ≠ CHA
+  `lavm...`），SHA256 一致，remote dump `pg_restore -l` 可读。daily timer
+  已含 off-host 步骤；retention 配置化（local/remote 14 天）。
+  `REMOTE BACKUP OWNER ACTION REQUIRED` 关闭。
+
+`2026-08-18` **INSPECTION USER CANARY & BUSINESS WORKFLOW VALIDATION — PASS /
+REAL BUSINESS DATA ACCUMULATION ACTIVE**：
+
+* **Inspection-enabled v2 上线**：新 release `20260818022828-m4-inspection-canary`
+  （含 inspection workflow + PG store gate），`inspection_v2=true`；
+  `CHA_V2_INSPECTION_STORE_PG_ENABLED=true` 接线 Aliyun PG；v2 venv 增装
+  psycopg2 + openpyxl。realtime_readonly 为 Canary 打开（audio/control 关）。
+* **AuthorizedUser 边界 PASS**：enabled→进入；disabled→403
+  `cha_access_forbidden`；inspector 访问 admin API→403 `admin_forbidden`；
+  admin 管理（add/enable/disable）均写 audit（USER_DISABLED/USER_ENABLED）。
+  Canary 账号：`lijian.1023`(admin) + `liujiawen53`(inspector)。
+* **RealtimeViewEvent 生产链路 PASS**：真实 session+stream（WXB313）→
+  view event 写入 PG（username/device/opened/closed/result）。
+* **InspectionRecord 生产验证 PASS**：2 条真实记录（USER_CONFIRMED 候选
+  关联 + MANUAL_ENTRY fallback），DRAFT→SUBMITTED→CORRECTED 生命周期，
+  submitted_by/at 不被覆盖；audit trail（CREATED/SUBMITTED/CORRECTED）
+  完整。has_issue=true/false 均验证。
+* **查询/导出/Dashboard PASS**：`/api/v2/inspections` 列表、metrics
+  （total=2、153s、per_account/per_device）、CSV 与 XLSX 导出（表头/中文
+  内容正确，无敏感信息）、dashboard/inspections 页面 200。
+* **生产数据（2026-08-18）**：device 142 / media 47 / alarm 12 /
+  realtime_view_events 2 / inspection_records 4 / authorized_users 2 /
+  audit 9。CHA 744Mi/1.9Gi、load 0.09；PG 9.9MB/1 conn。scheduler 持续
+  正常（4 cycles，RSS 39MB）。）
 
 名称：
 
@@ -1898,8 +1926,7 @@ M4 Done Criteria：
 
 * `ACTIVE MILESTONE: M4`。
 * 状态：`M4 ACTIVE / P2.5 PASS / P3 FOUNDATION PASS / P3.1 PASS /
-  P3.2 PRODUCTION SCHEDULER ACTIVE (systemd) — READY FOR INSPECTION USER
-  CANARY (separate gate) / REMOTE BACKUP OWNER ACTION REQUIRED`
+  P3.2 INSPECTION USER CANARY PASS — REAL BUSINESS DATA ACCUMULATION ACTIVE`
   （不宣布 M4 COMPLETE）。
 * `M4 P3.2 — CONTROLLED PRODUCTION DATA ACTIVATION & CANARY`：
   * SERVER PREPARATION + PG MIGRATION & CONNECTIVITY PASS（migration 到
@@ -1946,15 +1973,20 @@ M4 Done Criteria：
     SHA256 + 可读验证 + retention。
   * **REMOTE BACKUP OWNER ACTION REQUIRED**：远端备份目标未提供（同盘
     dump 仅 short-term local）。
+  * **REMOTE BACKUP PASS（2026-08-18）**：Aliyun local + Tailscale 拉取到
+    CHA remote-pg，双主机、SHA256 一致、可读；daily timer 含 off-host。
+  * **INSPECTION USER CANARY PASS（2026-08-18）**：inspection-enabled v2
+    上线（PG store gate）；AuthorizedUser 边界（enabled/disabled/admin）
+    验证；RealtimeViewEvent 生产写入；InspectionRecord
+    DRAFT→SUBMITTED→CORRECTED + audit；USER_CONFIRMED/MANUAL_ENTRY；
+    query/metrics/CSV/XLSX/Dashboard 均 PASS。真实业务数据积累中。
 * 观察项：远端备份目的地未提供（Canary 完成前必须）。
 * 生产数据激活：`AUTHORIZED — CONTROLLED CANARY ONLY`。
 
 ## Next
 
-1. `P3.2`：等待项目负责人：
-   a) 授权 **INSPECTION USER CANARY**（独立 gate）；
-   b) 提供 **REMOTE BACKUP DESTINATION**（object storage 或另一受控
-      服务器），解除 `REMOTE BACKUP OWNER ACTION REQUIRED`。
+1. `P3.2`：等待项目负责人授权下一 gate：**Inspection 全用户 rollout /
+   Dashboard final 使用反馈 / M4 closure**（不得自动进入）。
 2. 后续：AuthorizedUser Canary → Inspection Canary → RealtimeViewEvent
    采集 → 备份/监控/kill switch → LONGER OBSERVATION。
 3. `P3.2` 观察项：提供远端备份目的地（否则标记 `REMOTE BACKUP DESTINATION
