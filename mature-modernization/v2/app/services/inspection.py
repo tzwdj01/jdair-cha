@@ -189,6 +189,27 @@ class DataQualityOverview:
     total_rows: int
 
 
+@dataclass(frozen=True, slots=True)
+class FlightsTasksOverview:
+    """Read-only flights / routine-tasks view for the operational dashboard.
+
+    Data comes from the existing CHA business source (Legacy ``/api/flights``
+    and ``/api/routine-tasks``), normalized to the shared business contracts.
+    This is a read-only reference view for inspectors; it is NOT an automatic
+    matcher (no candidate is auto-associated to an inspection record here).
+    """
+
+    generated_at: dt.datetime
+    scope_date: dt.date
+    flights: tuple[tuple[str, str, str, str, str], ...]
+    routine_tasks: tuple[tuple[str, str, str, str, str], ...]
+    source_flight_count: int
+    source_task_count: int
+    invalid_flight_row_count: int
+    invalid_task_row_count: int
+    quality_flags: tuple[str, ...]
+
+
 class InspectionDataService:
     """Read-only page-oriented data service over the InspectionStore.
 
@@ -204,10 +225,12 @@ class InspectionDataService:
         store: InspectionStore,
         business_timezone: dt.tzinfo = SHANGHAI,
         thresholds: Mapping[str, float] | None = None,
+        business_client: Any | None = None,
     ) -> None:
         self._store = store
         self._business_tz = business_timezone
         self._thresholds = dict(thresholds or {})
+        self._business_client = business_client
 
     async def device_overview(
         self,
@@ -667,6 +690,109 @@ class InspectionDataService:
             total_rows=total_rows,
         )
 
+    async def flights_tasks_overview(
+        self,
+        *,
+        scope_date: dt.date | None = None,
+        business_client_cookie: str = "",
+    ) -> FlightsTasksOverview:
+        """Return a read-only flights / routine-tasks snapshot for a date.
+
+        Requires an injected ``business_client`` exposing
+        ``fetch_flights(date)`` and ``fetch_routine_tasks(date)`` returning
+        ``BusinessFlight`` / ``BusinessRoutineTask`` tuples (see
+        ``app.services.business_candidates``). When no business client is
+        wired the result is empty with an explicit quality flag.
+        """
+
+        generated = dt.datetime.now(UTC)
+        local_now = generated.astimezone(self._business_tz)
+        scope = scope_date or local_now.date()
+        business_client = self._business_client
+        if business_client is not None and business_client_cookie:
+            with_cookie = getattr(business_client, "with_cookie", None)
+            if callable(with_cookie):
+                business_client = with_cookie(business_client_cookie)
+        if business_client is None:
+            return FlightsTasksOverview(
+                generated_at=generated,
+                scope_date=scope,
+                flights=(),
+                routine_tasks=(),
+                source_flight_count=0,
+                source_task_count=0,
+                invalid_flight_row_count=0,
+                invalid_task_row_count=0,
+                quality_flags=("business_client_not_wired",),
+            )
+
+        flights: list[tuple[str, str, str, str, str]] = []
+        tasks: list[tuple[str, str, str, str, str]] = []
+        invalid_flights = 0
+        invalid_tasks = 0
+        flags: set[str] = set()
+        try:
+            flight_rows = await business_client.fetch_flights(scope)
+            task_rows = await business_client.fetch_routine_tasks(scope)
+        except Exception:
+            return FlightsTasksOverview(
+                generated_at=generated,
+                scope_date=scope,
+                flights=(),
+                routine_tasks=(),
+                source_flight_count=0,
+                source_task_count=0,
+                invalid_flight_row_count=0,
+                invalid_task_row_count=0,
+                quality_flags=("business_source_unavailable",),
+            )
+        for row in flight_rows:
+            flight_no = _safe_text(getattr(row, "flight_no", None))
+            if not flight_no:
+                invalid_flights += 1
+                continue
+            flights.append(
+                (
+                    _safe_text(getattr(row, "source_id", None)),
+                    flight_no,
+                    _safe_text(getattr(row, "aircraft_no", None)),
+                    _safe_text(getattr(row, "departure_city", None))
+                    + "→"
+                    + _safe_text(getattr(row, "arrival_city", None)),
+                    _safe_text(getattr(row, "status_label", None)),
+                )
+            )
+        for row in task_rows:
+            task_id = _safe_text(getattr(row, "source_id", None))
+            if not task_id:
+                invalid_tasks += 1
+                continue
+            tasks.append(
+                (
+                    task_id,
+                    _safe_text(getattr(row, "aircraft_no", None)),
+                    _safe_text(getattr(row, "task_type_name", None))
+                    or _safe_text(getattr(row, "task_type", None)),
+                    _safe_text(getattr(row, "bay", None)),
+                    _safe_text(getattr(row, "task_status_name", None)),
+                )
+            )
+        if invalid_flights:
+            flags.add("invalid_flight_rows_ignored")
+        if invalid_tasks:
+            flags.add("invalid_task_rows_ignored")
+        return FlightsTasksOverview(
+            generated_at=generated,
+            scope_date=scope,
+            flights=tuple(sorted(flights)),
+            routine_tasks=tuple(sorted(tasks)),
+            source_flight_count=len(flight_rows),
+            source_task_count=len(task_rows),
+            invalid_flight_row_count=invalid_flights,
+            invalid_task_row_count=invalid_tasks,
+            quality_flags=tuple(sorted(flags)),
+        )
+
 
 def _project_status_events(
     events: Iterable[DeviceStatusEvent],
@@ -683,6 +809,12 @@ def _project_status_events(
             }
         )
     return rows
+
+
+def _safe_text(value: Any) -> str:
+    if value is None:
+        return ""
+    return str(value).strip()
 
 
 def _project_media_files(

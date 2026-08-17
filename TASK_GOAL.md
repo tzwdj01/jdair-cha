@@ -695,6 +695,28 @@ REAL BUSINESS DATA ACCUMULATION ACTIVE**：
   audit 9。CHA 744Mi/1.9Gi、load 0.09；PG 9.9MB/1 conn。scheduler 持续
   正常（4 cycles，RSS 39MB）。）
 
+`2026-08-18` **MULTI-PAGE OPERATIONAL DASHBOARD CONSOLIDATION — PASS**：
+
+* 监察数据中心 Dashboard 整合为 **7 个操作域标签页**（`/api/v2/dashboard/`
+  `devices` 设备运行 / `media` 视频上传 / `realtime` 监察使用 /
+  `inspections` 监察记录 / `flights_tasks` 航班与维修任务 / `alarms`
+  告警异常 / `data_quality` 数据质量），全部页面与数据 API 生产 200。
+* 新增只读 `GET /api/v2/inspection/flights-tasks`（date 可选）：
+  `InspectionDataService.flights_tasks_overview` 经
+  `LegacyBusinessDataClient`（LegacyClient + `records` 载荷归一化）读取
+  `/api/flights` 与 `/api/routine-tasks`，返回航班/维修任务参考视图
+  （非自动 matcher，无自动关联）。生产实测：34 航班（JG2745/B-32Q8/
+  重庆→孟买 等）、41 维修任务（过站/停场/待派工），中文航段/状态正确。
+* `inspections` 标签复用 `/api/v2/inspections`（真实生产监察记录，
+  authorized cookie），展示记录/监察人/设备/飞机/航班/站点/任务/问题/状态。
+* 单测：`tests/test_flights_tasks_dashboard.py`（not wired / wired /
+  cookie / upstream fail / `records` key）+ `test_inspection_api` 端点测试
+  （client / not wired / invalid date）。全量回归 **271 tests PASS**。
+* 生产部署：`20260818030117-m4-dashboard-consolidated` release active。
+  生产数据（03:01）：device 146 / media 47 / alarm 14 / rtview 2 /
+  inspection 4；CHA 724Mi/1.9Gi、load 0.12；PG 9.9MB；scheduler 持续
+  正常（RSS ~36MB，55min）。）
+
 名称：
 
 `CHA 监察数据中心与 AEE 数据能力整合`
@@ -1926,7 +1948,8 @@ M4 Done Criteria：
 
 * `ACTIVE MILESTONE: M4`。
 * 状态：`M4 ACTIVE / P2.5 PASS / P3 FOUNDATION PASS / P3.1 PASS /
-  P3.2 INSPECTION USER CANARY PASS — REAL BUSINESS DATA ACCUMULATION ACTIVE`
+  P3.2 INSPECTION USER CANARY PASS — MULTI-PAGE OPERATIONAL DASHBOARD
+  CONSOLIDATED — REAL BUSINESS DATA ACCUMULATION ACTIVE`
   （不宣布 M4 COMPLETE）。
 * `M4 P3.2 — CONTROLLED PRODUCTION DATA ACTIVATION & CANARY`：
   * SERVER PREPARATION + PG MIGRATION & CONNECTIVITY PASS（migration 到
@@ -1980,6 +2003,10 @@ M4 Done Criteria：
     验证；RealtimeViewEvent 生产写入；InspectionRecord
     DRAFT→SUBMITTED→CORRECTED + audit；USER_CONFIRMED/MANUAL_ENTRY；
     query/metrics/CSV/XLSX/Dashboard 均 PASS。真实业务数据积累中。
+  * **MULTI-PAGE OPERATIONAL DASHBOARD CONSOLIDATION PASS**：7 标签
+    Dashboard（devices/media/realtime/inspections/flights_tasks/alarms/
+    data_quality）全部生产 200；新增 flights-tasks 只读域（34 航班/41
+    任务真实数据）；inspections 标签复用真实监察记录。271 tests PASS。
 * 观察项：远端备份目的地未提供（Canary 完成前必须）。
 * 生产数据激活：`AUTHORIZED — CONTROLLED CANARY ONLY`。
 

@@ -31,6 +31,8 @@ PAGE_ROUTES = {
     "devices": "设备运行分析",
     "media": "视频上传与文件分析",
     "realtime": "监察使用分析",
+    "inspections": "监察记录",
+    "flights_tasks": "航班与维修任务",
     "alarms": "告警与异常分析",
     "data_quality": "数据质量",
 }
@@ -605,6 +607,40 @@ def create_inspection_router(
             },
         )
 
+    @router.get("/api/v2/inspection/flights-tasks")
+    async def inspection_flights_tasks(
+        request: Request,
+        date: str | None = Query(None, max_length=16),
+    ) -> JSONResponse:
+        if not settings.feature_inspection_v2:
+            return disabled(request)
+        if service is None:
+            return store_unavailable(request)
+        scope_date: dt.date | None = None
+        if date:
+            try:
+                scope_date = dt.date.fromisoformat(date)
+            except ValueError:
+                return invalid_scope(
+                    request,
+                    "date must be YYYY-MM-DD.",
+                )
+        overview = await service.flights_tasks_overview(
+            scope_date=scope_date,
+            business_client_cookie=request.headers.get("cookie", ""),
+        )
+        return envelope(
+            request,
+            {
+                "source": "business_reference",
+                "store_configured": True,
+                "scope": {
+                    "date": overview.scope_date.isoformat(),
+                },
+                "overview": _json_safe(overview),
+            },
+        )
+
     return router
 
 
@@ -637,6 +673,8 @@ def _json_safe(value: Any) -> Any:
         value = asdict(value)
     if isinstance(value, dt.datetime):
         return value.isoformat().replace("+00:00", "Z")
+    if isinstance(value, dt.date):
+        return value.isoformat()
     if isinstance(value, dict):
         return {key: _json_safe(item) for key, item in value.items()}
     if isinstance(value, (list, tuple)):

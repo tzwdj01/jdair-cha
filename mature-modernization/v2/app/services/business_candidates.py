@@ -417,3 +417,80 @@ def _aware_utc(value: dt.datetime, name: str) -> dt.datetime:
     if value.tzinfo is None or value.utcoffset() is None:
         raise ValueError(f"{name} must be timezone-aware")
     return value.astimezone(UTC)
+
+
+class LegacyBusinessDataClient:
+    """``BusinessDataClient`` backed by the existing CHA Legacy service.
+
+    Reads flights and routine tasks through the allow-listed LegacyClient
+    (which forwards the current browser's CHA session cookie). This is a
+    read-only reference source for the operational dashboard; it never
+    associates anything automatically.
+    """
+
+    def __init__(
+        self,
+        legacy_client: Any,
+        *,
+        source_timezone: dt.tzinfo = SHANGHAI,
+        cookie: str = "",
+    ) -> None:
+        self._legacy = legacy_client
+        self._source_timezone = source_timezone
+        self._cookie = cookie
+
+    def with_cookie(self, cookie: str) -> "LegacyBusinessDataClient":
+        return LegacyBusinessDataClient(
+            self._legacy,
+            source_timezone=self._source_timezone,
+            cookie=cookie,
+        )
+
+    async def fetch_flights(
+        self,
+        date: dt.date,
+    ) -> tuple[BusinessFlight, ...]:
+        response = await self._legacy.flights(
+            self._cookie,
+            date.isoformat(),
+        )
+        payload = response.json()
+        rows = _payload_rows(payload)
+        return tuple(
+            flight
+            for row in rows
+            if (flight := normalize_flight_row(
+                row,
+                source_timezone=self._source_timezone,
+            )) is not None
+        )
+
+    async def fetch_routine_tasks(
+        self,
+        date: dt.date,
+    ) -> tuple[BusinessRoutineTask, ...]:
+        response = await self._legacy.routine_tasks(
+            self._cookie,
+            date.isoformat(),
+        )
+        payload = response.json()
+        rows = _payload_rows(payload)
+        return tuple(
+            task
+            for row in rows
+            if (task := normalize_routine_task_row(
+                row,
+                source_timezone=self._source_timezone,
+            )) is not None
+        )
+
+
+def _payload_rows(payload: Any) -> list[Mapping[str, Any]]:
+    if isinstance(payload, dict):
+        for key in ("records", "data", "rows", "list", "items"):
+            value = payload.get(key)
+            if isinstance(value, list):
+                return [row for row in value if isinstance(row, Mapping)]
+    if isinstance(payload, list):
+        return [row for row in payload if isinstance(row, Mapping)]
+    return []

@@ -20,6 +20,10 @@ from app.data.normalization import (
 )
 from app.data.realtime_views import build_realtime_view_event
 from app.data.store import MemoryInspectionStore
+from app.services.business_candidates import (
+    BusinessFlight,
+    BusinessRoutineTask,
+)
 from app.services.inspection import InspectionDataService
 
 
@@ -464,6 +468,84 @@ class InspectionAPITests(unittest.IsolatedAsyncioTestCase):
             tables["device_status_events"]["row_count"],
             2,
         )
+
+    async def test_flights_tasks_endpoint_with_client(self) -> None:
+        class _FakeBusinessClient:
+            async def fetch_flights(self, date):
+                return (
+                    BusinessFlight(
+                        source_id="f1",
+                        aircraft_no="B-1234",
+                        flight_no="JD5101",
+                        flight_date=None,
+                        scheduled_departure_at=None,
+                        scheduled_arrival_at=None,
+                        actual_departure_at=None,
+                        actual_arrival_at=None,
+                        departure_city="PEK",
+                        arrival_city="SHA",
+                        departure_airport=None,
+                        arrival_airport=None,
+                        status_label="计划",
+                    ),
+                )
+
+            async def fetch_routine_tasks(self, date):
+                return (
+                    BusinessRoutineTask(
+                        source_id="t1",
+                        aircraft_no="B-5678",
+                        task_type="W",
+                        task_type_name="航线维修",
+                        task_status_code=None,
+                        task_status_name=None,
+                        bay="201",
+                        planned_start_at=None,
+                        inbound_flight_no=None,
+                        inbound_date=None,
+                        outbound_flight_no=None,
+                        outbound_date=None,
+                        route_city="PEK",
+                    ),
+                )
+
+        service = InspectionDataService(
+            MemoryInspectionStore(),
+            business_client=_FakeBusinessClient(),
+        )
+        app = _app(_settings(feature=True), service)
+        response = await _request(
+            app,
+            "/api/v2/inspection/flights-tasks?date=2026-08-18",
+        )
+        self.assertEqual(response.status_code, 200)
+        overview = response.json()["data"]["overview"]
+        self.assertEqual(overview["source_flight_count"], 1)
+        self.assertEqual(overview["source_task_count"], 1)
+        self.assertEqual(overview["flights"][0][1], "JD5101")
+
+    async def test_flights_tasks_endpoint_not_wired(self) -> None:
+        service = InspectionDataService(MemoryInspectionStore())
+        app = _app(_settings(feature=True), service)
+        response = await _request(
+            app,
+            "/api/v2/inspection/flights-tasks?date=2026-08-18",
+        )
+        self.assertEqual(response.status_code, 200)
+        overview = response.json()["data"]["overview"]
+        self.assertIn(
+            "business_client_not_wired",
+            overview["quality_flags"],
+        )
+
+    async def test_flights_tasks_invalid_date(self) -> None:
+        service = InspectionDataService(MemoryInspectionStore())
+        app = _app(_settings(feature=True), service)
+        response = await _request(
+            app,
+            "/api/v2/inspection/flights-tasks?date=bad-date",
+        )
+        self.assertEqual(response.status_code, 400)
 
     async def test_realtime_runtime_snapshot_when_manager_provided(self) -> None:
         app = _app(

@@ -51,6 +51,8 @@
       <button id="tab-devices">设备运行</button>
       <button id="tab-media">视频上传</button>
       <button id="tab-realtime">监察使用</button>
+      <button id="tab-inspections">监察记录</button>
+      <button id="tab-flights_tasks">航班/任务</button>
       <button id="tab-alarms">告警异常</button>
       <button id="tab-data_quality">数据质量</button>
     </nav>
@@ -78,6 +80,8 @@
       devices: "/api/v2/inspection/devices",
       media: "/api/v2/inspection/media",
       realtime: "/api/v2/inspection/realtime",
+      inspections: "/api/v2/inspections",
+      flights_tasks: "/api/v2/inspection/flights-tasks",
       alarms: "/api/v2/inspection/alarms",
       data_quality: "/api/v2/inspection/data-quality"
     };
@@ -85,6 +89,8 @@
       devices: "设备运行分析",
       media: "视频上传与文件分析",
       realtime: "监察使用分析",
+      inspections: "监察记录",
+      flights_tasks: "航班与维修任务",
       alarms: "告警与异常分析",
       data_quality: "数据质量"
     };
@@ -161,7 +167,9 @@
       showNotice("");
       byId("content").innerHTML = '<div class="empty">正在加载…</div>';
       byId("metaText").style.display = "none";
-      const url = ENDPOINTS[tab] + "?days=" + days;
+      const url = tab === "flights_tasks"
+        ? ENDPOINTS[tab]
+        : ENDPOINTS[tab] + "?days=" + days;
       let response;
       try {
         response = await fetch(url, { headers: { "Accept": "application/json" } });
@@ -195,6 +203,8 @@
       if (tab === "devices") renderDevices(data.overview || {});
       else if (tab === "media") renderMedia(data.overview || {});
       else if (tab === "realtime") renderRealtime(data.overview || {}, data.runtime || null);
+      else if (tab === "inspections") renderInspections(data);
+      else if (tab === "flights_tasks") renderFlightsTasks(data.overview || {});
       else if (tab === "alarms") renderAlarms(data.overview || {});
       else renderDataQuality(data.overview || {});
     }
@@ -472,6 +482,68 @@
           : '<div class="empty">暂无可展示的每设备告警。</div>') +
         '</div>' +
         '<div class="empty">说明：alarm/status/deal 为原始 code，语义尚未验证，暂不映射为业务标签。</div>';
+    }
+
+    function renderInspections(data) {
+      const items = (data && data.items) || [];
+      const total = (data && data.total != null) ? data.total : items.length;
+      const rows = items.map((item) => {
+        const rec = item.record || item;
+        const issue = rec.has_issue
+          ? `<span class="state-on">是</span>`
+          : `<span class="state-off">否</span>`;
+        return `<tr>
+          <td>${esc(rec.inspection_id || "--")}</td>
+          <td>${esc(rec.inspector_username || "--")}</td>
+          <td>${esc(rec.device_id || "--")}</td>
+          <td>${esc(rec.aircraft_no || "--")}</td>
+          <td>${esc(rec.flight_no || "--")}</td>
+          <td>${esc(rec.station || "--")}</td>
+          <td>${esc((rec.maintenance_task_text || "").slice(0, 40) || "--")}</td>
+          <td>${issue}</td>
+          <td>${esc(rec.status || "--")}</td>
+          <td>${fmtLocal(rec.inspection_started_at)}</td>
+        </tr>`;
+      }).join("");
+      byId("content").innerHTML =
+        '<div class="grid">' +
+        metric(total == null ? "--" : total, "监察记录总数") +
+        metric(items.length == null ? "--" : items.length, "本页条数") +
+        '</div>' +
+        '<div class="card"><h2>监察记录</h2>' +
+        (rows ? '<table><thead><tr><th>记录 ID</th><th>监察人</th><th>设备</th><th>飞机</th><th>航班</th><th>站点</th><th>维修任务</th><th>问题</th><th>状态</th><th>开始时间</th></tr></thead><tbody>' + rows + '</tbody></table>'
+          : '<div class="empty">当前窗口内暂无监察记录。</div>') +
+        '</div>' +
+        '<div class="empty">说明：记录为真实生产监察数据；问题标记与状态为业务字段。</div>';
+    }
+
+    function renderFlightsTasks(overview) {
+      const flights = (overview.flights || []).map((row) => `<tr>
+        <td>${esc(row[1] || "--")}</td>
+        <td>${esc(row[2] || "--")}</td>
+        <td>${esc(row[3] || "--")}</td>
+        <td>${esc(row[4] || "--")}</td>
+      </tr>`).join("");
+      const tasks = (overview.routine_tasks || []).map((row) => `<tr>
+        <td>${esc(row[2] || "--")}</td>
+        <td>${esc(row[1] || "--")}</td>
+        <td>${esc(row[3] || "--")}</td>
+        <td>${esc(row[4] || "--")}</td>
+      </tr>`).join("");
+      byId("content").innerHTML =
+        '<div class="grid">' +
+        metric(overview.source_flight_count == null ? "--" : overview.source_flight_count, "航班数") +
+        metric(overview.source_task_count == null ? "--" : overview.source_task_count, "维修任务数") +
+        '</div>' +
+        '<div class="card"><h2>航班（参考）</h2>' +
+        (flights ? '<table><thead><tr><th>航班号</th><th>飞机号</th><th>航段</th><th>状态</th></tr></thead><tbody>' + flights + '</tbody></table>'
+          : '<div class="empty">当前日期暂无航班数据。</div>') +
+        '</div>' +
+        '<div class="card"><h2>维修任务（参考）</h2>' +
+        (tasks ? '<table><thead><tr><th>任务类型</th><th>飞机号</th><th>机位</th><th>状态</th></tr></thead><tbody>' + tasks + '</tbody></table>'
+          : '<div class="empty">当前日期暂无维修任务数据。</div>') +
+        '</div>' +
+        '<div class="empty">说明：本页为航班/维修任务只读参考视图（非自动关联），用于监察人员确认飞机/任务上下文。</div>';
     }
 
     function renderDataQuality(overview) {

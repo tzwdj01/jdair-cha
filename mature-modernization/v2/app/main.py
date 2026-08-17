@@ -23,6 +23,7 @@ from .services.dashboard import (
     DashboardService,
     DashboardSourceError,
 )
+from .services.business_candidates import LegacyBusinessDataClient
 from .services.legacy import (
     LegacyClient,
     LegacyTransportError,
@@ -64,6 +65,9 @@ inspection_service = (
     InspectionDataService(
         inspection_store,
         thresholds=settings.inspection_thresholds,
+        business_client=LegacyBusinessDataClient(
+            legacy_client,
+        ),
     )
     if inspection_store is not None
     else None
