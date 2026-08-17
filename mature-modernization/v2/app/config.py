@@ -150,6 +150,12 @@ class Settings:
     mcs8_password: str
     mcs8_timeout_seconds: float
     mcs8_login_timeout_seconds: float
+    scheduler_enabled: bool
+    scheduler_period_seconds: int
+    scheduler_overlap_seconds: int
+    scheduler_lookback_seconds: int
+    scheduler_max_cycles: int
+    scheduler_state_dir: str
     feature_dashboard_v2: bool
     feature_realtime_readonly: bool
     feature_realtime_audio: bool
@@ -369,6 +375,31 @@ class Settings:
                 "CHA_V2_MCS8_LOGIN_TIMEOUT_SECONDS",
                 15.0,
             ),
+            scheduler_enabled=env_bool(
+                "CHA_V2_INSPECTION_SCHEDULER_ENABLED",
+                False,
+            ),
+            scheduler_period_seconds=env_int(
+                "CHA_V2_INSPECTION_SCHEDULER_PERIOD_SECONDS",
+                600,
+            ),
+            scheduler_overlap_seconds=env_int(
+                "CHA_V2_INSPECTION_SCHEDULER_OVERLAP_SECONDS",
+                300,
+            ),
+            scheduler_lookback_seconds=env_int(
+                "CHA_V2_INSPECTION_SCHEDULER_LOOKBACK_SECONDS",
+                3600,
+            ),
+            scheduler_max_cycles=env_int(
+                "CHA_V2_INSPECTION_SCHEDULER_MAX_CYCLES",
+                6,
+            ),
+            scheduler_state_dir=os.getenv(
+                "CHA_V2_INSPECTION_SCHEDULER_STATE_DIR",
+                "/opt/jdair-cha/v2/data/mcs8-scheduler",
+            ).strip()
+            or "/opt/jdair-cha/v2/data/mcs8-scheduler",
             feature_dashboard_v2=env_bool("CHA_V2_FEATURE_DASHBOARD_V2"),
             feature_realtime_readonly=env_bool(
                 "CHA_V2_FEATURE_REALTIME_READONLY"
