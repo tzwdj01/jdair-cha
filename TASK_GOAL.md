@@ -623,7 +623,25 @@ CHA scratch 只读验证 PASS：MCS8 auth → DEVICE 114（14 online/100 offline
 PASS**：DEVICE 114 / MEDIA 8 / ALARM 2 写入 cha_m4/inspection，幂等重跑
 无膨胀（device 二次 stored=0），PG 行数对账一致，metrics 对账一致。
 未启用 scheduler；未激活 AuthorizedUser / Inspection workflow；生产
-app/current/nginx/systemd 未改动。）
+app/current/nginx/systemd 未改动。
+
+`2026-08-18` **PRODUCTION LOW-RATE SCHEDULER CANARY — SHORT CANARY PASS /
+DATA SEMANTICS PASS / PROCESS LIFECYCLE FIXED-VERIFIED**。生产 scheduler
+（`app/services/mcs8_scheduler.py` + `scripts/m4_mcs8_scheduler.py`，cadence
+600s / lookback 1h / overlap 5m，kill switch `CHA_V2_INSPECTION_SCHEDULER_ENABLED`）
+已实现并测试（259 tests PASS）。第一轮 production canary 完成 **5 个连续
+10 分钟 cycle** 的有效证据：Device same-state 无行膨胀、真实状态变化仅产生
+observed transition、Media/Alarm identity 幂等、PG 持续写入、scheduler 内存
+~39MB 稳定、MCS8 production data path 正常。原 canary 在 cycle 5 后等待
+cycle 6 时因 **SSH/nohup session lifecycle**（非数据逻辑）提前退出；根因
+归类为后台进程生命周期，正式 deployment 需 systemd 进程模型（setsid
+独立会话已复验稳定）。restart verification PASS：重启后单 cycle 从 PG
+latest state 继续，不重新生成 INITIAL_OBSERVATION（114 基线保持），仅真实
+transition 入库。kill switch PASS：ENABLED=false 立即退出、不采集、不影响
+历史 PG / realtime / Legacy / Dashboard。生产 PG 保留全部真实采集数据
+（不清空）：device 137 = 114 initial + 23 cha_transitions、media 40、alarm 10。
+LONGER OBSERVATION 将在以后 scheduler 正式运行中自然获得。**未进入
+Inspection User Canary；未扩大 production rollout。**）
 
 名称：
 
@@ -1856,7 +1874,8 @@ M4 Done Criteria：
 
 * `ACTIVE MILESTONE: M4`。
 * 状态：`M4 ACTIVE / P2.5 PASS / P3 FOUNDATION PASS / P3.1 PASS /
-  P3.2 PRODUCTION MCS8 ONE SHOT PASS — READY FOR LOW-RATE SCHEDULER CANARY`
+  P3.2 PRODUCTION LOW-RATE SCHEDULER CANARY: SHORT CANARY PASS — READY FOR
+  INSPECTION USER CANARY (separate gate)`
   （不宣布 M4 COMPLETE）。
 * `M4 P3.2 — CONTROLLED PRODUCTION DATA ACTIVATION & CANARY`：
   * SERVER PREPARATION + PG MIGRATION & CONNECTIVITY PASS（migration 到
@@ -1877,16 +1896,34 @@ M4 Done Criteria：
     PG 行数与 metrics 对账一致。生产 app/current/nginx/systemd 未改动。
     AEE 前端数据 API 服务端（aee.jdcloud.com）仍受 JFE 493 限制，但
     MCS8 native 通道不受影响。
+  * **PRODUCTION LOW-RATE SCHEDULER CANARY（2026-08-18）**：
+    * 实现：`MCS8ProductionScheduler`（顺序 DEVICE→MEDIA→ALARM、单 cycle
+      in flight、bounded lookback+overlap、server-side MCS8 auth with bounded
+      re-login、cycle/state JSON 记录）；`scripts/m4_mcs8_scheduler.py`
+      （kill switch + 可配置 cadence/max_cycles）；config 新增 scheduler 项。
+    * 第一轮 production canary：**5 个连续 10-min cycles** 有效证据
+      （Device same-state no inflation；真实 transition once；Media/Alarm
+      idempotent；PG 持续写入；scheduler 内存 ~39MB 稳定；MCS8 auth 稳定）。
+    * **PROCESS LIFECYCLE**：原 canary 在 cycle 5 后等待期因 SSH/nohup
+      session lifecycle 提前退出（非数据逻辑）。setsid 独立会话复验稳定；
+      正式部署需 systemd 进程模型（本轮未修改生产 systemd）。
+    * **restart verification PASS**：重启单 cycle 从 PG latest 继续，
+      不重新生成 INITIAL_OBSERVATION（114 基线保持），仅真实 transition。
+    * **kill switch PASS**：ENABLED=false 立即退出、不采集；历史 PG /
+      realtime / Legacy / Dashboard 不受影响。
+    * 生产 PG 保留真实数据（device 137 / media 40 / alarm 10）。
+    * 状态：`SHORT CANARY PASS`；`LONGER OBSERVATION REQUIRED`（后续
+      scheduler 正式运行自然获得）。
 * 观察项：远端备份目的地未提供（Canary 完成前必须）。
 * 生产数据激活：`AUTHORIZED — CONTROLLED CANARY ONLY`。
 
 ## Next
 
-1. `P3.2`：等待项目负责人授权 LOW-RATE SCHEDULER CANARY（只读 AEE/MCS8
-   数据采集，不提高频率，不扩大数据域）。ONE SHOT 脚本/模块/secret 已在
-   CHA scratch `/opt/cha-m4-canary` 就绪。
-2. ONE SHOT 解除后：LOW-RATE scheduler → AuthorizedUser Canary →
-   Inspection Canary → RealtimeViewEvent 采集 → 备份/监控/kill switch。
+1. `P3.2`：等待项目负责人授权 **INSPECTION USER CANARY**（独立 gate）。
+   Scheduler 代码/脚本/secret 已在 CHA scratch `/opt/cha-m4-canary` 就绪；
+   正式 deployment 进程模型建议 systemd（setsid 已复验）。
+2. 后续：AuthorizedUser Canary → Inspection Canary → RealtimeViewEvent
+   采集 → 备份/监控/kill switch → LONGER OBSERVATION。
 3. `P3.2` 观察项：提供远端备份目的地（否则标记 `REMOTE BACKUP DESTINATION
    REQUIRED BEFORE CANARY COMPLETION`）。
 3. `P3.2` 待办：服务端 AEE token provider 生命周期/刷新验证（不记录
