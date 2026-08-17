@@ -10,7 +10,7 @@ Status: `PASS — MULTI-PAGE OPERATIONAL DASHBOARD CONSOLIDATED`
 多页面操作 Dashboard，围绕设备 / 媒体 / 实时监察 / 监察记录 / 航班与
 维修任务 / 告警 / 数据质量，全部连接生产 PostgreSQL。
 
-## 7 域 Dashboard（生产 200）
+## 8 域 Dashboard（生产 200）
 
 `/api/v2/dashboard/`：
 
@@ -21,10 +21,11 @@ Status: `PASS — MULTI-PAGE OPERATIONAL DASHBOARD CONSOLIDATED`
 | realtime | 监察使用 | `/api/v2/inspection/realtime` |
 | inspections | 监察记录 | `/api/v2/inspections`（authorized） |
 | flights_tasks | 航班与维修任务 | `/api/v2/inspection/flights-tasks` |
+| locations | 设备定位 | `/api/v2/inspection/locations` |
 | alarms | 告警异常 | `/api/v2/inspection/alarms` |
 | data_quality | 数据质量 | `/api/v2/inspection/data-quality` |
 
-生产验证：7 个页面全部 200，7 个数据 API 全部 200。
+生产验证：8 个页面全部 200，8 个数据 API 全部 200。
 
 ## 新增 flights-tasks 域
 
@@ -48,11 +49,13 @@ Status: `PASS — MULTI-PAGE OPERATIONAL DASHBOARD CONSOLIDATED`
   forward / upstream fail / `records` key
 * `test_inspection_api.py`：flights-tasks endpoint（client / not wired /
   invalid date）
+* locations 标签：`renderLocations`（设备/事件/坐标数/最新定位/类型数，
+  坐标明细受保护不展示）
 * 全量回归 **271 tests PASS**（2 PG skip）
 
 ## Production deployment
 
-* release：`20260818030117-m4-dashboard-consolidated`（active）
+* release：`20260818030705-m4-dashboard-consolidated`（active）
 * v2 venv：psycopg2 + openpyxl 就绪
 * 生产数据（03:01）：device 146 / media 47 / alarm 14 / rtview 2 /
   inspection 4；PG 9.9MB

@@ -53,6 +53,7 @@
       <button id="tab-realtime">监察使用</button>
       <button id="tab-inspections">监察记录</button>
       <button id="tab-flights_tasks">航班/任务</button>
+      <button id="tab-locations">设备定位</button>
       <button id="tab-alarms">告警异常</button>
       <button id="tab-data_quality">数据质量</button>
     </nav>
@@ -82,6 +83,7 @@
       realtime: "/api/v2/inspection/realtime",
       inspections: "/api/v2/inspections",
       flights_tasks: "/api/v2/inspection/flights-tasks",
+      locations: "/api/v2/inspection/locations",
       alarms: "/api/v2/inspection/alarms",
       data_quality: "/api/v2/inspection/data-quality"
     };
@@ -91,6 +93,7 @@
       realtime: "监察使用分析",
       inspections: "监察记录",
       flights_tasks: "航班与维修任务",
+      locations: "设备定位",
       alarms: "告警与异常分析",
       data_quality: "数据质量"
     };
@@ -205,6 +208,7 @@
       else if (tab === "realtime") renderRealtime(data.overview || {}, data.runtime || null);
       else if (tab === "inspections") renderInspections(data);
       else if (tab === "flights_tasks") renderFlightsTasks(data.overview || {});
+      else if (tab === "locations") renderLocations(data.overview || {});
       else if (tab === "alarms") renderAlarms(data.overview || {});
       else renderDataQuality(data.overview || {});
     }
@@ -544,6 +548,31 @@
           : '<div class="empty">当前日期暂无维修任务数据。</div>') +
         '</div>' +
         '<div class="empty">说明：本页为航班/维修任务只读参考视图（非自动关联），用于监察人员确认飞机/任务上下文。</div>';
+    }
+
+    function renderLocations(overview) {
+      const aggregation = overview.aggregation || {};
+      const devices = (aggregation.devices || []).map((item) => `<tr>
+        <td>${esc(item.device_id)}</td>
+        <td>${esc(item.event_count)}</td>
+        <td>${esc(item.distinct_coordinate_count)}</td>
+        <td>${fmtLocal(item.last_gps_at)}</td>
+        <td>${esc(item.gps_type_count != null ? item.gps_type_count : "--")}</td>
+        <td>${esc(item.network_type_count != null ? item.network_type_count : "--")}</td>
+      </tr>`).join("");
+      const flags = (aggregation.quality_flags || []).map((f) =>
+        `<span class="flag">${esc(f)}</span>`).join("");
+      byId("content").innerHTML =
+        '<div class="grid">' +
+        metric(aggregation.source_event_count == null ? "--" : aggregation.source_event_count, "定位事件数") +
+        metric(aggregation.included_event_count == null ? "--" : aggregation.included_event_count, "窗口内事件") +
+        '</div>' +
+        '<div class="card"><h2>每设备定位</h2>' +
+        (devices ? '<table><thead><tr><th>设备</th><th>事件数</th><th>不同坐标数</th><th>最新定位</th><th>定位类型数</th><th>网络类型数</th></tr></thead><tbody>' + devices + '</tbody></table>'
+          : '<div class="empty">当前窗口内无设备定位数据。</div>') +
+        '</div>' +
+        (flags ? '<div class="card"><h2>质量标记</h2>' + flags + '</div>' : "") +
+        '<div class="empty">说明：坐标明细受保护不展示；本页仅展示定位统计与覆盖。</div>';
     }
 
     function renderDataQuality(overview) {

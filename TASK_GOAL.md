@@ -697,10 +697,11 @@ REAL BUSINESS DATA ACCUMULATION ACTIVE**：
 
 `2026-08-18` **MULTI-PAGE OPERATIONAL DASHBOARD CONSOLIDATION — PASS**：
 
-* 监察数据中心 Dashboard 整合为 **7 个操作域标签页**（`/api/v2/dashboard/`
+* 监察数据中心 Dashboard 整合为 **8 个操作域标签页**（`/api/v2/dashboard/`
   `devices` 设备运行 / `media` 视频上传 / `realtime` 监察使用 /
-  `inspections` 监察记录 / `flights_tasks` 航班与维修任务 / `alarms`
-  告警异常 / `data_quality` 数据质量），全部页面与数据 API 生产 200。
+  `inspections` 监察记录 / `flights_tasks` 航班与维修任务 /
+  `locations` 设备定位 / `alarms` 告警异常 / `data_quality` 数据质量），
+  全部页面与数据 API 生产 200。
 * 新增只读 `GET /api/v2/inspection/flights-tasks`（date 可选）：
   `InspectionDataService.flights_tasks_overview` 经
   `LegacyBusinessDataClient`（LegacyClient + `records` 载荷归一化）读取
@@ -712,7 +713,7 @@ REAL BUSINESS DATA ACCUMULATION ACTIVE**：
 * 单测：`tests/test_flights_tasks_dashboard.py`（not wired / wired /
   cookie / upstream fail / `records` key）+ `test_inspection_api` 端点测试
   （client / not wired / invalid date）。全量回归 **271 tests PASS**。
-* 生产部署：`20260818030117-m4-dashboard-consolidated` release active。
+* 生产部署：`20260818030705-m4-dashboard-consolidated` release active。
   生产数据（03:01）：device 146 / media 47 / alarm 14 / rtview 2 /
   inspection 4；CHA 724Mi/1.9Gi、load 0.12；PG 9.9MB；scheduler 持续
   正常（RSS ~36MB，55min）。）
@@ -2003,10 +2004,11 @@ M4 Done Criteria：
     验证；RealtimeViewEvent 生产写入；InspectionRecord
     DRAFT→SUBMITTED→CORRECTED + audit；USER_CONFIRMED/MANUAL_ENTRY；
     query/metrics/CSV/XLSX/Dashboard 均 PASS。真实业务数据积累中。
-  * **MULTI-PAGE OPERATIONAL DASHBOARD CONSOLIDATION PASS**：7 标签
-    Dashboard（devices/media/realtime/inspections/flights_tasks/alarms/
-    data_quality）全部生产 200；新增 flights-tasks 只读域（34 航班/41
-    任务真实数据）；inspections 标签复用真实监察记录。271 tests PASS。
+  * **MULTI-PAGE OPERATIONAL DASHBOARD CONSOLIDATION PASS**：8 标签
+    Dashboard（devices/media/realtime/inspections/flights_tasks/locations/
+    alarms/data_quality）全部生产 200；新增 flights-tasks 只读域
+    （34 航班/41 任务真实数据）；inspections 标签复用真实监察记录；
+    locations 定位统计（坐标受保护）。271 tests PASS。
 * 观察项：远端备份目的地未提供（Canary 完成前必须）。
 * 生产数据激活：`AUTHORIZED — CONTROLLED CANARY ONLY`。
 

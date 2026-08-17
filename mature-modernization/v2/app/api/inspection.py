@@ -33,6 +33,7 @@ PAGE_ROUTES = {
     "realtime": "监察使用分析",
     "inspections": "监察记录",
     "flights_tasks": "航班与维修任务",
+    "locations": "设备定位",
     "alarms": "告警与异常分析",
     "data_quality": "数据质量",
 }
