@@ -14,6 +14,10 @@ from app.api.inspections import create_inspections_router
 from app.config import Settings
 from app.data.inspection_records import build_authorized_user
 from app.data.store import MemoryInspectionRecordStore
+from app.services.business_candidates import (
+    BusinessCandidate,
+    BusinessCandidateResult,
+)
 from app.services.inspection_records import InspectionRecordService
 
 
@@ -103,7 +107,7 @@ class _Identity:
         return None, self.username
 
 
-def _app(username: str = "inspector-a"):
+def _app(username: str = "inspector-a", candidate_service=None):
     store = MemoryInspectionRecordStore()
     service = InspectionRecordService(store)
     app = FastAPI()
@@ -114,6 +118,7 @@ def _app(username: str = "inspector-a"):
             store,
             _envelope,
             _Identity(username),
+            candidate_service,
         )
     )
     return app, store
@@ -361,6 +366,76 @@ class InspectionsAPITests(unittest.IsolatedAsyncioTestCase):
             response.json()["data"]["code"],
             "admin_forbidden",
         )
+
+    async def test_candidates_returns_reference_items(self) -> None:
+        class _FakeCandidateService:
+            async def find_candidates(self, **kwargs):
+                return BusinessCandidateResult(
+                    candidates=(
+                        BusinessCandidate(
+                            source="flight",
+                            source_id="f1",
+                            aircraft_no="B-1234",
+                            flight_no="JD5101",
+                            station="PEK",
+                            task_type=None,
+                            task_text="JD5101 PEK→SHA",
+                            time_start=dt.datetime(
+                                2026, 8, 18, 2, 0, tzinfo=UTC
+                            ),
+                            time_end=None,
+                            source_updated_at=dt.datetime(
+                                2026, 8, 18, 2, 0, tzinfo=UTC
+                            ),
+                            association_method="SOURCE_DIRECT",
+                            evidence=("flight_live_fields",),
+                        ),
+                    ),
+                    fetched_at=dt.datetime(2026, 8, 18, 2, 0, tzinfo=UTC),
+                    requested_aircraft="B-1234",
+                    requested_station=None,
+                )
+
+        app, store = _app(candidate_service=_FakeCandidateService())
+        await _seed_authorized(store)
+        response = await _request(
+            app,
+            "GET",
+            (
+                "/api/v2/inspections/candidates"
+                "?started_at=2026-08-18T02:00:00%2B00:00"
+                "&aircraft=B-1234"
+            ),
+        )
+        self.assertEqual(response.status_code, 200)
+        data = response.json()["data"]
+        self.assertEqual(data["count"], 1)
+        self.assertEqual(data["candidates"][0]["flight_no"], "JD5101")
+        self.assertEqual(data["requested_aircraft"], "B-1234")
+
+    async def test_candidates_unavailable_returns_503(self) -> None:
+        app, store = _app(candidate_service=None)
+        await _seed_authorized(store)
+        response = await _request(
+            app,
+            "GET",
+            "/api/v2/inspections/candidates",
+        )
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(
+            response.json()["data"]["code"],
+            "candidate_source_unavailable",
+        )
+
+    async def test_candidates_requires_authorized(self) -> None:
+        app, store = _app(username="not-in-list", candidate_service=object())
+        await _seed_authorized(store)
+        response = await _request(
+            app,
+            "GET",
+            "/api/v2/inspections/candidates",
+        )
+        self.assertEqual(response.status_code, 403)
 
 
 if __name__ == "__main__":

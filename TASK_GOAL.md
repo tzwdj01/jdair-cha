@@ -1955,6 +1955,8 @@ M4 Done Criteria：
   M4 CLOSED 与 M5 均属 stop gate，不得自动开始）。
 * 状态：`M4 ACTIVE — PHASE 4 REAL BUSINESS OBSERVATION — REAL BUSINESS DATA
   ACCUMULATION ACTIVE`（PHASE 1-3 已 PASS；PHASE 4 自然观察中）。
+  PHASE 5 已开始：按真实使用问题修复（候选参考 API 已接线，
+  `/api/v2/inspections/candidates` 200，43 条真实候选，非 matcher）。
 * `M4 P3.2 — CONTROLLED PRODUCTION DATA ACTIVATION & CANARY`：
   * SERVER PREPARATION + PG MIGRATION & CONNECTIVITY PASS（migration 到
     cha_m4、CHA→Aliyun PG 真连接、secret、DML smoke、pg_dump/restore）；

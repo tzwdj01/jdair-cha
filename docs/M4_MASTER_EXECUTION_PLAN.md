@@ -190,6 +190,18 @@ state、PostgreSQL、Inspection records 读取自然积累的数据。
 
 没有真实证据的问题：不开发。禁止 speculative feature development。
 
+**当前状态（2026-08-18）：`ACTIVE — 按真实使用问题修复`。**
+
+真实使用发现并已修复：
+
+* **候选参考 API 缺失**：Canary 时 `/api/v2/inspections/candidates` 返回
+  404（监察表单缺候选供 USER_CONFIRMED 选择）。已将
+  `InspectionBusinessCandidateService`（已有、非 matcher）接线到
+  `GET /api/v2/inspections/candidates`：按 inspection 时间 / 可选 aircraft /
+  station 返回有界参考候选（aircraft/flight/station/routine task/time），
+  `association_method=SOURCE_DIRECT`（仅参考，不自动确认）。生产验证：
+  200，43 条真实候选（航班/任务），8 域 Dashboard 无回归。测试 +3。
+
 ---
 
 ## 8. PHASE 6 — M4 P4 Dashboard Consolidation

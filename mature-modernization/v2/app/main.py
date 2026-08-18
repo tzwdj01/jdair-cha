@@ -23,7 +23,10 @@ from .services.dashboard import (
     DashboardService,
     DashboardSourceError,
 )
-from .services.business_candidates import LegacyBusinessDataClient
+from .services.business_candidates import (
+    InspectionBusinessCandidateService,
+    LegacyBusinessDataClient,
+)
 from .services.legacy import (
     LegacyClient,
     LegacyTransportError,
@@ -170,6 +173,10 @@ app.include_router(
 )
 if inspection_record_store is not None and inspection_record_service is not None:
 
+    candidate_service = InspectionBusinessCandidateService(
+        LegacyBusinessDataClient(legacy_client),
+    )
+
     async def inspection_identity(request: Request) -> tuple[str | None, str]:
         cookie_header = request.headers.get("cookie", "")
         session_cookie = request.cookies.get("jdair_mcs8_session", "")
@@ -192,6 +199,7 @@ if inspection_record_store is not None and inspection_record_service is not None
             inspection_record_store,
             envelope,
             inspection_identity,
+            candidate_service,
         )
     )
 

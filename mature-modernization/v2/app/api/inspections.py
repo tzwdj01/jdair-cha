@@ -101,6 +101,7 @@ def create_inspections_router(
     record_store: InspectionRecordStore,
     envelope: Envelope,
     identity: IdentityProvider,
+    candidate_service: Any | None = None,
 ) -> APIRouter:
     """CHA inspection workflow API (M4 P3, non-production feature-gated).
 
@@ -495,6 +496,106 @@ def create_inspections_router(
         return envelope(
             request,
             {"username": user.username, "enabled": enabled},
+        )
+
+    @router.get("/api/v2/inspections/candidates")
+    async def inspection_candidates(
+        request: Request,
+        started_at: str = Query("", max_length=64),
+        aircraft: str = Query("", max_length=64),
+        station: str = Query("", max_length=128),
+        days: int = Query(1, ge=1, le=3),
+    ) -> JSONResponse:
+        """Return reference aircraft/flight/station/routine-task candidates.
+
+        This is a read-only candidate reference for the inspection form
+        (USER_CONFIRMED flow). It is NOT an automatic matcher: the candidate
+        list is bounded by inspection time / optional aircraft / station and
+        never auto-associates to an inspection record.
+        """
+
+        blocked = gate(request)
+        if blocked is not None:
+            return blocked
+        _identity, _auth_error = await require_authorized(request)
+        if _auth_error is not None:
+            return _auth_error
+        if candidate_service is None:
+            return envelope(
+                request,
+                {
+                    "code": "candidate_source_unavailable",
+                    "message": "Business candidate source is not configured.",
+                },
+                ok=False,
+                status_code=503,
+            )
+        started = dt.datetime.now(dt.timezone.utc)
+        if started_at:
+            parsed = _parse_iso(started_at)
+            if parsed is None:
+                return envelope(
+                    request,
+                    {"code": "invalid_started_at"},
+                    ok=False,
+                    status_code=400,
+                )
+            started = parsed
+        service_for_request = candidate_service
+        with_cookie = getattr(candidate_service, "with_cookie", None)
+        if callable(with_cookie):
+            cookie_header = request.headers.get("cookie", "")
+            if cookie_header:
+                service_for_request = with_cookie(cookie_header)
+        try:
+            result = await service_for_request.find_candidates(
+                inspection_started_at=started,
+                aircraft_no=aircraft or None,
+                station=station or None,
+            )
+        except Exception:
+            return envelope(
+                request,
+                {
+                    "code": "candidate_source_unavailable",
+                    "message": "Business candidate source is temporarily unavailable.",
+                },
+                ok=False,
+                status_code=503,
+            )
+        items = [
+            {
+                "source": item.source,
+                "source_id": item.source_id,
+                "aircraft_no": item.aircraft_no,
+                "flight_no": item.flight_no,
+                "station": item.station,
+                "task_type": item.task_type,
+                "task_text": item.task_text,
+                "time_start": (
+                    item.time_start.isoformat()
+                    if item.time_start is not None
+                    else None
+                ),
+                "time_end": (
+                    item.time_end.isoformat()
+                    if item.time_end is not None
+                    else None
+                ),
+                "association_method": item.association_method,
+                "evidence": list(item.evidence),
+            }
+            for item in result.candidates
+        ]
+        return envelope(
+            request,
+            {
+                "candidates": items,
+                "requested_aircraft": result.requested_aircraft,
+                "requested_station": result.requested_station,
+                "fetched_at": result.fetched_at.isoformat(),
+                "count": len(items),
+            },
         )
 
     async def _admin_identity(

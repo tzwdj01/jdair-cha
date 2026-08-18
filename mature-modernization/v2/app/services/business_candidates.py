@@ -113,6 +113,22 @@ class InspectionBusinessCandidateService:
         self._window_minutes = max(30, min(window_minutes, 1440))
         self._adjacent_days = max(0, min(adjacent_days, 3))
 
+    def with_cookie(self, cookie: str) -> "InspectionBusinessCandidateService":
+        """Return a service instance bound to a specific session cookie."""
+
+        with_cookie = getattr(self._client, "with_cookie", None)
+        client = (
+            with_cookie(cookie)
+            if callable(with_cookie)
+            else self._client
+        )
+        return InspectionBusinessCandidateService(
+            client,
+            source_timezone=self._source_timezone,
+            window_minutes=self._window_minutes,
+            adjacent_days=self._adjacent_days,
+        )
+
     async def find_candidates(
         self,
         *,
