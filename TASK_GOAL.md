@@ -570,7 +570,11 @@ Realtime 产品范围冻结：
 
 ## M4 — Inspection Data Center & AEE Data Capability Integration
 
-状态：`M4 COMPLETE / VERIFIED — INSPECTION DATA CENTER & REAL BUSINESS DATA ACCUMULATION ACTIVE`
+状态：`M4 ACTIVE — PHASE 4 REAL BUSINESS OBSERVATION（M4 CLOSED 待 owner 授权 gate）`
+
+执行路线图以 `docs/M4_MASTER_EXECUTION_PLAN.md` 为单一依据（详细顺序 /
+验收标准 / stop gates / deferred scope / closure criteria）。
+本文件仅保留 milestone / current phase / governance status。
 
 （不得宣布 M4 COMPLETE。P0 数据能力获取已在授权 AEE 会话下完成 live 验证，
 AEE 数据 API 已确认 TOKEN-ONLY / 无 Cookie 可用；P1 历史数据 contract /
@@ -1947,9 +1951,10 @@ M4 Done Criteria：
 
 ## In Progress
 
-* `ACTIVE MILESTONE: M4`（M4 达到 Done Criteria；M5 不得自动开始）。
-* 状态：`M4 COMPLETE / VERIFIED — INSPECTION DATA CENTER & REAL BUSINESS
-  DATA ACCUMULATION ACTIVE`
+* `ACTIVE MILESTONE: M4`（Master Plan：`docs/M4_MASTER_EXECUTION_PLAN.md`；
+  M4 CLOSED 与 M5 均属 stop gate，不得自动开始）。
+* 状态：`M4 ACTIVE — PHASE 4 REAL BUSINESS OBSERVATION — REAL BUSINESS DATA
+  ACCUMULATION ACTIVE`（PHASE 1-3 已 PASS；PHASE 4 自然观察中）。
 * `M4 P3.2 — CONTROLLED PRODUCTION DATA ACTIVATION & CANARY`：
   * SERVER PREPARATION + PG MIGRATION & CONNECTIVITY PASS（migration 到
     cha_m4、CHA→Aliyun PG 真连接、secret、DML smoke、pg_dump/restore）；
