@@ -267,8 +267,19 @@ Canary 记录，未污染业务数据。备份链路今日 12:33 验证有效。
     坐标合理、gpsTime 2023-07→2026-08（含陈旧，诚实保留）。
   - 测试 +6（normalization 4 + scheduler 2），全量 280 tests PASS
     （2 PG skip）。
-  - **部署待 owner 授权**（需更新生产 scheduler app + 重启
-    `jdair-cha-m4-scheduler.service`，属生产变更）。
+  - **已部署（2026-08-18 13:26 CST，owner 授权）**：
+    `LOCATION PRODUCTION DEPLOYMENT PASS`
+    - backup：`/opt/jdair-cha/m4-scheduler/backups/location-20260818132552`
+      （+ 首次尝试 20260818132110，可回滚）；
+    - 3 文件上传 + chown + `py_compile` OK；scheduler 重启 active，
+      NRestarts=0；
+    - 新进程首个 cycle：`device_locations_stored=92` /
+      `device_locations_invalid=22`（与 dry-run 完全一致）；
+    - PG `device_location_events`：96 行 / 92 台设备；sentinel 过滤 0 行
+      （无 year<2000）；gps 年份 2026=86 / 2025=6 / 2024=3 / 2023=1；
+    - `/api/v2/inspection/locations?days=3`：50 事件 / 46 设备 / FULL；
+      `/dashboard/locations` 200；
+    - 资源：MemoryCurrent ~22MB，disk 69%，服务正常。
 
 ---
 
