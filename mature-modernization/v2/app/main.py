@@ -27,6 +27,7 @@ from .services.business_candidates import (
     InspectionBusinessCandidateService,
     LegacyBusinessDataClient,
 )
+from .services.production_overview import ProductionOverviewService
 from .services.legacy import (
     LegacyClient,
     LegacyTransportError,
@@ -79,6 +80,17 @@ inspection_record_store = build_inspection_record_store(settings)
 inspection_record_service = (
     InspectionRecordService(inspection_record_store)
     if inspection_record_store is not None
+    else None
+)
+production_overview_service = (
+    ProductionOverviewService(
+        inspection_service,
+        inspection_record_service,
+    )
+    if (
+        inspection_service is not None
+        and inspection_record_service is not None
+    )
     else None
 )
 
@@ -462,7 +474,45 @@ async def dashboard_overview(
     city: str = Query("", max_length=32),
     refresh: bool = Query(False),
 ):
-    return await dashboard_snapshot(request, days, city, refresh)
+    response = await dashboard_snapshot(request, days, city, refresh)
+    if response.status_code != 200:
+        return response
+    data = json.loads(response.body)["data"]
+    # PHASE 6: additive production PostgreSQL overview (backward compatible;
+    # existing M2 keys are preserved verbatim).
+    data["production_overview"] = (
+        await _build_production_overview(days)
+        if production_overview_service is not None
+        else {"available": False, "error": "store_not_configured"}
+    )
+    return envelope(request, data)
+
+
+@app.get("/api/v2/dashboard/production-overview")
+async def dashboard_production_overview(
+    request: Request,
+    days: int = Query(1, ge=1, le=30),
+):
+    if production_overview_service is None:
+        return envelope(
+            request,
+            {"available": False, "error": "store_not_configured"},
+            ok=False,
+            status_code=503,
+        )
+    overview = await _build_production_overview(days)
+    return envelope(request, overview)
+
+
+async def _build_production_overview(days: int) -> dict[str, Any]:
+    assert production_overview_service is not None
+    try:
+        return await production_overview_service.build(days=days)
+    except Exception as exc:  # pragma: no cover - defensive
+        return {
+            "available": False,
+            "error": type(exc).__name__,
+        }
 
 
 @app.get("/api/v2/dashboard/device-trend")
