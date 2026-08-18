@@ -193,6 +193,32 @@ state、PostgreSQL、Inspection records 读取自然积累的数据。
 submit/correct 全链路在生产可用。测试记录已清理，生产保留 4 条真实
 Canary 记录，未污染业务数据。备份链路今日 12:33 验证有效。
 
+观察快照（2026-08-18 12:45，读取自然积累，未人工等待）：
+
+* scheduler：active，63 cycles，**63/63 all_successful=True，0 失败**，
+  NRestarts=0，PID 12273 运行 10.7h，RSS ~25MB（稳定，无持续增长）。
+  节奏验证：每 ~10 分钟一个 cycle（61→04:15Z、62→04:25Z、63→04:35Z）。
+  每 cycle 数据行为：DEVICE fetch 114 → stored 0-1（幂等，仅真实状态变化
+  才入库）；MEDIA fetch 6-9 → stored（新上传文件）；ALARM fetch 0 → stored 0。
+* PG：device 217（+1 真实 transition）/ media 137 / alarm 28 /
+  realtime_view_events 2 / inspection_records 4 / authorized_users 2；
+  DB ~10MB，1 连接。
+* Media 按日累计：2026-08-18 = 119 文件 / ~23.5GB；2026-08-17 = 18 文件 /
+  ~3.0GB。最新 3 条（12:36）：WXB312 18.6MB/36s、WXB316 322.9MB/600s、
+  WXB364 3.1MB/7s。
+* Alarm：最新 10:33（WXB301 type=2）；WXB356 type=205 于 05:50/06:00。
+* 设备最新快照：1 台设备真实掉线（transition 入库）。
+* CHA 资源：Mem 745Mi/1.9Gi、disk 25G/39G（68%）、swap 4G。
+* Aliyun PG：Mem 306Mi/1.6Gi、disk 5.7G/40G（16%）、load 0.00；
+  listener 仅 127.0.0.1:5432 + Aliyun Tailscale 内网 IP:5432，**公网 5432
+  未监听**（加固保持）。
+* V2 health：`/api/v2/health`、`/live`、`/ready` 均 200；v2 于 12:13 本地
+  时间重启（uptime ~31min），重启后全部健康检查 200，无回归。
+* 日志说明：scheduler 的 cycle 记录写入 state JSON（63 cycles 全量可查），
+  journald 仅记录 service 启停（02:06 启动后无逐 cycle 日志）；进程存活、
+  state 持续更新、PG 持续写入，非缺陷。
+* 本轮观察无新增真实产品问题需修复。
+
 ---
 
 ## 7. PHASE 5 — Workflow Refinement
