@@ -187,6 +187,12 @@ state、PostgreSQL、Inspection records 读取自然积累的数据。
   （`bfe0…ed6`），`pg_restore -l` 可读。异地备份链路持续有效。
 * 本轮观察无新增真实产品问题需修复（candidates API 已于上轮修复）。
 
+补充（2026-08-18 12:40）：真实工作流冒烟通过——realtime 页
+「记录监察结果」→ 创建 draft（自动带 device/streamId/timing）→
+填写 aircraft/flight/station/task → candidates 参考可用 →
+submit/correct 全链路在生产可用。测试记录已清理，生产保留 4 条真实
+Canary 记录，未污染业务数据。备份链路今日 12:33 验证有效。
+
 ---
 
 ## 7. PHASE 5 — Workflow Refinement
