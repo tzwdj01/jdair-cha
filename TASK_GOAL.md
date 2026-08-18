@@ -2042,6 +2042,29 @@ PG：device 146 / media 50 / alarm 15 / realtime_view_events 2 /
 inspection_records 4 / authorized_users 2；8 域 Dashboard 与数据 API 全
 200；CSV/XLSX 导出；异地备份 SHA256 一致。M5 不得自动开始。
 
+`2026-08-18` **PRODUCTION DASHBOARD DATA WIRING — PASS**：生产 V2
+inspection/data-center API 已正式接入 Aliyun production PostgreSQL
+（`CHA_V2_INSPECTION_STORE_PG_ENABLED=true`）。逐域对账
+`PostgreSQL row → service → API → Dashboard` 一致：
+
+* devices：PG 188（114 initial + 74 transitions）、在线 14/离线 100 → API
+  current_online=14/offline=100、coverage=PARTIAL → /dashboard/devices 200
+* media：PG 74（video 71、dur 25817s、bytes 16056890614）→ API fetched=74/
+  13 devices → /dashboard/media 200
+* alarms：PG 27（205×25/206×2）→ API alarm_count=27/type_counts 一致 →
+  /dashboard/alarms 200
+* realtime：PG 2 rtview（cancelled）→ API event_count=2/WXB313 → 200
+* data-quality：PG 291 行（188+0+74+2+27）→ API total_rows=291 → 200
+* inspections：PG 4（issue 2/no-issue 2/SUBMITTED 1/CORRECTED 1）→ API
+  total=4；metrics total=2/duration=153/participants=2/issue_rate=0.5 →
+  /dashboard/inspections 200；CSV/XLSX 导出正确
+* flights_tasks：34 航班/42 任务（参考）；locations：0（诚实空）
+* coverage 语义：requested=30 天时全部返回 `PARTIAL`（available=2 天，
+  2026-08-17~18），不显示虚假 30-day FULL。
+* 详见 `docs/aee/M4_P3_2_DASHBOARD_DATA_WIRING_20260818.md`。
+  最终 Dashboard consolidation 留待 **M4 P4 — Dashboard Consolidation &
+  Operational Analytics**。）
+
 ## Next
 
 1. `NEXT MILESTONE`：等待项目负责人授权 M5（Device Control / 全用户
