@@ -176,6 +176,17 @@ state、PostgreSQL、Inspection records 读取自然积累的数据。
 **当前状态：`OBSERVATION ACTIVE`（生产 scheduler 与业务自然运行；数据持续
 积累，无需人工等待）。**
 
+观察快照（2026-08-18 12:34，读取自然积累，未人工等待）：
+
+* scheduler：active，62 cycles，RSS ~26MB，运行 10.5h，无异常退出。
+* PG：device 216 / media 137 / alarm 28 / realtime_view_events 2 /
+  inspection_records 4；DB ~10MB，1 连接。
+* CHA：Mem 748Mi/1.9Gi、load 0.06。
+* off-host backup：今日 12:33 手动触发一次（timer 今日启用、首次 daily
+  触发顺延至明日 00:00）；local + remote-pg 双份，SHA256 与 Aliyun 源一致
+  （`bfe0…ed6`），`pg_restore -l` 可读。异地备份链路持续有效。
+* 本轮观察无新增真实产品问题需修复（candidates API 已于上轮修复）。
+
 ---
 
 ## 7. PHASE 5 — Workflow Refinement
