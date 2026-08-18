@@ -296,6 +296,26 @@ Dashboard 产品原则：
 * Inspection 页面回答「监察了什么，结论是什么？」
 * 不做纯视觉大屏；所有 KPI 来自真实 production data，不模拟/猜测/虚构。
 
+PHASE 6 就绪证据（2026-08-18，真实 production 数据，供 owner 决策）：
+
+* Devices：218 events / 114 台设备；最新快照 9 在线 / 105 离线；有真实
+  transition（WXB312 9 次、FXB102 7 次等）。
+* Media：138 文件 / 19 台设备上传 / ~27GB（2 天）；08-18 = 120 文件 /
+  ~24GB。
+* Realtime：2 条 cancelled（空闲自动化会话）；**尚无 played 事件**——
+  需一次真实浏览器播放会话才能产生首帧/时长证据（owner 操作）。
+* Inspections：4 条真实 Canary 记录（2 DRAFT / 1 SUBMITTED / 1 CORRECTED），
+  含 aircraft/flight/station/task/issue，审计链完整。
+* Alarms：28 条（type 205/206/2），code map 仍 PARTIAL。
+* Flights/Tasks：经 legacy 带 cookie 可取（candidates 曾返回 43 条真实
+  候选）；未授权不自动匹配。
+* Locations：**修复待部署**（见 PHASE 5 + deploy runbook），部署后预期
+  ~92 台设备有效定位。
+* Coverage：目前仅 ~2 天（08-17→08-18），30 天窗口 PARTIAL。
+
+进入 PHASE 6 的 stop gate 保持：**owner 明确批准**（含 locations 部署授权）
+后执行。
+
 核心指标：
 
 * Devices：online / offline / transition / uptime / last seen
