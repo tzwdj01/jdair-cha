@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import datetime as dt
 import json
+import pathlib
 import unittest
 
 from app.data.mcs8_auth import MCS8ServerAuthProvider
@@ -283,6 +284,32 @@ class MCS8ProductionSchedulerTests(unittest.IsolatedAsyncioTestCase):
         )
         # unchanged position must not inflate rows
         self.assertEqual(len(locations), 1)
+
+    async def test_state_json_serializes_device_location_flags(self) -> None:
+        adapter = _FakeAdapter()
+        adapter.device_rows = [
+            {
+                "szIDNO": "WXB310",
+                "nOnline": 1,
+                "groupId": 30000002,
+                "nJingDu": "121.4737",
+                "nWeiDu": "31.2304",
+                "gpsTime": "2026-08-17 09:40:00",
+            }
+        ]
+        state_dir = "/tmp/mcs8-sched-test-state-json"
+        scheduler, _, _ = _build(adapter, state_dir=state_dir)
+        observed = dt.datetime(2026, 8, 17, 2, 0, tzinfo=UTC)
+        await scheduler.run(period_seconds=1, max_cycles=1, stop_event=asyncio.Event())
+        state = json.loads(
+            (pathlib.Path(state_dir) / "scheduler_state.json")
+            .read_text(encoding="utf-8")
+        )
+        cycle = state["1"]
+        dev = next(
+            s for s in cycle["sources"] if s["source"] == "device_status"
+        )
+        self.assertIn("device_locations_stored=1", dev["quality_flags"])
 
     async def test_device_transition_stored_once(self) -> None:
         adapter = _FakeAdapter()
