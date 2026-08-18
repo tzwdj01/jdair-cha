@@ -41,6 +41,7 @@ from .normalization import (
     normalize_device_status_events,
     normalize_media_files,
     normalize_mcs8_device_snapshot,
+    normalize_mcs8_device_snapshot_locations,
 )
 from .pagination import AEEPageCollection, collect_aee_pages
 from .realtime_views import RealtimeViewEvent, build_realtime_view_event
@@ -83,6 +84,7 @@ __all__ = [
     "normalize_device_location_events",
     "normalize_media_files",
     "normalize_mcs8_device_snapshot",
+    "normalize_mcs8_device_snapshot_locations",
     "AlarmEvent",
     "AlarmNormalizationResult",
     "normalize_alarm_events",

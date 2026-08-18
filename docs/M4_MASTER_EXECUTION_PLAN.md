@@ -245,6 +245,31 @@ Canary 记录，未污染业务数据。备份链路今日 12:33 验证有效。
   `association_method=SOURCE_DIRECT`（仅参考，不自动确认）。生产验证：
   200，43 条真实候选（航班/任务），8 域 Dashboard 无回归。测试 +3。
 
+* **设备定位（locations）数据持久化缺失**：`/dashboard/locations` 一直
+  诚实为空（此前结论「当前无 GPS」）。只读探测证明该结论有误——
+  MCS8 `GetDevListByGroupId` 设备快照**本身就携带当前定位投影**
+  （`nJingDu`/`nWeiDu`/`gpsTime`/`ucMapType`，114 台设备全部有 GPS 字段），
+  但 scheduler 只持久化了状态、丢弃了定位。已修复：
+  - 新增 `normalize_mcs8_device_snapshot_locations`：从既有 DEVICE 快照行
+    产出 `DeviceLocationEvent`（`location_source="mcs8_device_snapshot"`，
+    坐标校验 + 0,0 哨兵剔除 + 无 gpsTime 剔除，旗标
+    `coordinate_system_unverified`/`location_data_restricted`/...）。
+  - collector `collect_device_snapshot` 内作为既有来源的**副作用**持久化
+    定位（不新增上游调用、不新增 scheduler source、频率不变）；
+    `device_status` 源 quality_flags 暴露
+    `device_locations_stored=N` / `device_locations_invalid=N`。
+  - 幂等：唯一键（source_system, location_source, device_id, gps_occurred_at,
+    lat, lng），位置不变不增行。
+  - 健壮性修复：`_optional_source_time` 捕获 `OverflowError`——
+    真实 MCS8 有 **22/114 台设备 `gpsTime='0001-01-01 00:00:00'`** 哨兵值，
+    原实现会崩整个 cycle。
+  - 真实数据验证：92 台设备产出有效定位事件（22 台哨兵正确剔除），
+    坐标合理、gpsTime 2023-07→2026-08（含陈旧，诚实保留）。
+  - 测试 +6（normalization 4 + scheduler 2），全量 280 tests PASS
+    （2 PG skip）。
+  - **部署待 owner 授权**（需更新生产 scheduler app + 重启
+    `jdair-cha-m4-scheduler.service`，属生产变更）。
+
 ---
 
 ## 8. PHASE 6 — M4 P4 Dashboard Consolidation

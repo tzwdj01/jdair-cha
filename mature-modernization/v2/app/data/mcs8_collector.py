@@ -11,6 +11,7 @@ from .mcs8_adapter import MCS8ReadOnlyDataAdapter
 from .normalization import (
     normalize_alarm_events,
     normalize_mcs8_device_snapshot,
+    normalize_mcs8_device_snapshot_locations,
     normalize_media_files,
 )
 from .pagination import CollectedSource, collect_aee_pages
@@ -267,6 +268,41 @@ class MCS8InspectionCollector:
             observed_at=collected_at,
             ingested_at=collected_at,
         )
+        # Persist the current-position projection carried by the same
+        # snapshot rows (nJingDu/nWeiDu/gpsTime). This is a best-effort side
+        # effect of the already-fetched DEVICE source: no extra upstream call,
+        # no new scheduler source, unchanged cadence. The store upsert keeps
+        # the latest observation per identity, so unchanged positions do not
+        # inflate rows.
+        location_result = normalize_mcs8_device_snapshot_locations(
+            snapshot.rows,
+            source_timezone=self._source_timezone,
+            observed_at=collected_at,
+            ingested_at=collected_at,
+        )
+        stored_locations = 0
+        location_flags: set[str] = set(location_result.quality_flags)
+        if location_result.invalid_row_count:
+            location_flags.add(
+                f"device_locations_invalid={location_result.invalid_row_count}"
+            )
+        if location_result.events:
+            try:
+                stored_locations = (
+                    await self._store.upsert_device_location_events(
+                        location_result.events
+                    )
+                )
+            except Exception:
+                logger.exception(
+                    "mcs8_device_location_persist_failed",
+                )
+                location_flags.add("device_locations_persist_failed")
+            else:
+                location_flags.add(
+                    f"device_locations_stored={stored_locations}"
+                )
+
         processor = MCS8DeviceSnapshotProcessor(self._store)
         result = await processor.process_snapshot(
             normalized.events,
@@ -287,6 +323,7 @@ class MCS8InspectionCollector:
                     set(snapshot.quality_flags)
                     | set(normalized.quality_flags)
                     | set(result.quality_flags)
+                    | location_flags
                     | {"source_system=mcs8"}
                 )
             ),

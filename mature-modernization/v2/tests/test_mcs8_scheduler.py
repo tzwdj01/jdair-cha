@@ -206,6 +206,84 @@ class MCS8ProductionSchedulerTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(len(rows), 2)
 
+    async def test_device_snapshot_persists_locations(self) -> None:
+        adapter = _FakeAdapter()
+        adapter.device_rows = [
+            {
+                "szIDNO": "WXB310",
+                "nOnline": 1,
+                "groupId": 30000002,
+                "nJingDu": "121.4737",
+                "nWeiDu": "31.2304",
+                "gpsTime": "2026-08-17 09:40:00",
+                "ucMapType": 1,
+            },
+            {
+                "szIDNO": "WXB358",
+                "nOnline": 0,
+                "groupId": 30000002,
+                # zero sentinel coordinates -> skipped as invalid
+                "nJingDu": "0",
+                "nWeiDu": "0",
+                "gpsTime": "2026-08-17 09:41:00",
+            },
+        ]
+        scheduler, store, _ = _build(adapter)
+        observed = dt.datetime(2026, 8, 17, 2, 0, tzinfo=UTC)  # = 10:00 +08:00
+        result = await scheduler.run_cycle(observed_at=observed)
+        self.assertTrue(result.all_successful)
+        dev = next(i for i in result.sources if i.source == "device_status")
+        self.assertEqual(dev.status, "ok")
+        self.assertIn(
+            "device_locations_stored=1",
+            dev.quality_flags,
+        )
+        self.assertIn(
+            "device_locations_invalid=1",
+            dev.quality_flags,
+        )
+        locations = await store.fetch_device_location_events(
+            start=observed - dt.timedelta(hours=1),
+            end=observed,
+        )
+        self.assertEqual(len(locations), 1)
+        event = locations[0]
+        self.assertEqual(event.device_id, "WXB310")
+        self.assertAlmostEqual(event.longitude, 121.4737)
+        self.assertAlmostEqual(event.latitude, 31.2304)
+        self.assertEqual(event.location_source, "mcs8_device_snapshot")
+        self.assertEqual(event.gps_type_code, 1)
+        self.assertIn("mcs8_device_snapshot", event.quality_flags)
+
+    async def test_device_snapshot_locations_idempotent(self) -> None:
+        adapter = _FakeAdapter()
+        adapter.device_rows = [
+            {
+                "szIDNO": "WXB310",
+                "nOnline": 1,
+                "groupId": 30000002,
+                "nJingDu": "121.4737",
+                "nWeiDu": "31.2304",
+                "gpsTime": "2026-08-17 09:40:00",
+            }
+        ]
+        scheduler, store, _ = _build(adapter)
+        observed1 = dt.datetime(2026, 8, 17, 2, 0, tzinfo=UTC)
+        observed2 = observed1 + dt.timedelta(minutes=10)
+        await scheduler.run_cycle(observed_at=observed1)
+        r2 = await scheduler.run_cycle(observed_at=observed2)
+        dev = next(i for i in r2.sources if i.source == "device_status")
+        self.assertIn(
+            "device_locations_stored=1",
+            dev.quality_flags,
+        )
+        locations = await store.fetch_device_location_events(
+            start=observed1 - dt.timedelta(hours=1),
+            end=observed2,
+        )
+        # unchanged position must not inflate rows
+        self.assertEqual(len(locations), 1)
+
     async def test_device_transition_stored_once(self) -> None:
         adapter = _FakeAdapter()
         scheduler, store, _ = _build(adapter)

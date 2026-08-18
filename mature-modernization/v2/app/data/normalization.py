@@ -307,6 +307,124 @@ def normalize_mcs8_device_snapshot(
     )
 
 
+def normalize_mcs8_device_snapshot_locations(
+    rows: Iterable[Mapping[str, Any]],
+    *,
+    source_timezone: dt.tzinfo,
+    observed_at: dt.datetime,
+    ingested_at: dt.datetime,
+) -> DeviceLocationNormalizationResult:
+    """Normalize GPS fields embedded in the MCS8 device-status snapshot.
+
+    ``GetDevListByGroupId`` rows carry a current-position projection
+    (``nJingDu``/``nWeiDu`` = longitude/latitude, ``gpsTime``, ``ucMapType``)
+    alongside the online state. This is a **current-position snapshot**, not a
+    historical GPS track: every polled row becomes a ``DeviceLocationEvent``
+    candidate with ``location_source="mcs8_device_snapshot"`` so the store
+    upsert keeps the latest observation per identity and unchanged positions
+    do not inflate rows.
+
+    ``gpsTime`` is a naive local time string; it is interpreted in
+    ``source_timezone``. Rows without a device id, without valid coordinates
+    (including the ``(0, 0)`` sentinel), or without a source GPS time are
+    skipped and counted as invalid.
+    """
+
+    observed, ingested = _normalize_lifecycle_times(
+        observed_at,
+        ingested_at,
+    )
+    _validate_source_timezone(source_timezone)
+    source_rows = list(rows)
+    events: list[DeviceLocationEvent] = []
+    invalid_row_count = 0
+    result_flags: set[str] = {
+        "coordinate_system_unverified",
+        "location_data_restricted",
+        "mcs8_device_snapshot",
+    }
+
+    for row in source_rows:
+        device_id = _optional_text(
+            _first_value(row, ("szIDNO", "devId", "DevId"))
+        )
+        latitude = _optional_finite_float(
+            _first_value(row, ("nWeiDu", "lat", "latitude"))
+        )
+        longitude = _optional_finite_float(
+            _first_value(row, ("nJingDu", "lng", "longitude"))
+        )
+        gps_occurred_at = _optional_source_time(
+            _first_value(row, ("gpsTime", "dateTime", "time")),
+            source_timezone=source_timezone,
+        )
+        if (
+            not device_id
+            or latitude is None
+            or longitude is None
+            or not _valid_coordinate(latitude, longitude)
+            or gps_occurred_at is None
+        ):
+            invalid_row_count += 1
+            continue
+
+        flags: set[str] = {
+            "coordinate_system_unverified",
+            "location_data_restricted",
+            "mcs8_device_snapshot",
+            "source_record_id_missing",
+        }
+        gps_type_code = _optional_source_code(row.get("ucMapType"))
+        if _is_present(row.get("ucMapType")):
+            if gps_type_code is None:
+                flags.add("invalid_gps_type_ignored")
+            else:
+                flags.add("gps_type_code_map_unknown")
+        if gps_occurred_at > observed:
+            flags.add("source_time_after_observation")
+
+        events.append(
+            DeviceLocationEvent(
+                source_system="mcs8",
+                source_record_id=None,
+                device_id=device_id,
+                location_source="mcs8_device_snapshot",
+                latitude=latitude,
+                longitude=longitude,
+                gps_occurred_at=gps_occurred_at,
+                speed_value=None,
+                direction_value=None,
+                accuracy_value=None,
+                battery_value=None,
+                gps_type_code=gps_type_code,
+                network_type_code=None,
+                observed_at=observed,
+                ingested_at=ingested,
+                quality_flags=tuple(sorted(flags)),
+            )
+        )
+
+    if invalid_row_count:
+        result_flags.add("invalid_rows_ignored")
+    if any(
+        "source_time_after_observation" in event.quality_flags
+        for event in events
+    ):
+        result_flags.add("source_time_after_observation")
+    if any(
+        "gps_type_code_map_unknown" in event.quality_flags
+        for event in events
+    ):
+        result_flags.add("gps_type_code_map_unknown")
+
+    return DeviceLocationNormalizationResult(
+        events=tuple(events),
+        source_row_count=len(source_rows),
+        invalid_row_count=invalid_row_count,
+        quality_flags=tuple(sorted(result_flags)),
+    )
+
+
 def normalize_device_location_events(
     rows: Iterable[Mapping[str, Any]],
     *,
@@ -897,7 +1015,13 @@ def _optional_source_time(
         return None
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=source_timezone)
-    parsed_utc = parsed.astimezone(UTC)
+    try:
+        parsed_utc = parsed.astimezone(UTC)
+    except OverflowError:
+        # Out-of-range source values (for example the ``0001-01-01``
+        # sentinel used by MCS8 to mean "no GPS time") cannot be converted
+        # to UTC and are treated as absent rather than crashing the caller.
+        return None
     if reject_epoch_zero and parsed_utc.date() == EPOCH_ZERO_DATE:
         return None
     return parsed_utc
