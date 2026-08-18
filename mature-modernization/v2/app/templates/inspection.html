@@ -48,6 +48,7 @@
   <header>
     <h1>监察数据中心</h1>
     <nav class="topnav">
+      <button id="tab-overview">监察总览</button>
       <button id="tab-devices">设备运行</button>
       <button id="tab-media">视频上传</button>
       <button id="tab-realtime">监察使用</button>
@@ -78,6 +79,7 @@
   <script>
     const ACTIVE = "{{CHA_INSPECTION_ACTIVE}}";
     const ENDPOINTS = {
+      overview: "/api/v2/dashboard/production-overview",
       devices: "/api/v2/inspection/devices",
       media: "/api/v2/inspection/media",
       realtime: "/api/v2/inspection/realtime",
@@ -88,6 +90,7 @@
       data_quality: "/api/v2/inspection/data-quality"
     };
     const TITLES = {
+      overview: "监察总览",
       devices: "设备运行分析",
       media: "视频上传与文件分析",
       realtime: "监察使用分析",
@@ -202,6 +205,10 @@
       if (scope.start) {
         byId("scopeText").textContent = "范围（北京时间）：" + fmtLocal(scope.start) + " ~ " + fmtLocal(scope.end);
       }
+      if (tab === "overview") {
+        renderOverview(data);
+        return;
+      }
       renderMeta(data);
       if (tab === "devices") renderDevices(data.overview || {});
       else if (tab === "media") renderMedia(data.overview || {});
@@ -211,6 +218,116 @@
       else if (tab === "locations") renderLocations(data.overview || {});
       else if (tab === "alarms") renderAlarms(data.overview || {});
       else renderDataQuality(data.overview || {});
+    }
+
+    function renderOverview(data) {
+      const d = data || {};
+      const devices = d.devices || {};
+      const media = d.media || {};
+      const realtime = d.realtime || {};
+      const inspections = d.inspections || {};
+      const alarms = d.alarms || {};
+      const locations = d.locations || {};
+      const quality = d.data_quality || {};
+      const cov = (value) => {
+        const c = (value && value.completeness) || null;
+        if (!c) return '<span class="flag">覆盖未知</span>';
+        const cls = "coverage-" + String(c).toLowerCase();
+        return `<span class="${cls}">${esc(c)}</span>` +
+          `（可用 ${esc(value.available_coverage_days)} / 请求 ${esc(value.requested_window_days)} 天）`;
+      };
+      const online = devices.current_online;
+      const offline = devices.current_offline;
+      const fmtSize = (bytes) => {
+        const b = Number(bytes || 0);
+        if (!b) return "0 B";
+        const units = ["B", "KB", "MB", "GB", "TB"];
+        let i = 0, v = b;
+        while (v >= 1024 && i < units.length - 1) { v /= 1024; i++; }
+        return v.toFixed(1) + " " + units[i];
+      };
+      const fmtDur = (secs) => {
+        const s = Number(secs || 0);
+        if (!s) return "0m";
+        return (s / 60).toFixed(0) + " 分钟";
+      };
+      const attention = [];
+      if (devices.available) {
+        attention.push("当前设备在线 " + esc(online) + " / 离线 " + esc(offline) +
+          "（总数 " + esc(devices.distinct_devices) + "）");
+      }
+      if (media.available && media.no_recent_upload_governed) {
+        attention.push(esc(media.no_recent_upload_devices) + " 台设备近期未上传视频");
+      }
+      if (alarms.available && alarms.alarm_count) {
+        attention.push("窗口内告警 " + esc(alarms.alarm_count) + " 条，涉及 " + esc(alarms.affected_devices) + " 台设备");
+      }
+      if (inspections.available && inspections.issue_found_count) {
+        attention.push("监察发现问题 " + esc(inspections.issue_found_count) + " 条（问题率 " +
+          (inspections.issue_rate == null ? "--" : (inspections.issue_rate * 100).toFixed(1) + "%") + "）");
+      }
+      const attentionHtml = attention.length
+        ? attention.map((t) => `<div>· ${t}</div>`).join("")
+        : '<div>· 当前窗口暂无异常/关注项（数据有限时以覆盖标记提示）。</div>';
+
+      byId("content").innerHTML = `
+        <div class="card">
+          <h2>当前概况（真实生产数据）</h2>
+          <div class="grid">
+            ${metric(devices.available ? (online == null ? "--" : online) : "--", "设备在线")}
+            ${metric(devices.available ? (offline == null ? "--" : offline) : "--", "设备离线")}
+            ${metric(media.available ? esc(media.files) : "--", "窗口内视频文件")}
+            ${metric(media.available ? fmtSize(media.size_bytes) : "--", "视频容量")}
+            ${metric(realtime.available ? esc(realtime.view_count) : "--", "监察观看次数")}
+            ${metric(inspections.available ? esc(inspections.total_count) : "--", "监察记录(已提交)")}
+            ${metric(inspections.available ? esc(inspections.issue_found_count) : "--", "发现问题")}
+            ${metric(alarms.available ? esc(alarms.alarm_count) : "--", "告警")}
+          </div>
+        </div>
+        <div class="card">
+          <h2>今天哪里值得关注？</h2>
+          ${attentionHtml}
+        </div>
+        <div class="card">
+          <h2>专题明细</h2>
+          <table>
+            <tr><th>专题</th><th>关键值</th><th>覆盖</th></tr>
+            <tr><td>设备运行</td><td>${devices.available
+              ? esc(devices.distinct_devices) + " 台 · 观测变化 " + esc(devices.observed_transitions) + " 次"
+              : '<span class="flag">数据不足</span>'}</td><td>${devices.available ? cov(devices.coverage) : "--"}</td></tr>
+            <tr><td>视频上传</td><td>${media.available
+              ? esc(media.video_files) + " 个视频 · " + fmtDur(media.video_duration_seconds) + " · " + esc(media.uploading_devices) + " 台设备"
+              : '<span class="flag">数据不足</span>'}</td><td>${media.available ? cov(media.coverage) : "--"}</td></tr>
+            <tr><td>监察使用</td><td>${realtime.available
+              ? esc(realtime.view_count) + " 次 · " + esc(realtime.users) + " 用户 · 播放 " + esc(realtime.played_count)
+              : '<span class="flag">数据不足</span>'}</td><td>${realtime.available ? cov(realtime.coverage) : "--"}</td></tr>
+            <tr><td>监察记录</td><td>${inspections.available
+              ? esc(inspections.total_count) + " 条 · " + esc(inspections.participant_count) + " 人 · 飞机 " + esc(inspections.aircraft_count) + " · 航班 " + esc(inspections.flight_count)
+              : '<span class="flag">数据不足</span>'}</td><td>${inspections.available ? cov(inspections.coverage) : "--"}</td></tr>
+            <tr><td>告警异常</td><td>${alarms.available
+              ? esc(alarms.alarm_count) + " 条 · " + esc(alarms.affected_devices) + " 台设备"
+              : '<span class="flag">数据不足</span>'}</td><td>${alarms.available ? cov(alarms.coverage) : "--"}</td></tr>
+            <tr><td>设备定位</td><td>${locations.available
+              ? esc(locations.located_devices) + " 台有定位 · " + esc(locations.event_count) + " 个事件"
+              : '<span class="flag">数据不足</span>'}</td><td>${locations.available ? cov(locations.coverage) : "--"}</td></tr>
+            <tr><td>数据质量</td><td>${quality.available
+              ? esc(quality.total_rows) + " 行 · 表 " + esc((quality.tables || []).length)
+              : '<span class="flag">数据不足</span>'}</td><td>--</td></tr>
+          </table>
+        </div>
+        <div class="card">
+          <h2>数据质量标记（仅真实标记，不虚构）</h2>
+          ${quality.available && (quality.top_flags || []).length
+            ? '<div>' + (quality.top_flags || []).map((f) =>
+                `<span class="flag">${esc(f[0])}=${esc(f[1])}</span>`).join("") + '</div>'
+            : '<div class="empty">暂无质量标记。</div>'}
+          ${realtime.available && realtime.view_count > 0 && realtime.played_count === 0
+            ? '<div class="notice">监察使用数据仅有非播放事件；真实播放（played）证据为观察期缺口，不虚构。</div>'
+            : ""}
+          ${media.available && media.no_recent_upload_governed === false
+            ? '<div class="notice">「近期未上传设备」阈值尚未配置，因此未生成该异常列表（不臆造）。</div>'
+            : ""}
+        </div>`;
     }
 
     function renderDevices(overview) {

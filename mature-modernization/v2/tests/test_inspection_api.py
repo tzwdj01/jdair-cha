@@ -660,6 +660,20 @@ class InspectionAPITests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status_code, 404)
         self.assertIn("尚未启用", response.text)
 
+    async def test_phase6_overview_and_alias_pages_render(self) -> None:
+        app = _app(_settings(feature=True), None)
+        cases = (
+            ("/api/v2/dashboard/overview-page", "overview"),
+            ("/api/v2/dashboard/tasks", "flights_tasks"),
+            ("/api/v2/dashboard/map", "locations"),
+            ("/api/v2/dashboard/data-quality", "data_quality"),
+        )
+        for path, active in cases:
+            response = await _request(app, path)
+            self.assertEqual(response.status_code, 200, path)
+            self.assertIn("监察数据中心", response.text)
+            self.assertIn(f'const ACTIVE = "{active}";', response.text)
+
 
 if __name__ == "__main__":
     unittest.main()

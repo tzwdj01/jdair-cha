@@ -107,6 +107,34 @@ def create_inspection_router(
         ) -> HTMLResponse:
             return render_page(request, _page_name)
 
+    # PHASE 6: overview page (path avoids the M2 JSON route at
+    # /api/v2/dashboard/overview) and business-friendly aliases that keep the
+    # existing underscore routes backward compatible.
+    @router.get(
+        "/api/v2/dashboard/overview-page",
+        response_class=HTMLResponse,
+        include_in_schema=False,
+    )
+    async def inspection_overview_page(request: Request) -> HTMLResponse:
+        return render_page(request, "overview")
+
+    for _alias, _target in (
+        ("tasks", "flights_tasks"),
+        ("map", "locations"),
+        ("data-quality", "data_quality"),
+    ):
+
+        @router.get(
+            f"/api/v2/dashboard/{_alias}",
+            response_class=HTMLResponse,
+            include_in_schema=False,
+        )
+        async def inspection_alias_page(
+            request: Request,
+            _target_name: str = _target,
+        ) -> HTMLResponse:
+            return render_page(request, _target_name)
+
     def disabled(request: Request) -> JSONResponse:
         return envelope(
             request,
