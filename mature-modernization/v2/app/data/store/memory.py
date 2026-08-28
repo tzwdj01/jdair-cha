@@ -85,6 +85,24 @@ class MemoryInspectionStore(InspectionStore):
         )
         return tuple(rows)
 
+    async def fetch_latest_device_statuses(
+        self,
+        *,
+        device_ids: Iterable[str] | None = None,
+        source_system: str | None = None,
+    ) -> dict[str, DeviceStatusEvent]:
+        allowed = _id_set(device_ids)
+        latest: dict[str, DeviceStatusEvent] = {}
+        for event in self._status.values():
+            if allowed is not None and event.device_id not in allowed:
+                continue
+            if source_system is not None and event.source_system != source_system:
+                continue
+            current = latest.get(event.device_id)
+            if current is None or _newer_observation(event, current):
+                latest[event.device_id] = event
+        return latest
+
     async def upsert_device_location_events(
         self,
         events: Iterable[DeviceLocationEvent],
@@ -346,6 +364,8 @@ def _validate_media(item: MediaFile) -> None:
     _require_times(item, ("observed_at", "ingested_at"))
     if item.created_at_source is not None:
         _aware(item.created_at_source, "created_at_source")
+    if item.end_at_source is not None:
+        _aware(item.end_at_source, "end_at_source")
     if item.uploaded_at_source is not None:
         _aware(item.uploaded_at_source, "uploaded_at_source")
 

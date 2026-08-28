@@ -7,6 +7,7 @@ from typing import Any, Iterable, Mapping
 
 
 UTC = dt.timezone.utc
+EPOCH_ZERO_DATE = dt.date(1970, 1, 1)
 MEDIA_KIND_BY_CODE = {
     1: "image",
     2: "audio",
@@ -84,6 +85,7 @@ class MediaFile:
     file_size_bytes: int | None
     duration_seconds: int | None
     created_at_source: dt.datetime | None
+    end_at_source: dt.datetime | None
     uploaded_at_source: dt.datetime | None
     work_no: str | None
     people_no: str | None
@@ -209,6 +211,213 @@ def normalize_device_status_events(
         result_flags.add("non_online_status_map_partial")
 
     return DeviceStatusNormalizationResult(
+        events=tuple(events),
+        source_row_count=len(source_rows),
+        invalid_row_count=invalid_row_count,
+        quality_flags=tuple(sorted(result_flags)),
+    )
+
+
+def normalize_mcs8_device_snapshot(
+    rows: Iterable[Mapping[str, Any]],
+    *,
+    observed_at: dt.datetime,
+    ingested_at: dt.datetime,
+) -> DeviceStatusNormalizationResult:
+    """Normalize an MCS8 ``GetDevListByGroupId`` current-status snapshot.
+
+    MCS8 native ``GetDevListByGroupId`` returns the **current** device status
+    (``nOnline`` = online/offline) at snapshot time. This is a status snapshot,
+    NOT a historical transition feed (unlike AEE ``DevOnlineList``). Every
+    output event is a candidate current-state observation; the caller decides
+    whether it represents an initial observation or a polling-observed
+    transition by comparing against the store's latest known state.
+
+    ``occurred_at`` is set equal to ``observed_at`` because a snapshot has no
+    independent upstream event time; the observation time is the state time.
+    """
+
+    observed, ingested = _normalize_lifecycle_times(
+        observed_at,
+        ingested_at,
+    )
+    source_rows = list(rows)
+    events: list[DeviceStatusEvent] = []
+    invalid_row_count = 0
+
+    for row in source_rows:
+        device_id = _optional_text(
+            _first_value(row, ("szIDNO", "devId", "DevId"))
+        )
+        raw_online = _first_value(row, ("nOnline", "online"))
+        online_code = _optional_int(raw_online)
+        if not device_id or online_code is None:
+            invalid_row_count += 1
+            continue
+
+        flags: set[str] = {
+            "mcs8_device_snapshot",
+            "snapshot_no_upstream_event_time",
+        }
+        online: bool | None
+        if online_code == 1:
+            online = True
+        elif online_code == 0:
+            online = False
+        else:
+            online = None
+            flags.add("non_online_status_map_partial")
+            flags.add("online_state_unknown")
+
+        raw_device_type = _first_value(row, ("deviceType", "nDevType"))
+        device_type_code = _optional_int(raw_device_type)
+        if _is_present(raw_device_type) and device_type_code is None:
+            flags.add("invalid_device_type_ignored")
+
+        events.append(
+            DeviceStatusEvent(
+                source_system="mcs8",
+                source_record_id=None,
+                device_id=device_id,
+                group_id=_optional_text(row.get("groupId")),
+                device_type_code=device_type_code,
+                status_code=online_code,
+                online=online,
+                occurred_at=observed,
+                observed_at=observed,
+                ingested_at=ingested,
+                quality_flags=tuple(sorted(flags)),
+            )
+        )
+
+    result_flags: set[str] = set()
+    if invalid_row_count:
+        result_flags.add("invalid_rows_ignored")
+    if any(
+        "non_online_status_map_partial" in event.quality_flags
+        for event in events
+    ):
+        result_flags.add("non_online_status_map_partial")
+
+    return DeviceStatusNormalizationResult(
+        events=tuple(events),
+        source_row_count=len(source_rows),
+        invalid_row_count=invalid_row_count,
+        quality_flags=tuple(sorted(result_flags)),
+    )
+
+
+def normalize_mcs8_device_snapshot_locations(
+    rows: Iterable[Mapping[str, Any]],
+    *,
+    source_timezone: dt.tzinfo,
+    observed_at: dt.datetime,
+    ingested_at: dt.datetime,
+) -> DeviceLocationNormalizationResult:
+    """Normalize GPS fields embedded in the MCS8 device-status snapshot.
+
+    ``GetDevListByGroupId`` rows carry a current-position projection
+    (``nJingDu``/``nWeiDu`` = longitude/latitude, ``gpsTime``, ``ucMapType``)
+    alongside the online state. This is a **current-position snapshot**, not a
+    historical GPS track: every polled row becomes a ``DeviceLocationEvent``
+    candidate with ``location_source="mcs8_device_snapshot"`` so the store
+    upsert keeps the latest observation per identity and unchanged positions
+    do not inflate rows.
+
+    ``gpsTime`` is a naive local time string; it is interpreted in
+    ``source_timezone``. Rows without a device id, without valid coordinates
+    (including the ``(0, 0)`` sentinel), or without a source GPS time are
+    skipped and counted as invalid.
+    """
+
+    observed, ingested = _normalize_lifecycle_times(
+        observed_at,
+        ingested_at,
+    )
+    _validate_source_timezone(source_timezone)
+    source_rows = list(rows)
+    events: list[DeviceLocationEvent] = []
+    invalid_row_count = 0
+    result_flags: set[str] = {
+        "coordinate_system_unverified",
+        "location_data_restricted",
+        "mcs8_device_snapshot",
+    }
+
+    for row in source_rows:
+        device_id = _optional_text(
+            _first_value(row, ("szIDNO", "devId", "DevId"))
+        )
+        latitude = _optional_finite_float(
+            _first_value(row, ("nWeiDu", "lat", "latitude"))
+        )
+        longitude = _optional_finite_float(
+            _first_value(row, ("nJingDu", "lng", "longitude"))
+        )
+        gps_occurred_at = _optional_source_time(
+            _first_value(row, ("gpsTime", "dateTime", "time")),
+            source_timezone=source_timezone,
+        )
+        if (
+            not device_id
+            or latitude is None
+            or longitude is None
+            or not _valid_coordinate(latitude, longitude)
+            or gps_occurred_at is None
+        ):
+            invalid_row_count += 1
+            continue
+
+        flags: set[str] = {
+            "coordinate_system_unverified",
+            "location_data_restricted",
+            "mcs8_device_snapshot",
+            "source_record_id_missing",
+        }
+        gps_type_code = _optional_source_code(row.get("ucMapType"))
+        if _is_present(row.get("ucMapType")):
+            if gps_type_code is None:
+                flags.add("invalid_gps_type_ignored")
+            else:
+                flags.add("gps_type_code_map_unknown")
+        if gps_occurred_at > observed:
+            flags.add("source_time_after_observation")
+
+        events.append(
+            DeviceLocationEvent(
+                source_system="mcs8",
+                source_record_id=None,
+                device_id=device_id,
+                location_source="mcs8_device_snapshot",
+                latitude=latitude,
+                longitude=longitude,
+                gps_occurred_at=gps_occurred_at,
+                speed_value=None,
+                direction_value=None,
+                accuracy_value=None,
+                battery_value=None,
+                gps_type_code=gps_type_code,
+                network_type_code=None,
+                observed_at=observed,
+                ingested_at=ingested,
+                quality_flags=tuple(sorted(flags)),
+            )
+        )
+
+    if invalid_row_count:
+        result_flags.add("invalid_rows_ignored")
+    if any(
+        "source_time_after_observation" in event.quality_flags
+        for event in events
+    ):
+        result_flags.add("source_time_after_observation")
+    if any(
+        "gps_type_code_map_unknown" in event.quality_flags
+        for event in events
+    ):
+        result_flags.add("gps_type_code_map_unknown")
+
+    return DeviceLocationNormalizationResult(
         events=tuple(events),
         source_row_count=len(source_rows),
         invalid_row_count=invalid_row_count,
@@ -387,6 +596,7 @@ def normalize_media_files(
     observed_at: dt.datetime,
     ingested_at: dt.datetime,
     include_restricted: bool = False,
+    source_system: str = "aee",
 ) -> MediaFileNormalizationResult:
     observed, ingested = _normalize_lifecycle_times(
         observed_at,
@@ -450,12 +660,19 @@ def normalize_media_files(
         elif raw_duration is not None and duration_seconds is None:
             flags.add("invalid_video_duration_ignored")
 
+        # LIVE VERIFIED 2026-08-16: RecordFileList occasionally carries a
+        # missing-capture-time sentinel ``1970-01-01 08:00:00`` (business-local,
+        # i.e. epoch-zero UTC) in ``startTime``/``fileTime``. Such a value is a
+        # sentinel, not a real capture time; mapping it to ``None`` keeps
+        # range queries and PostgreSQL indexes honest (the row remains
+        # queryable by its valid upload time).
         created_at_source = _optional_source_time(
             _first_value(
                 row,
                 ("fileTime", "startTime", "beginTime"),
             ),
             source_timezone=source_timezone,
+            reject_epoch_zero=True,
         )
         if (
             _first_value(
@@ -465,7 +682,15 @@ def normalize_media_files(
             is not None
             and created_at_source is None
         ):
-            flags.add("invalid_created_time_ignored")
+            if _is_epoch_zero_source_text(
+                _first_value(
+                    row,
+                    ("fileTime", "startTime", "beginTime"),
+                )
+            ):
+                flags.add("epoch_zero_source_time_ignored")
+            else:
+                flags.add("invalid_created_time_ignored")
 
         uploaded_at_source = _optional_source_time(
             _first_value(
@@ -473,6 +698,7 @@ def normalize_media_files(
                 ("upLoadTime", "uploadTime", "endTime"),
             ),
             source_timezone=source_timezone,
+            reject_epoch_zero=True,
         )
         if (
             _first_value(
@@ -482,7 +708,44 @@ def normalize_media_files(
             is not None
             and uploaded_at_source is None
         ):
-            flags.add("invalid_uploaded_time_ignored")
+            if _is_epoch_zero_source_text(
+                _first_value(
+                    row,
+                    ("upLoadTime", "uploadTime", "endTime"),
+                )
+            ):
+                flags.add("epoch_zero_source_time_ignored")
+            else:
+                flags.add("invalid_uploaded_time_ignored")
+
+        # LIVE VERIFIED 2026-08-16: RecordFileList rows carry ``endTime``
+        # (capture end, non-null, e.g. startTime 04:11:33 + 301s -> endTime
+        # 04:16:33). It is stored as ``end_at_source`` for range analysis.
+        end_at_source = _optional_source_time(
+            _first_value(
+                row,
+                ("endTime", "finishTime", "end_time"),
+            ),
+            source_timezone=source_timezone,
+            reject_epoch_zero=True,
+        )
+        if (
+            _first_value(
+                row,
+                ("endTime", "finishTime", "end_time"),
+            )
+            is not None
+            and end_at_source is None
+        ):
+            if _is_epoch_zero_source_text(
+                _first_value(
+                    row,
+                    ("endTime", "finishTime", "end_time"),
+                )
+            ):
+                flags.add("epoch_zero_source_time_ignored")
+            else:
+                flags.add("invalid_end_time_ignored")
         if created_at_source is None and uploaded_at_source is None:
             flags.add("media_time_missing")
 
@@ -504,7 +767,7 @@ def normalize_media_files(
 
         files.append(
             MediaFile(
-                source_system="aee",
+                source_system=source_system,
                 source_record_id=source_record_id,
                 device_id=device_id,
                 group_id=_optional_text(row.get("groupId")),
@@ -528,6 +791,7 @@ def normalize_media_files(
                 file_size_bytes=file_size_bytes,
                 duration_seconds=duration_seconds,
                 created_at_source=created_at_source,
+                end_at_source=end_at_source,
                 uploaded_at_source=uploaded_at_source,
                 work_no=_optional_text(row.get("workNo")),
                 people_no=(
@@ -579,6 +843,7 @@ def normalize_alarm_events(
     observed_at: dt.datetime,
     ingested_at: dt.datetime,
     include_restricted: bool = False,
+    source_system: str = "aee",
 ) -> AlarmNormalizationResult:
     observed, ingested = _normalize_lifecycle_times(
         observed_at,
@@ -679,7 +944,7 @@ def normalize_alarm_events(
 
         events.append(
             AlarmEvent(
-                source_system="aee",
+                source_system=source_system,
                 source_record_id=source_record_id,
                 device_id=device_id,
                 group_id=_optional_text(row.get("groupId")),
@@ -733,6 +998,7 @@ def _optional_source_time(
     value: Any,
     *,
     source_timezone: dt.tzinfo,
+    reject_epoch_zero: bool = False,
 ) -> dt.datetime | None:
     if value is None or value == "":
         return None
@@ -749,7 +1015,22 @@ def _optional_source_time(
         return None
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=source_timezone)
-    return parsed.astimezone(UTC)
+    try:
+        parsed_utc = parsed.astimezone(UTC)
+    except OverflowError:
+        # Out-of-range source values (for example the ``0001-01-01``
+        # sentinel used by MCS8 to mean "no GPS time") cannot be converted
+        # to UTC and are treated as absent rather than crashing the caller.
+        return None
+    if reject_epoch_zero and parsed_utc.date() == EPOCH_ZERO_DATE:
+        return None
+    return parsed_utc
+
+
+def _is_epoch_zero_source_text(value: Any) -> bool:
+    """True when the raw source text looks like the epoch-zero sentinel."""
+
+    return isinstance(value, str) and "1970-01-01" in value.strip()
 
 
 def _require_aware(value: dt.datetime, name: str) -> dt.datetime:

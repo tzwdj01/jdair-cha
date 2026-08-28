@@ -2,6 +2,14 @@
 
 from .aee_adapter import AEEPageResult, AEEReadOnlyDataAdapter
 from .aee_http import AEEDataHTTPClient, AEEDataHTTPError
+from .device_snapshot import (
+    DeviceSnapshotProcessingResult,
+    MCS8DeviceSnapshotProcessor,
+)
+from .mcs8_adapter import MCS8ReadOnlyDataAdapter
+from .mcs8_auth import MCS8AuthError, MCS8ServerAuthProvider
+from .mcs8_http import MCS8DataHTTPClient
+from .mcs8_collector import MCS8InspectionCollector
 from .metrics import (
     AlarmAggregationResult,
     AlarmDeviceMetric,
@@ -32,6 +40,8 @@ from .normalization import (
     normalize_device_location_events,
     normalize_device_status_events,
     normalize_media_files,
+    normalize_mcs8_device_snapshot,
+    normalize_mcs8_device_snapshot_locations,
 )
 from .pagination import AEEPageCollection, collect_aee_pages
 from .realtime_views import RealtimeViewEvent, build_realtime_view_event
@@ -42,6 +52,13 @@ __all__ = [
     "AEEDataHTTPError",
     "AEEPageResult",
     "AEEReadOnlyDataAdapter",
+    "DeviceSnapshotProcessingResult",
+    "MCS8DataHTTPClient",
+    "MCS8DeviceSnapshotProcessor",
+    "MCS8InspectionCollector",
+    "MCS8ReadOnlyDataAdapter",
+    "MCS8ServerAuthProvider",
+    "MCS8AuthError",
     "DeviceUptimeMetric",
     "DeviceUptimeAggregationResult",
     "DeviceLocationMetric",
@@ -66,6 +83,8 @@ __all__ = [
     "normalize_device_status_events",
     "normalize_device_location_events",
     "normalize_media_files",
+    "normalize_mcs8_device_snapshot",
+    "normalize_mcs8_device_snapshot_locations",
     "AlarmEvent",
     "AlarmNormalizationResult",
     "normalize_alarm_events",

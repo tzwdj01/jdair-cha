@@ -58,6 +58,40 @@ class ConfigTests(unittest.TestCase):
             settings.realtime_canary_user_allowed("realtime-tester")
         )
         self.assertFalse(settings.realtime_is_configured())
+        self.assertEqual(settings.mcs8_host, "")
+        self.assertFalse(settings.mcs8_is_configured())
+        self.assertFalse(settings.scheduler_enabled)
+        self.assertEqual(settings.scheduler_period_seconds, 600)
+        self.assertEqual(settings.scheduler_max_cycles, 6)
+
+    def test_mcs8_is_configured_only_when_complete(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "CHA_V2_MCS8_HOST": "mcs8.test.invalid",
+                "CHA_V2_MCS8_WS_PORT": "7711",
+                "CHA_V2_MCS8_API_PORT": "7712",
+                "CHA_V2_MCS8_USERNAME": "test-user",
+                "CHA_V2_MCS8_PASSWORD": "test-password",
+            },
+            clear=False,
+        ):
+            settings = Settings.from_env()
+            self.assertTrue(settings.mcs8_is_configured())
+        with patch.dict(
+            os.environ,
+            {"CHA_V2_MCS8_HOST": "mcs8.test.invalid"},
+            clear=False,
+        ):
+            self.assertFalse(Settings.from_env().mcs8_is_configured())
+
+    def test_scheduler_requires_explicit_enable(self) -> None:
+        with patch.dict(
+            os.environ,
+            {"CHA_V2_INSPECTION_SCHEDULER_ENABLED": "true"},
+            clear=False,
+        ):
+            self.assertTrue(Settings.from_env().scheduler_enabled)
 
     def test_realtime_canary_allowlist_is_explicit_and_casefolded(
         self,

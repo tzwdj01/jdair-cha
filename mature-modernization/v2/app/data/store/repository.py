@@ -41,6 +41,21 @@ class InspectionStore(ABC):
         """Return status events in the inclusive time range, time-ordered."""
 
     @abstractmethod
+    async def fetch_latest_device_statuses(
+        self,
+        *,
+        device_ids: Iterable[str] | None = None,
+        source_system: str | None = None,
+    ) -> dict[str, DeviceStatusEvent]:
+        """Return the latest known status observation per device.
+
+        Used by the MCS8 device-snapshot tracker to decide whether a polled
+        snapshot is an initial observation or a polling-observed transition.
+        The latest observation is determined by ``occurred_at`` then
+        ``observed_at``; ties resolve to the most recently ingested row.
+        """
+
+    @abstractmethod
     async def upsert_device_location_events(
         self,
         events: Iterable[DeviceLocationEvent],

@@ -65,6 +65,10 @@ class AEELiveFixtureNormalizationTests(unittest.TestCase):
             dt.datetime(2026, 8, 15, 20, 11, 33, tzinfo=UTC),
         )
         self.assertEqual(
+            video.end_at_source,
+            dt.datetime(2026, 8, 15, 20, 16, 33, tzinfo=UTC),
+        )
+        self.assertEqual(
             video.uploaded_at_source,
             dt.datetime(2026, 8, 15, 20, 19, 33, tzinfo=UTC),
         )

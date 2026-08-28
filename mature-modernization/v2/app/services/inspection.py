@@ -27,6 +27,23 @@ SHANGHAI = dt.timezone(dt.timedelta(hours=8), name="Asia/Shanghai")
 
 
 @dataclass(frozen=True, slots=True)
+class HistoricalCoverage:
+    """Actual data coverage for a requested window.
+
+    ``completeness`` is one of ``FULL``, ``PARTIAL`` or ``EMPTY`` and is
+    derived from distinct business-local calendar days that actually carry
+    stored events. A 30-day request with only 3 days of history is reported
+    as PARTIAL (3/30), never as a complete 30-day statistic.
+    """
+
+    requested_window_days: int
+    available_coverage_days: int
+    completeness: str
+    coverage_start_date: str | None
+    coverage_end_date: str | None
+
+
+@dataclass(frozen=True, slots=True)
 class DeviceLatestStatus:
     device_id: str
     latest_status_code: int | None
@@ -70,6 +87,7 @@ class DeviceOverview:
     generated_at: dt.datetime
     scope_start: dt.datetime
     scope_end: dt.datetime
+    coverage: HistoricalCoverage
     uptime: DeviceUptimeAggregationResult
     latest_by_device: tuple[DeviceLatestStatus, ...]
     groups: tuple[DeviceGroupMetric, ...]
@@ -83,6 +101,7 @@ class MediaOverview:
     generated_at: dt.datetime
     scope_start: dt.datetime
     scope_end: dt.datetime
+    coverage: HistoricalCoverage
     media: MediaAggregationResult
     groups: tuple[MediaGroupMetric, ...]
     long_no_upload_devices: tuple[DeviceThresholdHit, ...]
@@ -97,7 +116,9 @@ class RealtimeOverview:
     generated_at: dt.datetime
     scope_start: dt.datetime
     scope_end: dt.datetime
+    coverage: HistoricalCoverage
     aggregation: RealtimeViewAggregationResult
+    latest_closed_at: dt.datetime | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -105,7 +126,9 @@ class AlarmOverview:
     generated_at: dt.datetime
     scope_start: dt.datetime
     scope_end: dt.datetime
+    coverage: HistoricalCoverage
     aggregation: AlarmAggregationResult
+    latest_occurred_at: dt.datetime | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -113,6 +136,7 @@ class LocationOverview:
     generated_at: dt.datetime
     scope_start: dt.datetime
     scope_end: dt.datetime
+    coverage: HistoricalCoverage
     aggregation: DeviceLocationAggregationResult
     stale_location_devices: tuple[DeviceThresholdHit, ...]
     stale_location_governed: bool
@@ -156,12 +180,34 @@ class TableQuality:
 
 @dataclass(frozen=True, slots=True)
 class DataQualityOverview:
+    generated_at: dt.datetime
     scope_start: dt.datetime
     scope_end: dt.datetime
     tables: tuple[TableQuality, ...]
     quality_flag_counts: tuple[tuple[str, int], ...]
     source_system_counts: tuple[tuple[str, int], ...]
     total_rows: int
+
+
+@dataclass(frozen=True, slots=True)
+class FlightsTasksOverview:
+    """Read-only flights / routine-tasks view for the operational dashboard.
+
+    Data comes from the existing CHA business source (Legacy ``/api/flights``
+    and ``/api/routine-tasks``), normalized to the shared business contracts.
+    This is a read-only reference view for inspectors; it is NOT an automatic
+    matcher (no candidate is auto-associated to an inspection record here).
+    """
+
+    generated_at: dt.datetime
+    scope_date: dt.date
+    flights: tuple[tuple[str, str, str, str, str], ...]
+    routine_tasks: tuple[tuple[str, str, str, str, str], ...]
+    source_flight_count: int
+    source_task_count: int
+    invalid_flight_row_count: int
+    invalid_task_row_count: int
+    quality_flags: tuple[str, ...]
 
 
 class InspectionDataService:
@@ -179,10 +225,12 @@ class InspectionDataService:
         store: InspectionStore,
         business_timezone: dt.tzinfo = SHANGHAI,
         thresholds: Mapping[str, float] | None = None,
+        business_client: Any | None = None,
     ) -> None:
         self._store = store
         self._business_tz = business_timezone
         self._thresholds = dict(thresholds or {})
+        self._business_client = business_client
 
     async def device_overview(
         self,
@@ -190,6 +238,7 @@ class InspectionDataService:
         start: dt.datetime,
         end: dt.datetime,
         device_ids: Iterable[str] | None = None,
+        requested_window_days: int | None = None,
     ) -> DeviceOverview:
         events = await self._store.fetch_device_status_events(
             start=start,
@@ -222,6 +271,13 @@ class InspectionDataService:
             generated_at=dt.datetime.now(UTC),
             scope_start=_aware(start).astimezone(UTC),
             scope_end=_aware(end).astimezone(UTC),
+            coverage=_historical_coverage(
+                (event.occurred_at for event in events),
+                window_start=start,
+                window_end=end,
+                business_tz=self._business_tz,
+                requested_window_days=requested_window_days,
+            ),
             uptime=uptime,
             latest_by_device=tuple(
                 sorted(latest, key=lambda item: item.device_id)
@@ -238,6 +294,7 @@ class InspectionDataService:
         start: dt.datetime,
         end: dt.datetime,
         device_ids: Iterable[str] | None = None,
+        requested_window_days: int | None = None,
         as_of: dt.datetime | None = None,
     ) -> MediaOverview:
         files = await self._store.fetch_media_files(
@@ -297,6 +354,21 @@ class InspectionDataService:
             generated_at=dt.datetime.now(UTC),
             scope_start=_aware(start).astimezone(UTC),
             scope_end=_aware(end).astimezone(UTC),
+            coverage=_historical_coverage(
+                (
+                    timestamp
+                    for item in files
+                    for timestamp in (
+                        item.created_at_source,
+                        item.uploaded_at_source,
+                    )
+                    if timestamp is not None
+                ),
+                window_start=start,
+                window_end=end,
+                business_tz=self._business_tz,
+                requested_window_days=requested_window_days,
+            ),
             media=media,
             groups=_media_groups(files),
             long_no_upload_devices=tuple(hits),
@@ -324,6 +396,7 @@ class InspectionDataService:
         end: dt.datetime,
         device_ids: Iterable[str] | None = None,
         usernames: Iterable[str] | None = None,
+        requested_window_days: int | None = None,
     ) -> RealtimeOverview:
         events = await self._store.fetch_realtime_view_events(
             start=start,
@@ -335,7 +408,21 @@ class InspectionDataService:
             generated_at=dt.datetime.now(UTC),
             scope_start=_aware(start).astimezone(UTC),
             scope_end=_aware(end).astimezone(UTC),
+            coverage=_historical_coverage(
+                (event.closed_at for event in events),
+                window_start=start,
+                window_end=end,
+                business_tz=self._business_tz,
+                requested_window_days=requested_window_days,
+            ),
             aggregation=aggregate_realtime_views(events),
+            latest_closed_at=max(
+                (
+                    event.closed_at.astimezone(UTC)
+                    for event in events
+                ),
+                default=None,
+            ),
         )
 
     async def alarm_overview(
@@ -344,6 +431,7 @@ class InspectionDataService:
         start: dt.datetime,
         end: dt.datetime,
         device_ids: Iterable[str] | None = None,
+        requested_window_days: int | None = None,
     ) -> AlarmOverview:
         events = await self._store.fetch_alarm_events(
             start=start,
@@ -354,7 +442,21 @@ class InspectionDataService:
             generated_at=dt.datetime.now(UTC),
             scope_start=_aware(start).astimezone(UTC),
             scope_end=_aware(end).astimezone(UTC),
+            coverage=_historical_coverage(
+                (event.occurred_at for event in events),
+                window_start=start,
+                window_end=end,
+                business_tz=self._business_tz,
+                requested_window_days=requested_window_days,
+            ),
             aggregation=aggregate_alarm_events(events),
+            latest_occurred_at=max(
+                (
+                    event.occurred_at.astimezone(UTC)
+                    for event in events
+                ),
+                default=None,
+            ),
         )
 
     async def location_overview(
@@ -363,6 +465,7 @@ class InspectionDataService:
         start: dt.datetime,
         end: dt.datetime,
         device_ids: Iterable[str] | None = None,
+        requested_window_days: int | None = None,
         as_of: dt.datetime | None = None,
     ) -> LocationOverview:
         events = await self._store.fetch_device_location_events(
@@ -397,6 +500,13 @@ class InspectionDataService:
             generated_at=dt.datetime.now(UTC),
             scope_start=_aware(start).astimezone(UTC),
             scope_end=_aware(end).astimezone(UTC),
+            coverage=_historical_coverage(
+                (event.gps_occurred_at for event in events),
+                window_start=start,
+                window_end=end,
+                business_tz=self._business_tz,
+                requested_window_days=requested_window_days,
+            ),
             aggregation=aggregation,
             stale_location_devices=tuple(hits),
             stale_location_governed=governed,
@@ -571,12 +681,116 @@ class InspectionDataService:
                     flag_counts[flag] += 1
 
         return DataQualityOverview(
+            generated_at=dt.datetime.now(UTC),
             scope_start=start_utc,
             scope_end=end_utc,
             tables=tables,
             quality_flag_counts=tuple(sorted(flag_counts.items())),
             source_system_counts=tuple(sorted(source_counts.items())),
             total_rows=total_rows,
+        )
+
+    async def flights_tasks_overview(
+        self,
+        *,
+        scope_date: dt.date | None = None,
+        business_client_cookie: str = "",
+    ) -> FlightsTasksOverview:
+        """Return a read-only flights / routine-tasks snapshot for a date.
+
+        Requires an injected ``business_client`` exposing
+        ``fetch_flights(date)`` and ``fetch_routine_tasks(date)`` returning
+        ``BusinessFlight`` / ``BusinessRoutineTask`` tuples (see
+        ``app.services.business_candidates``). When no business client is
+        wired the result is empty with an explicit quality flag.
+        """
+
+        generated = dt.datetime.now(UTC)
+        local_now = generated.astimezone(self._business_tz)
+        scope = scope_date or local_now.date()
+        business_client = self._business_client
+        if business_client is not None and business_client_cookie:
+            with_cookie = getattr(business_client, "with_cookie", None)
+            if callable(with_cookie):
+                business_client = with_cookie(business_client_cookie)
+        if business_client is None:
+            return FlightsTasksOverview(
+                generated_at=generated,
+                scope_date=scope,
+                flights=(),
+                routine_tasks=(),
+                source_flight_count=0,
+                source_task_count=0,
+                invalid_flight_row_count=0,
+                invalid_task_row_count=0,
+                quality_flags=("business_client_not_wired",),
+            )
+
+        flights: list[tuple[str, str, str, str, str]] = []
+        tasks: list[tuple[str, str, str, str, str]] = []
+        invalid_flights = 0
+        invalid_tasks = 0
+        flags: set[str] = set()
+        try:
+            flight_rows = await business_client.fetch_flights(scope)
+            task_rows = await business_client.fetch_routine_tasks(scope)
+        except Exception:
+            return FlightsTasksOverview(
+                generated_at=generated,
+                scope_date=scope,
+                flights=(),
+                routine_tasks=(),
+                source_flight_count=0,
+                source_task_count=0,
+                invalid_flight_row_count=0,
+                invalid_task_row_count=0,
+                quality_flags=("business_source_unavailable",),
+            )
+        for row in flight_rows:
+            flight_no = _safe_text(getattr(row, "flight_no", None))
+            if not flight_no:
+                invalid_flights += 1
+                continue
+            flights.append(
+                (
+                    _safe_text(getattr(row, "source_id", None)),
+                    flight_no,
+                    _safe_text(getattr(row, "aircraft_no", None)),
+                    _safe_text(getattr(row, "departure_city", None))
+                    + "→"
+                    + _safe_text(getattr(row, "arrival_city", None)),
+                    _safe_text(getattr(row, "status_label", None)),
+                )
+            )
+        for row in task_rows:
+            task_id = _safe_text(getattr(row, "source_id", None))
+            if not task_id:
+                invalid_tasks += 1
+                continue
+            tasks.append(
+                (
+                    task_id,
+                    _safe_text(getattr(row, "aircraft_no", None)),
+                    _safe_text(getattr(row, "task_type_name", None))
+                    or _safe_text(getattr(row, "task_type", None)),
+                    _safe_text(getattr(row, "bay", None)),
+                    _safe_text(getattr(row, "task_status_name", None)),
+                )
+            )
+        if invalid_flights:
+            flags.add("invalid_flight_rows_ignored")
+        if invalid_tasks:
+            flags.add("invalid_task_rows_ignored")
+        return FlightsTasksOverview(
+            generated_at=generated,
+            scope_date=scope,
+            flights=tuple(sorted(flights)),
+            routine_tasks=tuple(sorted(tasks)),
+            source_flight_count=len(flight_rows),
+            source_task_count=len(task_rows),
+            invalid_flight_row_count=invalid_flights,
+            invalid_task_row_count=invalid_tasks,
+            quality_flags=tuple(sorted(flags)),
         )
 
 
@@ -595,6 +809,12 @@ def _project_status_events(
             }
         )
     return rows
+
+
+def _safe_text(value: Any) -> str:
+    if value is None:
+        return ""
+    return str(value).strip()
 
 
 def _project_media_files(
@@ -845,3 +1065,43 @@ def _aware(value: dt.datetime) -> dt.datetime:
     if value.tzinfo is None or value.utcoffset() is None:
         raise ValueError("scope times must be timezone-aware")
     return value
+
+
+def _historical_coverage(
+    timestamps: Iterable[dt.datetime],
+    *,
+    window_start: dt.datetime,
+    window_end: dt.datetime,
+    business_tz: dt.tzinfo,
+    requested_window_days: int | None,
+) -> HistoricalCoverage:
+    start_utc = _aware(window_start).astimezone(UTC)
+    end_utc = _aware(window_end).astimezone(UTC)
+    if requested_window_days is None:
+        requested_window_days = max(1, round((end_utc - start_utc).days))
+
+    days: set[dt.date] = set()
+    for timestamp in timestamps:
+        aware = _aware(timestamp)
+        if start_utc <= aware.astimezone(UTC) <= end_utc:
+            days.add(aware.astimezone(business_tz).date())
+
+    available = len(days)
+    if available == 0:
+        completeness = "EMPTY"
+    elif available >= requested_window_days:
+        completeness = "FULL"
+    else:
+        completeness = "PARTIAL"
+
+    return HistoricalCoverage(
+        requested_window_days=requested_window_days,
+        available_coverage_days=available,
+        completeness=completeness,
+        coverage_start_date=(
+            min(days).isoformat() if days else None
+        ),
+        coverage_end_date=(
+            max(days).isoformat() if days else None
+        ),
+    )

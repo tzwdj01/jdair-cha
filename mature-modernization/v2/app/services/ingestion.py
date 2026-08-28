@@ -21,6 +21,7 @@ class SourceIngestionResult:
     accepted_count: int
     invalid_row_count: int
     quality_flags: tuple[str, ...]
+    error_code: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -128,34 +129,68 @@ class InspectionIngestor:
         *,
         observed_at: dt.datetime,
         ingested_at: dt.datetime,
+        source_errors: Mapping[str, str] | None = None,
     ) -> IngestionReport:
+        """Orchestrate every source and keep the run resumable.
+
+        Each source is persisted independently. A failure in one source is
+        reported (``error_code`` on that result) instead of aborting the whole
+        run, so an earlier successful source is never rolled back into a
+        half-baked state and a retry is idempotent. Raw exception text is
+        never placed into the report; the detailed error is left to the
+        caller's logging.
+        """
+
         results: list[SourceIngestionResult] = []
         if "device_status" in payloads:
             results.append(
-                await self.ingest_device_status(
-                    payloads["device_status"],
-                    observed_at=observed_at,
-                    ingested_at=ingested_at,
+                await self._ingest_source(
+                    self.ingest_device_status(
+                        payloads["device_status"],
+                        observed_at=observed_at,
+                        ingested_at=ingested_at,
+                    ),
+                    "device_status",
                 )
             )
         if "media_files" in payloads:
             results.append(
-                await self.ingest_media_files(
-                    payloads["media_files"],
-                    observed_at=observed_at,
-                    ingested_at=ingested_at,
+                await self._ingest_source(
+                    self.ingest_media_files(
+                        payloads["media_files"],
+                        observed_at=observed_at,
+                        ingested_at=ingested_at,
+                    ),
+                    "media_files",
                 )
             )
         if "alarms" in payloads:
             results.append(
-                await self.ingest_alarms(
-                    payloads["alarms"],
-                    observed_at=observed_at,
-                    ingested_at=ingested_at,
+                await self._ingest_source(
+                    self.ingest_alarms(
+                        payloads["alarms"],
+                        observed_at=observed_at,
+                        ingested_at=ingested_at,
+                    ),
+                    "alarms",
+                )
+            )
+
+        for source, error_code in sorted(
+            dict(source_errors or {}).items()
+        ):
+            results.append(
+                SourceIngestionResult(
+                    source=source,
+                    accepted_count=0,
+                    invalid_row_count=0,
+                    quality_flags=("source_collection_failed",),
+                    error_code=error_code,
                 )
             )
         completed = all(
-            result.invalid_row_count == 0
+            result.error_code is None
+            and result.invalid_row_count == 0
             for result in results
         )
         return IngestionReport(
@@ -165,3 +200,19 @@ class InspectionIngestor:
             generated_at=dt.datetime.now(dt.timezone.utc),
             completed=completed,
         )
+
+    async def _ingest_source(
+        self,
+        pending,
+        source: str,
+    ) -> SourceIngestionResult:
+        try:
+            return await pending
+        except Exception:
+            return SourceIngestionResult(
+                source=source,
+                accepted_count=0,
+                invalid_row_count=0,
+                quality_flags=("source_ingest_failed",),
+                error_code="SOURCE_INGEST_FAILED",
+            )

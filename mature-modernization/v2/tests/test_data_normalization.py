@@ -334,6 +334,7 @@ class MediaFileNormalizationTests(unittest.TestCase):
                     "fileSize": 4096,
                     "videoTime": 125,
                     "startTime": "2026-08-15 08:00:00",
+                    "endTime": "2026-08-15 08:02:05",
                     "uploadTime": "2026-08-15 08:05:00",
                     "workNo": "WORK-1",
                 }
@@ -354,6 +355,10 @@ class MediaFileNormalizationTests(unittest.TestCase):
         self.assertEqual(
             item.created_at_source,
             dt.datetime(2026, 8, 15, 0, tzinfo=UTC),
+        )
+        self.assertEqual(
+            item.end_at_source,
+            dt.datetime(2026, 8, 15, 0, 2, 5, tzinfo=UTC),
         )
         self.assertIn(
             "source_id_scope_unverified",
@@ -410,6 +415,7 @@ class MediaFileNormalizationTests(unittest.TestCase):
                     "fileLen": -1,
                     "duration": "bad",
                     "fileTime": "not-a-time",
+                    "endTime": "also-not-a-time",
                     "upLoadTime": "also-not-a-time",
                     "isDeleted": "maybe",
                 },
@@ -432,6 +438,10 @@ class MediaFileNormalizationTests(unittest.TestCase):
         )
         self.assertIn(
             "invalid_created_time_ignored",
+            item.quality_flags,
+        )
+        self.assertIn(
+            "invalid_end_time_ignored",
             item.quality_flags,
         )
         self.assertIn(
@@ -504,6 +514,42 @@ class MediaFileNormalizationTests(unittest.TestCase):
                 observed_at=OBSERVED,
                 ingested_at=dt.datetime(2026, 8, 15, 8),
             )
+
+    def test_epoch_zero_capture_time_sentinel_is_treated_as_missing(
+        self,
+    ) -> None:
+        # LIVE VERIFIED 2026-08-16: RecordFileList startTime may be the
+        # "1970-01-01 08:00:00" sentinel (epoch-zero UTC). It must not pollute
+        # capture-time range queries; the row stays queryable by upload time.
+        result = normalize_media_files(
+            [
+                {
+                    "id": "file-epoch",
+                    "devId": "WX1",
+                    "fType": 3,
+                    "startTime": "1970-01-01 08:00:00",
+                    "endTime": "2026-08-15 08:02:05",
+                    "upLoadTime": "2026-08-15 08:05:00",
+                }
+            ],
+            source_timezone=BUSINESS_TZ,
+            observed_at=OBSERVED,
+            ingested_at=INGESTED,
+        )
+
+        item = result.files[0]
+        self.assertIsNone(item.created_at_source)
+        self.assertIsNotNone(item.end_at_source)
+        self.assertIsNotNone(item.uploaded_at_source)
+        self.assertIn(
+            "epoch_zero_source_time_ignored",
+            item.quality_flags,
+        )
+        self.assertNotIn(
+            "invalid_created_time_ignored",
+            item.quality_flags,
+        )
+        self.assertNotIn("media_time_missing", item.quality_flags)
 
 
 if __name__ == "__main__":

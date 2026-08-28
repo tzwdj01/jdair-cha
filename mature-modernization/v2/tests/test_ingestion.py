@@ -125,6 +125,119 @@ class InspectionIngestorTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(report.results, ())
         self.assertTrue(report.completed)
 
+    async def test_source_failure_is_reported_and_retry_is_idempotent(
+        self,
+    ) -> None:
+        store = _FlakyMediaStore()
+        ingestor = InspectionIngestor(store)
+        payload = {
+            "device_status": [
+                {
+                    "id": "s-1",
+                    "devId": "WX1",
+                    "status": 1,
+                    "time": "2026-08-15 00:10:00+00:00",
+                }
+            ],
+            "media_files": [
+                {
+                    "id": "file-1",
+                    "devId": "WX1",
+                    "fType": 3,
+                    "fileSize": 4096,
+                    "duration": 125,
+                    "startTime": "2026-08-15 00:10:00+00:00",
+                }
+            ],
+            "alarms": [
+                {
+                    "id": "alarm-1",
+                    "devId": "WX1",
+                    "alarmType": 205,
+                    "alarmStatus": 1,
+                    "alarmTime": "2026-08-15 00:05:00+00:00",
+                }
+            ],
+        }
+
+        report = await ingestor.ingest_all(
+            payload,
+            observed_at=OBSERVED,
+            ingested_at=INGESTED,
+        )
+        results = {item.source: item for item in report.results}
+        self.assertEqual(
+            results["device_status"].error_code,
+            None,
+        )
+        self.assertEqual(
+            results["media_files"].error_code,
+            "SOURCE_INGEST_FAILED",
+        )
+        self.assertIn(
+            "source_ingest_failed",
+            results["media_files"].quality_flags,
+        )
+        self.assertEqual(results["alarms"].error_code, None)
+        self.assertFalse(report.completed)
+
+        start = dt.datetime(2026, 8, 15, 0, tzinfo=UTC)
+        end = dt.datetime(2026, 8, 15, 1, tzinfo=UTC)
+        statuses = await store.fetch_device_status_events(
+            start=start,
+            end=end,
+        )
+        files = await store.fetch_media_files(
+            start=start,
+            end=end,
+        )
+        alarms = await store.fetch_alarm_events(
+            start=start,
+            end=end,
+        )
+        # The failed media source left no half-baked rows; the successful
+        # sources were persisted cleanly.
+        self.assertEqual(len(statuses), 1)
+        self.assertEqual(len(files), 0)
+        self.assertEqual(len(alarms), 1)
+
+        # A retry after the transient failure completes without duplicates.
+        store.fail_media = False
+        retry = await ingestor.ingest_all(
+            payload,
+            observed_at=OBSERVED,
+            ingested_at=INGESTED,
+        )
+        self.assertTrue(retry.completed)
+        statuses = await store.fetch_device_status_events(
+            start=start,
+            end=end,
+        )
+        files = await store.fetch_media_files(
+            start=start,
+            end=end,
+        )
+        alarms = await store.fetch_alarm_events(
+            start=start,
+            end=end,
+        )
+        self.assertEqual(len(statuses), 1)
+        self.assertEqual(len(files), 1)
+        self.assertEqual(len(alarms), 1)
+
+
+class _FlakyMediaStore(MemoryInspectionStore):
+    """MemoryInspectionStore that simulates a transient media write failure."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.fail_media = True
+
+    async def upsert_media_files(self, files):
+        if self.fail_media:
+            raise RuntimeError("transient media write failure")
+        return await super().upsert_media_files(files)
+
 
 if __name__ == "__main__":
     unittest.main()

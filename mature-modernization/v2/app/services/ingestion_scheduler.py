@@ -67,12 +67,19 @@ class InspectionIngestionScheduler:
         payloads = {
             name: source.rows
             for name, source in collected.items()
+            if source.status == "ok"
+        }
+        source_errors = {
+            name: source.error_code
+            for name, source in collected.items()
+            if source.status == "error"
         }
         observed_at = dt.datetime.now(UTC)
         report = await self._ingestor.ingest_all(
             payloads,
             observed_at=observed_at,
             ingested_at=observed_at,
+            source_errors=source_errors,
         )
         return ScheduledIngestion(
             report=report,
