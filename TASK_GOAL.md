@@ -16,8 +16,8 @@ plans.
 
 ## 2. Current Production Baseline
 
-Read-only observation on **2026-08-28** (no production configuration or service
-was changed during this review):
+Production observation on **2026-08-28** after a controlled Phase 6 Canary
+attempt and rollback:
 
 | Item | Observed state |
 | --- | --- |
@@ -29,11 +29,14 @@ was changed during this review):
 | `records_v2` | disabled |
 | Current readiness PostgreSQL field | reports `not_enabled` in the deployed release; this is a known observability gap, **not** proof that the production data store is absent |
 | Realtime rollout scope / allowlist | not inferred from the public feature response; do not change or guess it |
+| Phase 6 candidate | rolled back; it is not the active V2 release |
+| M4 scheduler | safely stopped after PostgreSQL connection timeouts caused a restart loop; existing PostgreSQL data was retained |
 
-Production deployment is **frozen** for this phase. Scheduler, PostgreSQL,
-Legacy and currently enabled Realtime continue under their existing operational
-controls. No feature flag, Nginx, systemd, database, secret, current symlink or
-AEE configuration may be changed by this task.
+The prior V2 release is active. Legacy, Nginx and currently enabled Realtime
+continue under their existing operational controls. No further production
+configuration, systemd, database, secret, current-symlink, firewall, or AEE
+change may be made until the PostgreSQL connection-policy remediation below has
+explicit owner approval.
 
 ---
 
@@ -56,15 +59,25 @@ Use only these labels: `COMPLETED / VERIFIED`, `COMPLETED / UNVERIFIED`,
   bounded PostgreSQL pool, concurrent overview aggregation and readiness model.
   On 2026-08-28, the full local suite passed **301 tests** with **2 explicit
   isolated-PostgreSQL skips**; package content and the current tracked-file
-  secret/address scan also passed. It is **not deployed**.
+  secret/address scan also passed.
+- The guarded release helper correctly fail-stopped before a first `current`
+  switch when a source-only test was unavailable in the production archive.
+  The artifact test was repaired, then both source and extracted-package suites
+  passed with no failures. The release helper and independent rollback wrapper
+  were exercised during the controlled attempt.
+- Anonymous access to an Inspection data API returned `401`; no anonymous data
+  exposure was observed.
 
 ### COMPLETED / UNVERIFIED
 
 - Historical M3 fullscreen user-activation evidence remains
   `COMPLETED / UNVERIFIED` by the approved M3 waiver.
-- Any claim that production already contains this Phase 6 hardening is
-  `COMPLETED / UNVERIFIED` until an explicitly authorized Canary deployment
-  and browser/API validation occur.
+- The Phase 6 code was briefly deployed only for the controlled attempt and
+  then rolled back. Any claim that it is active in production is
+  `COMPLETED / UNVERIFIED` and false until a successful retry occurs.
+- Non-authorized/disabled `403`, enabled-inspector `200`, admin `200`,
+  PostgreSQL/API/Dashboard reconciliation, pool behavior, and performance
+  remain `COMPLETED / UNVERIFIED`; the attempt did not reach those gates.
 
 ### IN PROGRESS
 
@@ -72,37 +85,41 @@ Use only these labels: `COMPLETED / VERIFIED`, `COMPLETED / UNVERIFIED`,
 
 **ACTIVE PHASE: PHASE 6 — DASHBOARD CONSOLIDATION & CANARY HARDENING**
 
-**STATUS: IN PROGRESS / CLEAN-BRANCH VALIDATION**
+**STATUS: BLOCKED / PRODUCTION POSTGRESQL CONNECTION POLICY DECISION REQUIRED**
 
-Phase 6 is limited to local hardening and evidence preparation:
+Phase 6 implementation and clean-branch preparation are complete. The only
+active work is the blocked production-retry gate:
 
-1. remove the date-dependent Inspection CSV test flake;
-2. apply the same CHA-login + AuthorizedUser decision to Dashboard pages/data
-   and inspection/workflow routes;
-3. reuse bounded PostgreSQL connections, safely return/rollback/discard them,
-   and close pools at application shutdown;
-4. aggregate independent overview domains concurrently while isolating a
-   single domain failure;
-5. report the actual inspection PostgreSQL readiness state without making
-   unrelated Legacy compatibility unavailable;
-6. complete documentation, package, address-redaction and Git-history audits.
+1. obtain owner approval for a secure PostgreSQL client connection policy;
+2. verify time synchronization on both production nodes;
+3. after approval, validate one read-only app connection, bounded pool health,
+   and one scheduler cycle before any Dashboard Canary retry;
+4. re-run the full authorized-user access, data reconciliation, and
+   performance gates.
 
-### TODO — only after this Phase is explicitly accepted
+### TODO — only after the blocked production prerequisite is resolved
 
-- An owner-authorized **AuthorizedUser Dashboard Canary deployment** of the
-  tested Phase 6 package.
-- Post-deployment verification: anonymous 401; non-authorized/disabled 403;
-  AuthorizedUser and admin 200; PostgreSQL readiness; Dashboard response time;
-  pool connection behavior; legacy/realtime regression.
-- Natural operational observation. Do not create artificial hours-long scheduler
-  runs or expand product scope while observing.
+- Owner-approved protected-environment change to a verified PostgreSQL
+  connection policy. The evidence supports TLS-enforcing `sslmode=require`;
+  do not silently apply a GSS workaround or weaken the private-network policy.
+- Restart and verify only the affected V2 and scheduler services.
+- Re-run the owner-authorized **AuthorizedUser Dashboard Canary**: anonymous
+  401; non-authorized/disabled 403; enabled inspector/admin 200; PostgreSQL
+  readiness; Dashboard response time; pool behavior; Legacy/Realtime
+  regression; and PG → API → Dashboard reconciliation.
+- Resume natural operational observation only after a successful retry. Do not
+  create artificial hours-long scheduler runs or expand product scope.
 
 ### BLOCKED
 
 - `M4 CLOSED`, broad user rollout, M5 and Legacy retirement are not authorized.
-- An AuthorizedUser Dashboard Canary deployment remains separately authorized
-  work. The current clean-branch migration must be fully validated and pushed
-  before any deployment decision.
+- Production PostgreSQL client connections using the current `sslmode=prefer`
+  configuration time out although private TCP reachability is available. This
+  blocked both the Phase 6 candidate and the low-rate scheduler.
+- Both production nodes currently report `NTPSynchronized=no`; their
+  server-local dates require owner review before a transport-security decision.
+- The scheduler is intentionally inactive to prevent repeated MCS8 reads while
+  persistence cannot open a new PostgreSQL connection.
 
 ### AEE VERIFICATION REQUIRED
 
@@ -135,7 +152,9 @@ do not invent upstream behavior.
 
 This Phase must not:
 
-- deploy or modify production;
+- retry the Dashboard Canary or modify protected production environment,
+  systemd, Nginx, PostgreSQL, firewall, or AEE settings without explicit owner
+  approval;
 - introduce a second authentication system or complex RBAC;
 - add business KPIs, visual-dashboard redesign, new scheduler domains,
   automatic Flight/Routine matching, PTZ, Talkback, recording, 32 streams,
@@ -168,11 +187,11 @@ Phase 6 local acceptance requires:
 
 ## 7. Production Safety Requirements
 
-Any later deployment needs an explicit owner authorization and a rollback
-baseline. Before/after it must verify service state, restart count, Legacy
-health, V2 health/live/ready, feature state, logs, PostgreSQL availability,
-AuthorizedUser decisions and Dashboard/API behavior. Canary first; no full
-rollout by implication.
+Any retry needs explicit owner authorization and a rollback baseline.
+Before/after it must verify service state, restart count, Legacy health, V2
+health/live/ready, feature state, logs, PostgreSQL availability, time
+synchronization, AuthorizedUser decisions and Dashboard/API behavior. Canary
+first; no full rollout by implication.
 
 ---
 
@@ -192,9 +211,10 @@ rollout by implication.
 
 ## 9. Done Criteria for This Phase
 
-This Phase is eligible for the following local-only conclusion only when every
-item above passes and the security/history audit does not require an owner
-intervention:
+This Phase remains blocked until the PostgreSQL connection policy and time-sync
+review are resolved. After a successful authorized-user production Canary, it
+is eligible for the following conclusion only when every relevant acceptance
+item passes:
 
 ```text
 M4 PHASE 6 CANARY HARDENING PASS
@@ -216,12 +236,17 @@ permission to start M5.
 | 2026-08-28 | Local Phase 6 full validation: 301 tests passed, 2 isolated PostgreSQL rehearsal tests skipped, package content passed, current tracked-file secret/address scan passed. Production remains unchanged. |
 | 2026-08-28 | Unpushed-history audit: 48 commits ahead of the remote contain 25 non-documentation address hits. High-confidence key/Bearer/credential-URL scan found no hits. History sanitation requires owner approval; no rewrite, commit or push may proceed. |
 | 2026-08-28 | Owner authorized a clean-branch squash migration. The historical local branch and external recovery bundles were retained; the clean branch was rebuilt from the verified remote base with final-tree reconciliation and approved sanitization. |
+| 2026-08-28 | Phase 6 candidate deployment attempted from the clean branch. The first run stopped before `current` changed because the production archive omitted source-only release-tooling scripts required by one test. The test was made artifact-aware, source and extracted-package tests passed, and the guarded deployment then completed. |
+| 2026-08-28 | Authenticated Dashboard/Inspection validation failed before the access/data gates: new PostgreSQL connections with the current `sslmode=prefer` timed out. The prior V2 release was restored with the prepared rollback wrapper. The scheduler exhibited the same timeout/restart loop and was safely stopped. See `docs/aee/M4_PHASE6_AUTHORIZEDUSER_DASHBOARD_CANARY_20260828.md`. |
+| 2026-08-28 | Read-only connection evidence: private TCP and PostgreSQL TLS handshake were reachable; `sslmode=require` and `sslmode=prefer` with GSS encryption disabled completed `SELECT 1`, while current `sslmode=prefer` timed out. Both production nodes reported unsynchronized NTP and server-local date drift requiring owner review. |
 
 ---
 
 ## 11. Next Recommended Actions
 
-1. Complete clean-branch regression, package and security/address checks, then
-   push only `codex/m4-clean-phase6-20260828` without deployment.
-2. Only after separate owner deployment approval, perform a controlled
-   AuthorizedUser Dashboard Canary and record real production evidence.
+1. Obtain an explicit owner decision for the protected PostgreSQL connection
+   policy and NTP remediation; do not guess or apply it automatically.
+2. Once approved, restore a stable V2/scheduler PostgreSQL connection using a
+   read-only probe and a single low-rate scheduler cycle.
+3. Re-run the AuthorizedUser Dashboard Canary from the clean branch and record
+   access, performance, pool, data reconciliation, and rollback evidence.
