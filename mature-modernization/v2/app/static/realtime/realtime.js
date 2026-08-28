@@ -534,6 +534,9 @@
       element.querySelector('[data-action="screenshot"]').addEventListener("click", () => {
         captureFrame(element.dataset.streamId);
       });
+      element.querySelector('[data-action="inspection"]').addEventListener("click", () => {
+        recordInspection(element.dataset.streamId);
+      });
       audioButton.addEventListener("click", () => {
         toggleAudio(element.dataset.streamId);
       });
@@ -1004,6 +1007,55 @@
 
   function safeFilename(value) {
     return String(value || "device").replace(/[^A-Za-z0-9_.-]+/g, "_");
+  }
+
+  async function recordInspection(streamId) {
+    const record = state.tiles.get(streamId);
+    if (!record) return;
+    const now = new Date();
+    const started = record.firstFrameAt
+      ? new Date(record.firstFrameAt)
+      : new Date(now.getTime() - 5 * 60 * 1000);
+    try {
+      const response = await fetch("/api/v2/inspections", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Accept": "application/json",
+        },
+        body: JSON.stringify({
+          device_id: record.deviceId,
+          inspection_started_at: started.toISOString(),
+          inspection_ended_at: now.toISOString(),
+          realtime_view_event_ids: [record.streamId],
+        }),
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        const code = (payload && payload.data && payload.data.code) || "unknown";
+        if (code === "cha_access_forbidden" || code === "unauthorized") {
+          showNotice("当前账号不在 CHA 授权名单内，无法记录监察结果。", "error");
+        } else {
+          showNotice("记录监察结果失败：" + code, "error");
+        }
+        return;
+      }
+      const inspectionId =
+        payload &&
+        payload.data &&
+        payload.data.inspection &&
+        payload.data.inspection.record &&
+        payload.data.inspection.record.inspection_id;
+      showNotice(
+        inspectionId
+          ? "已创建监察草稿（" + inspectionId + "），可在监察记录页继续填写。"
+          : "已创建监察草稿，可在监察记录页继续填写。",
+        "success"
+      );
+      window.open("/api/v2/dashboard/inspections", "_blank");
+    } catch (err) {
+      showNotice("记录监察结果失败：" + String(err), "error");
+    }
   }
 
   async function captureFrame(streamId) {

@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>监察记录 · CHA</title>
+  <style>
+    :root { font-family: "Microsoft YaHei", Arial, sans-serif; color: #1f2b36; background: #eef2f5; }
+    * { box-sizing: border-box; }
+    body { margin: 0; }
+    header { min-height: 58px; background: #12395a; color: #fff; display: flex; align-items: center; justify-content: space-between; padding: 0 18px; }
+    h1 { font-size: 18px; margin: 0; }
+    .meta { color: #d9e8f2; font-size: 12px; }
+    main { padding: 18px; max-width: 1180px; margin: 0 auto; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; margin-bottom: 14px; }
+    .metric { background: #fff; border: 1px solid #d4dee7; border-radius: 6px; padding: 10px 12px; }
+    .metric .value { font-size: 20px; font-weight: 700; color: #12395a; }
+    .metric .label { font-size: 12px; color: #5f7385; margin-top: 4px; }
+    .card { background: #fff; border: 1px solid #d4dee7; border-radius: 8px; padding: 14px; margin-bottom: 14px; }
+    .card h2 { font-size: 15px; margin: 0 0 10px; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { text-align: left; padding: 7px 9px; border-bottom: 1px solid #e3ebf2; }
+    th { background: #f2f6fa; color: #354c60; }
+    .empty { color: #8a97a5; font-size: 13px; padding: 12px 0; }
+    .toolbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
+    .toolbar input, .toolbar select { border: 1px solid #c6d4df; border-radius: 4px; padding: 6px 8px; font: inherit; }
+    .notice { border: 1px solid #e6c35c; background: #fff8e6; color: #6b5200; border-radius: 6px; padding: 10px 12px; font-size: 13px; margin-bottom: 12px; }
+    .state-draft { color: #8a6d1a; font-weight: 700; }
+    .state-submitted { color: #1c7a3d; font-weight: 700; }
+    .state-corrected { color: #12395a; font-weight: 700; }
+    .flag { display: inline-block; background: #eef3f8; border: 1px solid #d4dee7; border-radius: 10px; font-size: 11px; padding: 2px 7px; margin: 2px 3px 0 0; color: #4a5a6b; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>监察记录</h1>
+    <div class="meta">v{{CHA_V2_VERSION}} · {{CHA_V2_BUILD}} · 北京时间 Asia/Shanghai</div>
+  </header>
+  <main>
+    <div class="toolbar">
+      <label>近 <select id="days"><option value="1">1 天</option><option value="7" selected>7 天</option><option value="30">30 天</option></select></label>
+      <button id="refresh">刷新</button>
+      <span id="metaText" class="empty"></span>
+    </div>
+    <div id="notice" class="notice" style="display:none"></div>
+    <div id="metrics" class="grid"></div>
+    <div class="card">
+      <h2>记录列表</h2>
+      <div class="toolbar">
+        <input id="f-device" placeholder="设备">
+        <input id="f-aircraft" placeholder="飞机号">
+        <input id="f-station" placeholder="站点">
+        <select id="f-issue"><option value="">问题：全部</option><option value="true">有问题</option><option value="false">无问题</option></select>
+        <select id="f-status"><option value="">状态：全部</option><option value="DRAFT">草稿</option><option value="SUBMITTED">已提交</option><option value="CORRECTED">已修正</option></select>
+        <button id="search">查询</button>
+        <a id="exportCsv" href="#">导出 CSV</a>
+        <a id="exportXlsx" href="#">导出 XLSX</a>
+      </div>
+      <div id="list"></div>
+      <div id="pager"></div>
+    </div>
+  </main>
+  <script>
+    let page = 1;
+    function $(id) { return document.getElementById(id); }
+    function esc(v) {
+      return String(v == null ? "" : v).replace(/[&<>"']/g, (c) => ({
+        "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+      }[c]));
+    }
+    function fmtLocal(value) {
+      if (!value) return "--";
+      const d = new Date(value);
+      return Number.isNaN(d.getTime()) ? esc(value) : d.toLocaleString("zh-CN", { timeZone: "Asia/Shanghai", hour12: false });
+    }
+    function stateClass(s) { return "state-" + String(s || "").toLowerCase(); }
+    async function api(path) {
+      const resp = await fetch(path, { headers: { "Accept": "application/json" } });
+      const payload = await resp.json();
+      if (!resp.ok) throw new Error((payload && payload.data && payload.data.code) || ("HTTP " + resp.status));
+      return payload.data;
+    }
+    async function loadMetrics() {
+      try {
+        const data = await api("/api/v2/inspections/metrics?days=" + $("days").value);
+        const m = data.metrics;
+        $("metrics").innerHTML =
+          metric(m.total_count, "记录数") +
+          metric(sec(m.total_duration_seconds), "监察总时长") +
+          metric(m.participant_count, "参与人数") +
+          metric(m.issue_found_count, "发现问题") +
+          metric(m.issue_rate == null ? "--" : (m.issue_rate * 100).toFixed(1) + "%", "问题发现率") +
+          metric(m.aircraft_count, "涉及飞机") +
+          metric(m.flight_count, "涉及航班") +
+          metric(m.task_count, "涉及任务");
+        const cov = m.coverage || [];
+        $("metaText").textContent = "数据覆盖：" + esc(cov[0] || "--") +
+          "（可用 " + esc(cov[2]) + " / 请求 " + esc(cov[1]) + " 天" +
+          (cov[3] ? "，" + esc(cov[3]) : "") + "）";
+      } catch (err) {
+        $("metrics").innerHTML = '<div class="empty">指标暂不可用：' + esc(err.message) + '</div>';
+      }
+    }
+    function metric(value, label) {
+      return '<div class="metric"><div class="value">' + esc(value) + '</div><div class="label">' + esc(label) + '</div></div>';
+    }
+    function sec(s) {
+      if (s == null) return "--";
+      const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec2 = Math.round(s % 60);
+      return h + "h " + m + "m " + sec2 + "s";
+    }
+    async function loadList() {
+      const params = new URLSearchParams();
+      params.set("days", $("days").value);
+      params.set("page", page);
+      if ($("f-device").value) params.set("device", $("f-device").value);
+      if ($("f-aircraft").value) params.set("aircraft", $("f-aircraft").value);
+      if ($("f-station").value) params.set("station", $("f-station").value);
+      if ($("f-issue").value) params.set("has_issue", $("f-issue").value);
+      if ($("f-status").value) params.set("status", $("f-status").value);
+      const exportBase = "/api/v2/inspections/export?" + params.toString();
+      $("exportCsv").href = exportBase + "&fmt=csv";
+      $("exportXlsx").href = exportBase + "&fmt=xlsx";
+      try {
+        const data = await api("/api/v2/inspections?" + params.toString());
+        const rows = (data.items || []).map((item) => "<tr>" +
+          "<td>" + esc(item.inspection_id) + "</td>" +
+          "<td>" + esc(item.inspector_username) + "</td>" +
+          "<td>" + esc(item.device_id) + "</td>" +
+          "<td>" + esc(item.aircraft_no || "--") + "</td>" +
+          "<td>" + esc(item.station || "--") + "</td>" +
+          "<td>" + (item.has_issue ? "<b>是</b>" : "否") + "</td>" +
+          "<td><span class=\"" + stateClass(item.status) + "\">" + esc(item.status) + "</span></td>" +
+          "<td>" + fmtLocal(item.inspection_started_at) + "</td>" +
+          "<td><a href=\"/api/v2/inspections/" + encodeURIComponent(item.inspection_id) + "\">详情</a></td>" +
+          "</tr>").join("");
+        $("list").innerHTML = rows
+          ? '<table><thead><tr><th>ID</th><th>监察人</th><th>设备</th><th>飞机</th><th>站点</th><th>问题</th><th>状态</th><th>开始时间</th><th></th></tr></thead><tbody>' + rows + '</tbody></table>'
+          : '<div class="empty">暂无监察记录。</div>';
+        const totalPages = Math.max(1, Math.ceil(data.total / data.page_size));
+        $("pager").innerHTML = "第 " + data.page + " / " + totalPages + " 页 · 共 " + data.total + " 条 " +
+          (data.page > 1 ? '<button data-p="' + (data.page - 1) + '">上一页</button>' : "") +
+          (data.page < totalPages ? '<button data-p="' + (data.page + 1) + '">下一页</button>' : "");
+      } catch (err) {
+        $("list").innerHTML = '<div class="empty">列表暂不可用：' + esc(err.message) + '</div>';
+      }
+    }
+    $("refresh").addEventListener("click", () => { page = 1; loadMetrics(); loadList(); });
+    $("search").addEventListener("click", () => { page = 1; loadList(); });
+    $("days").addEventListener("change", () => { page = 1; loadMetrics(); loadList(); });
+    $("pager").addEventListener("click", (e) => {
+      const p = e.target && e.target.dataset && e.target.dataset.p;
+      if (p) { page = Number(p); loadList(); }
+    });
+    loadMetrics();
+    loadList();
+  </script>
+</body>
+</html>

@@ -30,6 +30,11 @@
     .empty { color: #8a97a5; font-size: 13px; padding: 12px 0; }
     .notice { border: 1px solid #e6c35c; background: #fff8e6; color: #6b5200; border-radius: 6px; padding: 10px 12px; font-size: 13px; margin-bottom: 12px; }
     .flag { display: inline-block; background: #eef3f8; border: 1px solid #d4dee7; border-radius: 10px; font-size: 11px; padding: 2px 7px; margin: 2px 3px 0 0; color: #4a5a6b; }
+    .meta-line { width: 100%; font-size: 12px; color: #5f7385; background: #f2f6fa; border: 1px solid #dbe5ee; border-radius: 6px; padding: 8px 10px; margin-bottom: 12px; line-height: 1.7; }
+    .meta-line b { color: #12395a; }
+    .coverage-full { color: #1c7a3d; font-weight: 700; }
+    .coverage-partial { color: #8a6d1a; font-weight: 700; }
+    .coverage-empty { color: #b23b3b; font-weight: 700; }
     .state-on { color: #1c7a3d; font-weight: 700; }
     .state-unknown { color: #8a6d1a; font-weight: 700; }
     .state-off { color: #b23b3b; font-weight: 700; }
@@ -43,9 +48,13 @@
   <header>
     <h1>监察数据中心</h1>
     <nav class="topnav">
+      <button id="tab-overview">监察总览</button>
       <button id="tab-devices">设备运行</button>
       <button id="tab-media">视频上传</button>
       <button id="tab-realtime">监察使用</button>
+      <button id="tab-inspections">监察记录</button>
+      <button id="tab-flights_tasks">航班/任务</button>
+      <button id="tab-locations">设备定位</button>
       <button id="tab-alarms">告警异常</button>
       <button id="tab-data_quality">数据质量</button>
     </nav>
@@ -63,22 +72,31 @@
       <button id="refresh">刷新</button>
       <span id="scopeText" class="empty"></span>
     </div>
+    <div id="metaText" class="meta-line" style="display:none"></div>
     <div id="notice" class="notice" style="display:none"></div>
     <div id="content"></div>
   </main>
   <script>
     const ACTIVE = "{{CHA_INSPECTION_ACTIVE}}";
     const ENDPOINTS = {
+      overview: "/api/v2/dashboard/production-overview",
       devices: "/api/v2/inspection/devices",
       media: "/api/v2/inspection/media",
       realtime: "/api/v2/inspection/realtime",
+      inspections: "/api/v2/inspections",
+      flights_tasks: "/api/v2/inspection/flights-tasks",
+      locations: "/api/v2/inspection/locations",
       alarms: "/api/v2/inspection/alarms",
       data_quality: "/api/v2/inspection/data-quality"
     };
     const TITLES = {
+      overview: "监察总览",
       devices: "设备运行分析",
       media: "视频上传与文件分析",
       realtime: "监察使用分析",
+      inspections: "监察记录",
+      flights_tasks: "航班与维修任务",
+      locations: "设备定位",
       alarms: "告警与异常分析",
       data_quality: "数据质量"
     };
@@ -112,12 +130,52 @@
       return items.map((f) => `<span class="flag">${esc(f)}</span>`).join("");
     }
 
+    function fmtLocal(value) {
+      if (!value) return "--";
+      const d = new Date(value);
+      if (Number.isNaN(d.getTime())) return esc(String(value));
+      return d.toLocaleString("zh-CN", { timeZone: "Asia/Shanghai", hour12: false });
+    }
+
+    function renderMeta(data) {
+      const meta = (data && data.meta) || {};
+      const box = byId("metaText");
+      if (!meta.generated_at && !meta.coverage && !meta.quality) {
+        box.style.display = "none";
+        return;
+      }
+      const cov = meta.coverage || {};
+      const quality = meta.quality || {};
+      const freshness = meta.freshness || {};
+      const freshKeys = Object.keys(freshness).filter((k) => freshness[k] != null);
+      let covHtml = "--";
+      if (cov.completeness) {
+        const cls = "coverage-" + String(cov.completeness).toLowerCase();
+        covHtml = `<span class="${cls}">${esc(cov.completeness)}</span>` +
+          `（可用 ${esc(cov.available_coverage_days == null ? "--" : cov.available_coverage_days)} / 请求 ${esc(cov.requested_window_days == null ? "--" : cov.requested_window_days)} 天` +
+          (cov.coverage_start_date ? `，${esc(cov.coverage_start_date)} ~ ${esc(cov.coverage_end_date || "")}` : "") + "）";
+      }
+      const flagsHtml = (quality.quality_flags || []).map((f) => `<span class="flag">${esc(f)}</span>`).join("");
+      box.innerHTML =
+        "<b>数据更新时间：</b>" + fmtLocal(meta.generated_at) +
+        "（北京时间 Asia/Shanghai）&nbsp;|&nbsp;<b>数据覆盖：</b>" + covHtml +
+        (freshKeys.length
+          ? "&nbsp;|&nbsp;<b>源数据新鲜度：</b>" +
+            freshKeys.map((k) => `${esc(k)}=${fmtLocal(freshness[k])}`).join("，")
+          : "") +
+        (flagsHtml ? "&nbsp;|&nbsp;<b>质量标记：</b>" + flagsHtml : "");
+      box.style.display = "block";
+    }
+
     async function load() {
       const days = byId("days").value;
       const tab = ACTIVE;
       showNotice("");
       byId("content").innerHTML = '<div class="empty">正在加载…</div>';
-      const url = ENDPOINTS[tab] + "?days=" + days;
+      byId("metaText").style.display = "none";
+      const url = tab === "flights_tasks"
+        ? ENDPOINTS[tab]
+        : ENDPOINTS[tab] + "?days=" + days;
       let response;
       try {
         response = await fetch(url, { headers: { "Accept": "application/json" } });
@@ -145,13 +203,131 @@
       const data = payload.data || {};
       const scope = data.scope || {};
       if (scope.start) {
-        byId("scopeText").textContent = "范围：" + scope.start + " ~ " + scope.end;
+        byId("scopeText").textContent = "范围（北京时间）：" + fmtLocal(scope.start) + " ~ " + fmtLocal(scope.end);
       }
+      if (tab === "overview") {
+        renderOverview(data);
+        return;
+      }
+      renderMeta(data);
       if (tab === "devices") renderDevices(data.overview || {});
       else if (tab === "media") renderMedia(data.overview || {});
       else if (tab === "realtime") renderRealtime(data.overview || {}, data.runtime || null);
+      else if (tab === "inspections") renderInspections(data);
+      else if (tab === "flights_tasks") renderFlightsTasks(data.overview || {});
+      else if (tab === "locations") renderLocations(data.overview || {});
       else if (tab === "alarms") renderAlarms(data.overview || {});
       else renderDataQuality(data.overview || {});
+    }
+
+    function renderOverview(data) {
+      const d = data || {};
+      const devices = d.devices || {};
+      const media = d.media || {};
+      const realtime = d.realtime || {};
+      const inspections = d.inspections || {};
+      const alarms = d.alarms || {};
+      const locations = d.locations || {};
+      const quality = d.data_quality || {};
+      const cov = (value) => {
+        const c = (value && value.completeness) || null;
+        if (!c) return '<span class="flag">覆盖未知</span>';
+        const cls = "coverage-" + String(c).toLowerCase();
+        return `<span class="${cls}">${esc(c)}</span>` +
+          `（可用 ${esc(value.available_coverage_days)} / 请求 ${esc(value.requested_window_days)} 天）`;
+      };
+      const online = devices.current_online;
+      const offline = devices.current_offline;
+      const fmtSize = (bytes) => {
+        const b = Number(bytes || 0);
+        if (!b) return "0 B";
+        const units = ["B", "KB", "MB", "GB", "TB"];
+        let i = 0, v = b;
+        while (v >= 1024 && i < units.length - 1) { v /= 1024; i++; }
+        return v.toFixed(1) + " " + units[i];
+      };
+      const fmtDur = (secs) => {
+        const s = Number(secs || 0);
+        if (!s) return "0m";
+        return (s / 60).toFixed(0) + " 分钟";
+      };
+      const attention = [];
+      if (devices.available) {
+        attention.push("当前设备在线 " + esc(online) + " / 离线 " + esc(offline) +
+          "（总数 " + esc(devices.distinct_devices) + "）");
+      }
+      if (media.available && media.no_recent_upload_governed) {
+        attention.push(esc(media.no_recent_upload_devices) + " 台设备近期未上传视频");
+      }
+      if (alarms.available && alarms.alarm_count) {
+        attention.push("窗口内告警 " + esc(alarms.alarm_count) + " 条，涉及 " + esc(alarms.affected_devices) + " 台设备");
+      }
+      if (inspections.available && inspections.issue_found_count) {
+        attention.push("监察发现问题 " + esc(inspections.issue_found_count) + " 条（问题率 " +
+          (inspections.issue_rate == null ? "--" : (inspections.issue_rate * 100).toFixed(1) + "%") + "）");
+      }
+      const attentionHtml = attention.length
+        ? attention.map((t) => `<div>· ${t}</div>`).join("")
+        : '<div>· 当前窗口暂无异常/关注项（数据有限时以覆盖标记提示）。</div>';
+
+      byId("content").innerHTML = `
+        <div class="card">
+          <h2>当前概况（真实生产数据）</h2>
+          <div class="grid">
+            ${metric(devices.available ? (online == null ? "--" : online) : "--", "设备在线")}
+            ${metric(devices.available ? (offline == null ? "--" : offline) : "--", "设备离线")}
+            ${metric(media.available ? esc(media.files) : "--", "窗口内视频文件")}
+            ${metric(media.available ? fmtSize(media.size_bytes) : "--", "视频容量")}
+            ${metric(realtime.available ? esc(realtime.view_count) : "--", "监察观看次数")}
+            ${metric(inspections.available ? esc(inspections.total_count) : "--", "监察记录(已提交)")}
+            ${metric(inspections.available ? esc(inspections.issue_found_count) : "--", "发现问题")}
+            ${metric(alarms.available ? esc(alarms.alarm_count) : "--", "告警")}
+          </div>
+        </div>
+        <div class="card">
+          <h2>今天哪里值得关注？</h2>
+          ${attentionHtml}
+        </div>
+        <div class="card">
+          <h2>专题明细</h2>
+          <table>
+            <tr><th>专题</th><th>关键值</th><th>覆盖</th></tr>
+            <tr><td>设备运行</td><td>${devices.available
+              ? esc(devices.distinct_devices) + " 台 · 观测变化 " + esc(devices.observed_transitions) + " 次"
+              : '<span class="flag">数据不足</span>'}</td><td>${devices.available ? cov(devices.coverage) : "--"}</td></tr>
+            <tr><td>视频上传</td><td>${media.available
+              ? esc(media.video_files) + " 个视频 · " + fmtDur(media.video_duration_seconds) + " · " + esc(media.uploading_devices) + " 台设备"
+              : '<span class="flag">数据不足</span>'}</td><td>${media.available ? cov(media.coverage) : "--"}</td></tr>
+            <tr><td>监察使用</td><td>${realtime.available
+              ? esc(realtime.view_count) + " 次 · " + esc(realtime.users) + " 用户 · 播放 " + esc(realtime.played_count)
+              : '<span class="flag">数据不足</span>'}</td><td>${realtime.available ? cov(realtime.coverage) : "--"}</td></tr>
+            <tr><td>监察记录</td><td>${inspections.available
+              ? esc(inspections.total_count) + " 条 · " + esc(inspections.participant_count) + " 人 · 飞机 " + esc(inspections.aircraft_count) + " · 航班 " + esc(inspections.flight_count)
+              : '<span class="flag">数据不足</span>'}</td><td>${inspections.available ? cov(inspections.coverage) : "--"}</td></tr>
+            <tr><td>告警异常</td><td>${alarms.available
+              ? esc(alarms.alarm_count) + " 条 · " + esc(alarms.affected_devices) + " 台设备"
+              : '<span class="flag">数据不足</span>'}</td><td>${alarms.available ? cov(alarms.coverage) : "--"}</td></tr>
+            <tr><td>设备定位</td><td>${locations.available
+              ? esc(locations.located_devices) + " 台有定位 · " + esc(locations.event_count) + " 个事件"
+              : '<span class="flag">数据不足</span>'}</td><td>${locations.available ? cov(locations.coverage) : "--"}</td></tr>
+            <tr><td>数据质量</td><td>${quality.available
+              ? esc(quality.total_rows) + " 行 · 表 " + esc((quality.tables || []).length)
+              : '<span class="flag">数据不足</span>'}</td><td>--</td></tr>
+          </table>
+        </div>
+        <div class="card">
+          <h2>数据质量标记（仅真实标记，不虚构）</h2>
+          ${quality.available && (quality.top_flags || []).length
+            ? '<div>' + (quality.top_flags || []).map((f) =>
+                `<span class="flag">${esc(f[0])}=${esc(f[1])}</span>`).join("") + '</div>'
+            : '<div class="empty">暂无质量标记。</div>'}
+          ${realtime.available && realtime.view_count > 0 && realtime.played_count === 0
+            ? '<div class="notice">监察使用数据仅有非播放事件；真实播放（played）证据为观察期缺口，不虚构。</div>'
+            : ""}
+          ${media.available && media.no_recent_upload_governed === false
+            ? '<div class="notice">「近期未上传设备」阈值尚未配置，因此未生成该异常列表（不臆造）。</div>'
+            : ""}
+        </div>`;
     }
 
     function renderDevices(overview) {
@@ -427,6 +603,93 @@
           : '<div class="empty">暂无可展示的每设备告警。</div>') +
         '</div>' +
         '<div class="empty">说明：alarm/status/deal 为原始 code，语义尚未验证，暂不映射为业务标签。</div>';
+    }
+
+    function renderInspections(data) {
+      const items = (data && data.items) || [];
+      const total = (data && data.total != null) ? data.total : items.length;
+      const rows = items.map((item) => {
+        const rec = item.record || item;
+        const issue = rec.has_issue
+          ? `<span class="state-on">是</span>`
+          : `<span class="state-off">否</span>`;
+        return `<tr>
+          <td>${esc(rec.inspection_id || "--")}</td>
+          <td>${esc(rec.inspector_username || "--")}</td>
+          <td>${esc(rec.device_id || "--")}</td>
+          <td>${esc(rec.aircraft_no || "--")}</td>
+          <td>${esc(rec.flight_no || "--")}</td>
+          <td>${esc(rec.station || "--")}</td>
+          <td>${esc((rec.maintenance_task_text || "").slice(0, 40) || "--")}</td>
+          <td>${issue}</td>
+          <td>${esc(rec.status || "--")}</td>
+          <td>${fmtLocal(rec.inspection_started_at)}</td>
+        </tr>`;
+      }).join("");
+      byId("content").innerHTML =
+        '<div class="grid">' +
+        metric(total == null ? "--" : total, "监察记录总数") +
+        metric(items.length == null ? "--" : items.length, "本页条数") +
+        '</div>' +
+        '<div class="card"><h2>监察记录</h2>' +
+        (rows ? '<table><thead><tr><th>记录 ID</th><th>监察人</th><th>设备</th><th>飞机</th><th>航班</th><th>站点</th><th>维修任务</th><th>问题</th><th>状态</th><th>开始时间</th></tr></thead><tbody>' + rows + '</tbody></table>'
+          : '<div class="empty">当前窗口内暂无监察记录。</div>') +
+        '</div>' +
+        '<div class="empty">说明：记录为真实生产监察数据；问题标记与状态为业务字段。</div>';
+    }
+
+    function renderFlightsTasks(overview) {
+      const flights = (overview.flights || []).map((row) => `<tr>
+        <td>${esc(row[1] || "--")}</td>
+        <td>${esc(row[2] || "--")}</td>
+        <td>${esc(row[3] || "--")}</td>
+        <td>${esc(row[4] || "--")}</td>
+      </tr>`).join("");
+      const tasks = (overview.routine_tasks || []).map((row) => `<tr>
+        <td>${esc(row[2] || "--")}</td>
+        <td>${esc(row[1] || "--")}</td>
+        <td>${esc(row[3] || "--")}</td>
+        <td>${esc(row[4] || "--")}</td>
+      </tr>`).join("");
+      byId("content").innerHTML =
+        '<div class="grid">' +
+        metric(overview.source_flight_count == null ? "--" : overview.source_flight_count, "航班数") +
+        metric(overview.source_task_count == null ? "--" : overview.source_task_count, "维修任务数") +
+        '</div>' +
+        '<div class="card"><h2>航班（参考）</h2>' +
+        (flights ? '<table><thead><tr><th>航班号</th><th>飞机号</th><th>航段</th><th>状态</th></tr></thead><tbody>' + flights + '</tbody></table>'
+          : '<div class="empty">当前日期暂无航班数据。</div>') +
+        '</div>' +
+        '<div class="card"><h2>维修任务（参考）</h2>' +
+        (tasks ? '<table><thead><tr><th>任务类型</th><th>飞机号</th><th>机位</th><th>状态</th></tr></thead><tbody>' + tasks + '</tbody></table>'
+          : '<div class="empty">当前日期暂无维修任务数据。</div>') +
+        '</div>' +
+        '<div class="empty">说明：本页为航班/维修任务只读参考视图（非自动关联），用于监察人员确认飞机/任务上下文。</div>';
+    }
+
+    function renderLocations(overview) {
+      const aggregation = overview.aggregation || {};
+      const devices = (aggregation.devices || []).map((item) => `<tr>
+        <td>${esc(item.device_id)}</td>
+        <td>${esc(item.event_count)}</td>
+        <td>${esc(item.distinct_coordinate_count)}</td>
+        <td>${fmtLocal(item.last_gps_at)}</td>
+        <td>${esc(item.gps_type_count != null ? item.gps_type_count : "--")}</td>
+        <td>${esc(item.network_type_count != null ? item.network_type_count : "--")}</td>
+      </tr>`).join("");
+      const flags = (aggregation.quality_flags || []).map((f) =>
+        `<span class="flag">${esc(f)}</span>`).join("");
+      byId("content").innerHTML =
+        '<div class="grid">' +
+        metric(aggregation.source_event_count == null ? "--" : aggregation.source_event_count, "定位事件数") +
+        metric(aggregation.included_event_count == null ? "--" : aggregation.included_event_count, "窗口内事件") +
+        '</div>' +
+        '<div class="card"><h2>每设备定位</h2>' +
+        (devices ? '<table><thead><tr><th>设备</th><th>事件数</th><th>不同坐标数</th><th>最新定位</th><th>定位类型数</th><th>网络类型数</th></tr></thead><tbody>' + devices + '</tbody></table>'
+          : '<div class="empty">当前窗口内无设备定位数据。</div>') +
+        '</div>' +
+        (flags ? '<div class="card"><h2>质量标记</h2>' + flags + '</div>' : "") +
+        '<div class="empty">说明：坐标明细受保护不展示；本页仅展示定位统计与覆盖。</div>';
     }
 
     function renderDataQuality(overview) {

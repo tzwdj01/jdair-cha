@@ -13,6 +13,8 @@ from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
 
 from .api.inspection import create_inspection_router
+from .api.inspection_access import InspectionAccess
+from .api.inspections import create_inspections_router
 from .config import Settings
 from .data.store import StoreViewEventSink
 from .realtime.api import create_realtime_router
@@ -22,12 +24,22 @@ from .services.dashboard import (
     DashboardService,
     DashboardSourceError,
 )
+from .services.business_candidates import (
+    InspectionBusinessCandidateService,
+    LegacyBusinessDataClient,
+)
+from .services.production_overview import ProductionOverviewService
 from .services.legacy import (
     LegacyClient,
     LegacyTransportError,
 )
 from .services.inspection import InspectionDataService
-from .services.store_factory import build_inspection_store
+from .services.inspection_readiness import inspection_postgresql_readiness
+from .services.inspection_records import InspectionRecordService
+from .services.store_factory import (
+    build_inspection_record_store,
+    build_inspection_store,
+)
 
 
 UTC = dt.timezone.utc
@@ -59,8 +71,28 @@ inspection_service = (
     InspectionDataService(
         inspection_store,
         thresholds=settings.inspection_thresholds,
+        business_client=LegacyBusinessDataClient(
+            legacy_client,
+        ),
     )
     if inspection_store is not None
+    else None
+)
+inspection_record_store = build_inspection_record_store(settings)
+inspection_record_service = (
+    InspectionRecordService(inspection_record_store)
+    if inspection_record_store is not None
+    else None
+)
+production_overview_service = (
+    ProductionOverviewService(
+        inspection_service,
+        inspection_record_service,
+    )
+    if (
+        inspection_service is not None
+        and inspection_record_service is not None
+    )
     else None
 )
 
@@ -100,6 +132,14 @@ async def lifespan(_: FastAPI):
         yield
     finally:
         await realtime_manager.shutdown()
+        closed_store_ids: set[int] = set()
+        for store in (inspection_store, inspection_record_store):
+            if store is None or id(store) in closed_store_ids:
+                continue
+            closed_store_ids.add(id(store))
+            close = getattr(store, "close", None)
+            if callable(close):
+                close()
 
 
 app = FastAPI(
@@ -119,6 +159,40 @@ app.add_middleware(
     TrustedHostMiddleware,
     allowed_hosts=list(settings.allowed_hosts),
 )
+
+
+async def inspection_identity(request: Request) -> tuple[str | None, str]:
+    """Resolve the existing CHA login session; never trust client identity."""
+
+    cookie_header = request.headers.get("cookie", "")
+    session_cookie = request.cookies.get("jdair_mcs8_session", "")
+    if not cookie_header or not session_cookie:
+        raise RuntimeError("authentication_required")
+    response = await legacy_client.session(cookie_header)
+    payload = response.json()
+    if (
+        response.status_code != 200
+        or not isinstance(payload, dict)
+        or not payload.get("authenticated")
+    ):
+        raise RuntimeError("authentication_required")
+    return None, str(payload.get("username") or "authenticated-user")[:128]
+
+
+inspection_access = InspectionAccess(
+    inspection_record_store,
+    inspection_identity,
+    envelope,
+)
+
+
+async def dashboard_access_error(request: Request) -> JSONResponse | None:
+    """Apply the M4 Canary access boundary without changing pre-M4 M2 mode."""
+
+    if not settings.feature_inspection_v2:
+        return None
+    _identity, error = await inspection_access.require_authorized(request)
+    return error
 
 
 @app.middleware("http")
@@ -151,8 +225,25 @@ app.include_router(
         inspection_service,
         envelope,
         realtime_manager,
+        inspection_access,
     )
 )
+if inspection_record_store is not None and inspection_record_service is not None:
+
+    candidate_service = InspectionBusinessCandidateService(
+        LegacyBusinessDataClient(legacy_client),
+    )
+
+    app.include_router(
+        create_inspections_router(
+            settings,
+            inspection_record_service,
+            inspection_record_store,
+            envelope,
+            inspection_access,
+            candidate_service,
+        )
+    )
 
 
 @app.exception_handler(Exception)
@@ -207,24 +298,40 @@ async def readiness(request: Request):
     realtime_manager_running = bool(
         realtime_snapshot["cleanup_task_running"]
     )
-    ready = (
+    core_ready = (
         (not required or legacy_status == "ok")
         and (
             not realtime_required
             or (realtime_configured and realtime_manager_running)
         )
     )
+    postgresql = await inspection_postgresql_readiness(
+        settings,
+        inspection_store,
+        inspection_record_store,
+    )
+    inspection_degraded = postgresql["status"] in {
+        "misconfigured",
+        "unavailable",
+    }
+    ready_status = (
+        "not_ready"
+        if not core_ready
+        else "degraded"
+        if inspection_degraded
+        else "ready"
+    )
     return envelope(
         request,
         {
-            "status": "ready" if ready else "not_ready",
+            "status": ready_status,
             "dependencies": {
                 "legacy_service": {
                     "status": legacy_status,
                     "required": required,
                     "latency_ms": legacy_latency_ms,
                 },
-                "postgresql": {"status": "not_enabled", "required": False},
+                "postgresql": postgresql,
                 "redis": {"status": "not_enabled", "required": False},
                 "mcs8": {
                     "status": (
@@ -248,8 +355,10 @@ async def readiness(request: Request):
                 },
             },
         },
-        ok=ready,
-        status_code=200 if ready else 503,
+        # An inspection-PG outage degrades only the M4 data center/workflow;
+        # it must not make Legacy-compatible V2 endpoints appear unavailable.
+        ok=core_ready,
+        status_code=200 if core_ready else 503,
     )
 
 
@@ -345,6 +454,9 @@ async def dashboard_snapshot(
 ) -> JSONResponse:
     if not settings.feature_dashboard_v2:
         return feature_disabled(request)
+    access_error = await dashboard_access_error(request)
+    if access_error is not None:
+        return access_error
     try:
         data = await dashboard_service.snapshot(
             request.headers.get("cookie", ""),
@@ -391,6 +503,9 @@ async def dashboard_page(request: Request):
                 "<p><a href='/'>返回现有系统</a></p></body>"
             ),
         )
+    access_error = await dashboard_access_error(request)
+    if access_error is not None:
+        return access_error
     try:
         html = dashboard_template_path.read_text(encoding="utf-8")
     except OSError:
@@ -413,7 +528,48 @@ async def dashboard_overview(
     city: str = Query("", max_length=32),
     refresh: bool = Query(False),
 ):
-    return await dashboard_snapshot(request, days, city, refresh)
+    response = await dashboard_snapshot(request, days, city, refresh)
+    if response.status_code != 200:
+        return response
+    data = json.loads(response.body)["data"]
+    # PHASE 6: additive production PostgreSQL overview (backward compatible;
+    # existing M2 keys are preserved verbatim).
+    data["production_overview"] = (
+        await _build_production_overview(days)
+        if production_overview_service is not None
+        else {"available": False, "error": "store_not_configured"}
+    )
+    return envelope(request, data)
+
+
+@app.get("/api/v2/dashboard/production-overview")
+async def dashboard_production_overview(
+    request: Request,
+    days: int = Query(1, ge=1, le=30),
+):
+    access_error = await dashboard_access_error(request)
+    if access_error is not None:
+        return access_error
+    if production_overview_service is None:
+        return envelope(
+            request,
+            {"available": False, "error": "store_not_configured"},
+            ok=False,
+            status_code=503,
+        )
+    overview = await _build_production_overview(days)
+    return envelope(request, overview)
+
+
+async def _build_production_overview(days: int) -> dict[str, Any]:
+    assert production_overview_service is not None
+    try:
+        return await production_overview_service.build(days=days)
+    except Exception as exc:  # pragma: no cover - defensive
+        return {
+            "available": False,
+            "error": type(exc).__name__,
+        }
 
 
 @app.get("/api/v2/dashboard/device-trend")

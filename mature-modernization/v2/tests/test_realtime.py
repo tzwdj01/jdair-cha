@@ -1062,7 +1062,7 @@ class AEEAdapterTests(unittest.TestCase):
         message = adapter._capture_and_rewrite_gateway(
             (
                 '{"request":true,"method":"ConnecteInfo","data":{'
-                '"mediaIp":"10.0.0.8","mediaPort":7710,'
+                '"mediaIp":"198.51.100.8","mediaPort":7710,'
                 '"mediaDomain":"media.example","mediaSslPort":7705,'
                 '"token":"real-media-token","devid":"server-user",'
                 '"userType":5,"ftp":{"pwd":"ftp-secret"},'

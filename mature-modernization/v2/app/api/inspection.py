@@ -7,11 +7,20 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Query, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 
+from .inspection_access import InspectionAccess
 from ..config import Settings
 from ..realtime.session_manager import RealtimeSessionManager
-from ..services.inspection import InspectionDataService
+from ..services.inspection import (
+    AlarmOverview,
+    DataQualityOverview,
+    DeviceOverview,
+    InspectionDataService,
+    LocationOverview,
+    MediaOverview,
+    RealtimeOverview,
+)
 
 
 UTC = dt.timezone.utc
@@ -23,6 +32,9 @@ PAGE_ROUTES = {
     "devices": "设备运行分析",
     "media": "视频上传与文件分析",
     "realtime": "监察使用分析",
+    "inspections": "监察记录",
+    "flights_tasks": "航班与维修任务",
+    "locations": "设备定位",
     "alarms": "告警与异常分析",
     "data_quality": "数据质量",
 }
@@ -33,6 +45,7 @@ def create_inspection_router(
     service: InspectionDataService | None,
     envelope: Envelope,
     realtime_manager: RealtimeSessionManager | None = None,
+    access: InspectionAccess | None = None,
 ) -> APIRouter:
     """Read-only inspection history API over the InspectionStore.
 
@@ -60,12 +73,38 @@ def create_inspection_router(
             ),
         )
 
-    def render_page(
+    async def require_access(request: Request) -> JSONResponse | None:
+        """Fail closed when Phase 6 data access is not explicitly wired."""
+
+        if access is None:
+            return envelope(
+                request,
+                {
+                    "code": "inspection_access_not_configured",
+                    "message": "Inspection access enforcement is not configured.",
+                },
+                ok=False,
+                status_code=503,
+            )
+        _identity, error = await access.require_authorized(request)
+        return error
+
+    async def data_gate(request: Request) -> JSONResponse | None:
+        """Apply the feature and AuthorizedUser gates in a stable order."""
+
+        if not settings.feature_inspection_v2:
+            return disabled(request)
+        return await require_access(request)
+
+    async def render_page(
         request: Request,
         active: str,
-    ) -> HTMLResponse:
+    ) -> Response:
         if not settings.feature_inspection_v2:
             return page_disabled(request)
+        access_error = await require_access(request)
+        if access_error is not None:
+            return access_error
         try:
             html = TEMPLATE_PATH.read_text(encoding="utf-8")
         except OSError:
@@ -93,8 +132,36 @@ def create_inspection_router(
         async def inspection_page(
             request: Request,
             _page_name: str = page_name,
-        ) -> HTMLResponse:
-            return render_page(request, _page_name)
+        ) -> Response:
+            return await render_page(request, _page_name)
+
+    # PHASE 6: overview page (path avoids the M2 JSON route at
+    # /api/v2/dashboard/overview) and business-friendly aliases that keep the
+    # existing underscore routes backward compatible.
+    @router.get(
+        "/api/v2/dashboard/overview-page",
+        response_class=HTMLResponse,
+        include_in_schema=False,
+    )
+    async def inspection_overview_page(request: Request) -> Response:
+        return await render_page(request, "overview")
+
+    for _alias, _target in (
+        ("tasks", "flights_tasks"),
+        ("map", "locations"),
+        ("data-quality", "data_quality"),
+    ):
+
+        @router.get(
+            f"/api/v2/dashboard/{_alias}",
+            response_class=HTMLResponse,
+            include_in_schema=False,
+        )
+        async def inspection_alias_page(
+            request: Request,
+            _target_name: str = _target,
+        ) -> Response:
+            return await render_page(request, _target_name)
 
     def disabled(request: Request) -> JSONResponse:
         return envelope(
@@ -175,6 +242,125 @@ def create_inspection_router(
             "days": max(1, min(days, 90)),
         }
 
+    def overview_meta(overview: Any) -> dict[str, Any]:
+        """Explicit top-level envelope: generated_at, freshness, quality.
+
+        The Dashboard API never returns naked KPIs: every response carries
+        when the value was computed, how fresh the source data is and which
+        quality/completeness flags apply.
+        """
+
+        generated_at = getattr(overview, "generated_at", None)
+        freshness: dict[str, Any] = {}
+        quality: dict[str, Any] = {}
+
+        if isinstance(overview, DeviceOverview):
+            latest_occurred = max(
+                (
+                    item.latest_occurred_at.astimezone(UTC)
+                    for item in overview.latest_by_device
+                    if item.latest_occurred_at is not None
+                ),
+                default=None,
+            )
+            freshness["latest_occurred_at"] = _json_safe(
+                latest_occurred
+            )
+            uptime = overview.uptime
+            quality["quality_flags"] = list(uptime.quality_flags)
+            quality["fetched_count"] = uptime.fetched_count
+            quality["invalid_row_count"] = uptime.invalid_row_count
+            quality["duplicate_event_count"] = uptime.duplicate_event_count
+            quality["complete"] = uptime.invalid_row_count == 0
+        elif isinstance(overview, MediaOverview):
+            freshness["latest_uploaded_at"] = _json_safe(
+                overview.latest_uploaded_at
+            )
+            freshness["latest_created_at"] = _json_safe(
+                overview.latest_created_at
+            )
+            media = overview.media
+            quality["quality_flags"] = list(media.quality_flags)
+            quality["fetched_count"] = media.fetched_count
+            quality["records_total"] = media.records_total
+            quality["invalid_row_count"] = media.invalid_row_count
+            quality["partial"] = media.partial
+            quality["complete"] = not media.partial
+        elif isinstance(overview, RealtimeOverview):
+            freshness["latest_closed_at"] = _json_safe(
+                overview.latest_closed_at
+            )
+            aggregation = overview.aggregation
+            quality["quality_flags"] = list(aggregation.quality_flags)
+            quality["event_count"] = aggregation.event_count
+            quality["duplicate_event_count"] = (
+                aggregation.duplicate_event_count
+            )
+            quality["invalid_event_count"] = aggregation.invalid_event_count
+            quality["conflicting_stream_count"] = (
+                aggregation.conflicting_stream_count
+            )
+            quality["partial"] = aggregation.partial
+            quality["complete"] = not aggregation.partial
+        elif isinstance(overview, AlarmOverview):
+            freshness["latest_occurred_at"] = _json_safe(
+                overview.latest_occurred_at
+            )
+            aggregation = overview.aggregation
+            quality["quality_flags"] = list(aggregation.quality_flags)
+            quality["alarm_count"] = aggregation.alarm_count
+            quality["duplicate_row_count"] = (
+                aggregation.duplicate_row_count
+            )
+            quality["conflicting_record_count"] = (
+                aggregation.conflicting_record_count
+            )
+            quality["partial"] = aggregation.partial
+            quality["complete"] = not aggregation.partial
+        elif isinstance(overview, LocationOverview):
+            latest_gps = max(
+                (
+                    metric.last_gps_at
+                    for metric in overview.aggregation.devices
+                ),
+                default=None,
+            )
+            freshness["latest_gps_at"] = _json_safe(latest_gps)
+            aggregation = overview.aggregation
+            quality["quality_flags"] = list(aggregation.quality_flags)
+            quality["source_event_count"] = (
+                aggregation.source_event_count
+            )
+            quality["included_event_count"] = (
+                aggregation.included_event_count
+            )
+            quality["invalid_event_count"] = aggregation.invalid_event_count
+            quality["partial"] = aggregation.partial
+            quality["complete"] = not aggregation.partial
+        elif isinstance(overview, DataQualityOverview):
+            freshness["scope_start"] = _json_safe(overview.scope_start)
+            freshness["scope_end"] = _json_safe(overview.scope_end)
+            quality["quality_flag_counts"] = list(
+                overview.quality_flag_counts
+            )
+            quality["total_rows"] = overview.total_rows
+
+        coverage = getattr(overview, "coverage", None)
+        return {
+            "generated_at": (
+                _json_safe(generated_at)
+                if generated_at is not None
+                else None
+            ),
+            "freshness": freshness,
+            "quality": quality,
+            "coverage": (
+                _json_safe(coverage)
+                if coverage is not None
+                else None
+            ),
+        }
+
     @router.get("/api/v2/inspection/devices")
     async def inspection_devices(
         request: Request,
@@ -183,8 +369,9 @@ def create_inspection_router(
         days: int = Query(7, ge=1, le=90),
         device: str = Query("", max_length=64),
     ) -> JSONResponse:
-        if not settings.feature_inspection_v2:
-            return disabled(request)
+        blocked = await data_gate(request)
+        if blocked is not None:
+            return blocked
         if service is None:
             return store_unavailable(request)
         scope = parse_scope(
@@ -201,6 +388,7 @@ def create_inspection_router(
             start=scope_start,
             end=scope_end,
             device_ids=device_ids,
+            requested_window_days=days,
         )
         return envelope(
             request,
@@ -208,6 +396,7 @@ def create_inspection_router(
                 "source": "inspection_store",
                 "store_configured": True,
                 "scope": scope_payload(scope_start, scope_end, days),
+                "meta": overview_meta(overview),
                 "overview": _json_safe(overview),
             },
         )
@@ -220,8 +409,9 @@ def create_inspection_router(
         end: str | None = Query(None),
         days: int = Query(7, ge=1, le=90),
     ) -> JSONResponse:
-        if not settings.feature_inspection_v2:
-            return disabled(request)
+        blocked = await data_gate(request)
+        if blocked is not None:
+            return blocked
         if service is None:
             return store_unavailable(request)
         normalized_device = device_id.strip()
@@ -262,8 +452,9 @@ def create_inspection_router(
         days: int = Query(7, ge=1, le=90),
         device: str = Query("", max_length=64),
     ) -> JSONResponse:
-        if not settings.feature_inspection_v2:
-            return disabled(request)
+        blocked = await data_gate(request)
+        if blocked is not None:
+            return blocked
         if service is None:
             return store_unavailable(request)
         scope = parse_scope(
@@ -279,6 +470,7 @@ def create_inspection_router(
             start=scope_start,
             end=scope_end,
             device_ids=_device_ids(device),
+            requested_window_days=days,
         )
         return envelope(
             request,
@@ -286,6 +478,7 @@ def create_inspection_router(
                 "source": "inspection_store",
                 "store_configured": True,
                 "scope": scope_payload(scope_start, scope_end, days),
+                "meta": overview_meta(overview),
                 "overview": _json_safe(overview),
             },
         )
@@ -299,8 +492,9 @@ def create_inspection_router(
         device: str = Query("", max_length=64),
         user: str = Query("", max_length=64),
     ) -> JSONResponse:
-        if not settings.feature_inspection_v2:
-            return disabled(request)
+        blocked = await data_gate(request)
+        if blocked is not None:
+            return blocked
         if service is None:
             return store_unavailable(request)
         scope = parse_scope(
@@ -317,6 +511,7 @@ def create_inspection_router(
             end=scope_end,
             device_ids=_device_ids(device),
             usernames=_ids(user),
+            requested_window_days=days,
         )
         runtime = None
         if realtime_manager is not None:
@@ -354,6 +549,7 @@ def create_inspection_router(
                 "source": "inspection_store",
                 "store_configured": True,
                 "scope": scope_payload(scope_start, scope_end, days),
+                "meta": overview_meta(overview),
                 "overview": _json_safe(overview),
                 "runtime": runtime,
             },
@@ -367,8 +563,9 @@ def create_inspection_router(
         days: int = Query(7, ge=1, le=90),
         device: str = Query("", max_length=64),
     ) -> JSONResponse:
-        if not settings.feature_inspection_v2:
-            return disabled(request)
+        blocked = await data_gate(request)
+        if blocked is not None:
+            return blocked
         if service is None:
             return store_unavailable(request)
         scope = parse_scope(
@@ -384,6 +581,7 @@ def create_inspection_router(
             start=scope_start,
             end=scope_end,
             device_ids=_device_ids(device),
+            requested_window_days=days,
         )
         return envelope(
             request,
@@ -391,6 +589,7 @@ def create_inspection_router(
                 "source": "inspection_store",
                 "store_configured": True,
                 "scope": scope_payload(scope_start, scope_end, days),
+                "meta": overview_meta(overview),
                 "overview": _json_safe(overview),
             },
         )
@@ -403,8 +602,9 @@ def create_inspection_router(
         days: int = Query(7, ge=1, le=90),
         device: str = Query("", max_length=64),
     ) -> JSONResponse:
-        if not settings.feature_inspection_v2:
-            return disabled(request)
+        blocked = await data_gate(request)
+        if blocked is not None:
+            return blocked
         if service is None:
             return store_unavailable(request)
         scope = parse_scope(
@@ -420,6 +620,7 @@ def create_inspection_router(
             start=scope_start,
             end=scope_end,
             device_ids=_device_ids(device),
+            requested_window_days=days,
         )
         return envelope(
             request,
@@ -427,6 +628,7 @@ def create_inspection_router(
                 "source": "inspection_store",
                 "store_configured": True,
                 "scope": scope_payload(scope_start, scope_end, days),
+                "meta": overview_meta(overview),
                 "overview": _json_safe(overview),
             },
         )
@@ -439,8 +641,9 @@ def create_inspection_router(
         days: int = Query(7, ge=1, le=90),
         device: str = Query("", max_length=64),
     ) -> JSONResponse:
-        if not settings.feature_inspection_v2:
-            return disabled(request)
+        blocked = await data_gate(request)
+        if blocked is not None:
+            return blocked
         if service is None:
             return store_unavailable(request)
         scope = parse_scope(
@@ -463,6 +666,42 @@ def create_inspection_router(
                 "source": "inspection_store",
                 "store_configured": True,
                 "scope": scope_payload(scope_start, scope_end, days),
+                "meta": overview_meta(overview),
+                "overview": _json_safe(overview),
+            },
+        )
+
+    @router.get("/api/v2/inspection/flights-tasks")
+    async def inspection_flights_tasks(
+        request: Request,
+        date: str | None = Query(None, max_length=16),
+    ) -> JSONResponse:
+        blocked = await data_gate(request)
+        if blocked is not None:
+            return blocked
+        if service is None:
+            return store_unavailable(request)
+        scope_date: dt.date | None = None
+        if date:
+            try:
+                scope_date = dt.date.fromisoformat(date)
+            except ValueError:
+                return invalid_scope(
+                    request,
+                    "date must be YYYY-MM-DD.",
+                )
+        overview = await service.flights_tasks_overview(
+            scope_date=scope_date,
+            business_client_cookie=request.headers.get("cookie", ""),
+        )
+        return envelope(
+            request,
+            {
+                "source": "business_reference",
+                "store_configured": True,
+                "scope": {
+                    "date": overview.scope_date.isoformat(),
+                },
                 "overview": _json_safe(overview),
             },
         )
@@ -499,6 +738,8 @@ def _json_safe(value: Any) -> Any:
         value = asdict(value)
     if isinstance(value, dt.datetime):
         return value.isoformat().replace("+00:00", "Z")
+    if isinstance(value, dt.date):
+        return value.isoformat()
     if isinstance(value, dict):
         return {key: _json_safe(item) for key, item in value.items()}
     if isinstance(value, (list, tuple)):
