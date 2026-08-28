@@ -467,6 +467,102 @@ Versioned migration draft:
 
 * `mature-modernization/v2/migrations/0001_inspection_history.sql`
 
+## 12. Inspection business data model (planned, M4 P3)
+
+Status: `PLANNED / NOT IMPLEMENTED`. This defines the long-term direction of
+M4 (registered 2026-08-16); it does not change the active `M4 P2.5`
+execution and is not implemented before `P3`.
+
+### 12.1 Relationship model
+
+```text
+Inspector / User
+    ↓ Inspection
+    ↓ Device
+    ↓ Realtime / Historical Video
+```
+
+Associated dimensions: Aircraft, Location / Station, Flight, Maintenance
+Task, Issue, Time. A business record links:
+
+person → inspected device/video → aircraft → station/location → flight →
+maintenance task → has_issue (yes/no) → issue content → occurred/inspected
+time.
+
+### 12.2 Aircraft / flight / station / maintenance-task sources
+
+* Source of truth: existing `Flights` and `Routine Tasks` interfaces.
+* Standardize (evidence-based): `aircraft_no`, `flight_no`, `station`,
+  `city/airport`, `task_id`, `task_type`, `task_name`, `task_status`,
+  `planned_start`, `planned_end`, `actual_start`, `actual_end`,
+  `department`, `team`, `related_device` (only if the upstream truly
+  provides it), other stable business identity.
+* Every field is classified `AVAILABLE` / `DERIVABLE` / `RESTRICTED` /
+  `NOT_AVAILABLE` / `UNKNOWN`; relations are never auto-generated from page
+  display, file names, time proximity or guesses.
+* Routine Task is the primary candidate for aircraft/station/flight/task
+  context; absent fields are not synthesized into source truth.
+
+### 12.3 InspectionRecord (planned table)
+
+```text
+inspection_id
+inspector_user_id, inspector_username      (server-side from CHA session)
+device_id
+realtime_session_id, realtime_view_event_id
+media_file_id (optional)
+aircraft_no
+routine_task_id (optional), routine_task_source_id (optional)
+maintenance_task_text
+flight_no (optional)
+station, location_text
+inspection_started_at, inspection_ended_at, inspection_duration_seconds
+has_issue, issue_type, issue_level, issue_description
+remark
+status (DRAFT / SUBMITTED / CORRECTED)
+created_at, created_by, updated_at, updated_by, submitted_at
+```
+
+### 12.4 Field-source classification
+
+* `A system auto-generated`: account, device, session, stream, start/end
+  times, duration, first-frame result — not forgeable by ordinary users.
+* `B upstream business interface`: aircraft, flight, station, routine task,
+  maintenance task — selected/linked from Flights/Routine Tasks, retaining
+  `source`, `source_id`, `source_updated_at`, `association_method`.
+* `C inspector-filled`: has_issue, issue_type/level/description, remark.
+
+### 12.5 Association method
+
+`USER_CONFIRMED` / `SOURCE_DIRECT` / `MANUAL_ENTRY` / `DERIVED` / `UNKNOWN`.
+`DERIVED` is never displayed as `CONFIRMED`. P3 first release uses
+system-provided candidates + human confirmation; manual entry is a fallback.
+
+### 12.6 Location separation
+
+Business location (`station`/`airport`/`city`) and device location
+(GPS/device location) are distinct fields. A station-vs-GPS comparison may be
+displayed later, but no "location anomaly" is auto-classified before business
+rules and coordinate-system verification.
+
+### 12.7 Issue record
+
+`has_issue` true/false; when true, `issue_type` / `issue_level` /
+`issue_description` must be storable. Later extensions
+(`issue_occurred_at`, `video_offset_seconds`, `snapshot_reference`) are out of
+scope for `P2.5`.
+
+### 12.8 Authorization and audit
+
+* AEE login success is not CHA access. `P3` introduces a CHA authorized user
+  list (`enabled=true`) as the access boundary; `inspector_*` is determined by
+  the CHA server-side session.
+* Inspection records are formal business records: no silent overwrite; retain
+  `created_by/at`, `updated_by/at`; state `DRAFT`/`SUBMITTED`/`CORRECTED`;
+  any modification of a submitted record leaves a correction/audit trace.
+* RealtimeViewEvent and InspectionRecord stay separate tables; an
+  InspectionRecord may reference one or more RealtimeViewEvents.
+
 The draft creates five tables: `device_status_events`,
 `device_location_events`, `media_files`, `realtime_view_events` and
 `alarm_events`, with identity/index definitions documented in

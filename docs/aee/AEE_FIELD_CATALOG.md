@@ -84,6 +84,7 @@ listed below.
 | `deviceName`, `devName` | device name | AVAILABLE | may be filled from catalog |
 | `title`, `fileName`, `name`, `fileTitle` | file title | AVAILABLE | AEE page uses `title`; Legacy has fallbacks |
 | `startTime`, `fileTime`, `beginTime` | create/shoot time | AVAILABLE | LIVE VERIFIED non-null business-local times; `startTime/fileTime` equal in observed rows |
+| `endTime`, `finishTime` | capture end time | AVAILABLE | LIVE VERIFIED non-null; equals `startTime` + `duration` in observed rows (e.g. 04:11:33 + 301s → 04:16:33) |
 | `uploadTime`, `upLoadTime`, `endTime` | upload/end time | AVAILABLE | LIVE VERIFIED non-null; `upLoadTime` observed minutes after capture (upload lag) |
 | `fileSize`, `fileLen`, `size` | size | AVAILABLE | LIVE VERIFIED: `fileLen` is bytes (e.g. 187109839 for a 301s video) |
 | `duration`, `videoTime` | duration | AVAILABLE | LIVE VERIFIED: raw value is seconds for video (e.g. 301) and audio (e.g. 18); non-video duration treated as N/A |
@@ -148,6 +149,17 @@ Current CHA normalization boundary:
   explicit restricted-data decision to enter the normalized object;
 * normalization is implemented and tested but is not yet persisted, exposed
   through an API or connected to production ingestion.
+
+Epoch-zero sentinel note (LIVE VERIFIED 2026-08-16):
+
+* a small number of `RecordFileList` rows carry `startTime/fileTime` equal to
+  `1970-01-01 08:00:00` (business-local, i.e. epoch-zero UTC) as a
+  missing-capture-time sentinel;
+* the normalizer maps this observed sentinel to `None` for
+  `created_at_source`/`end_at_source`/`uploaded_at_source` and records
+  `epoch_zero_source_time_ignored`, so range queries and PostgreSQL indexes
+  are not polluted; the row remains queryable by its valid upload time;
+* this is an observed source behavior, not a guessed rule.
 
 ## 5. Realtime fields
 

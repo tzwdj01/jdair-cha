@@ -63,6 +63,7 @@ the required source events. It does not mean the value already exists.
 | device name | AVAILABLE | row/catalog | normalized where possible | do not use name as identity |
 | upload time | AVAILABLE | `uploadTime/upLoadTime/endTime` | normalized UTC contract; not persisted | LIVE VERIFIED: `upLoadTime` non-null, observed minutes after capture (upload lag) |
 | create/shoot time | AVAILABLE | `startTime/fileTime/beginTime` or filename | verified field aliases normalized; no filename inference in M4 contract | LIVE VERIFIED: `startTime/fileTime` non-null and equal in observed rows |
+| end time | AVAILABLE | `endTime/finishTime` | normalized as `end_at_source` (contract + migration added) | LIVE VERIFIED: `endTime` non-null and equals capture start + duration (e.g. 04:11:33 + 301s → 04:16:33) |
 | duration | AVAILABLE | `duration/videoTime` | normalized as seconds for video only | LIVE VERIFIED: raw value is seconds (e.g. 301 video, 18 audio); preserve raw seconds |
 | size | AVAILABLE | `fileSize/fileLen/size` | normalized as bytes | LIVE VERIFIED: `fileLen` is bytes (e.g. 187109839); no display-unit rounding in storage |
 | file type | AVAILABLE | AEE `fType`/`lType` | raw code normalized in application contract | LIVE VERIFIED: `fType` 1/2/3 = image/audio/video (16/6/689 in window); code 4 remains static-only |
@@ -165,6 +166,50 @@ CHA can begin collecting its own explicitly scoped events prospectively.
 | flight video coverage rate | DERIVABLE | normalized relations | current Dashboard returns `None` | define numerator/denominator |
 | task video coverage rate | DERIVABLE | normalized relations | current Dashboard returns `None` | define numerator/denominator |
 
+### 8.1 Flight row fields (LIVE VERIFIED 2026-08-16, authorized CHA session)
+
+`/api/flights` (same-origin, read-only) returned `total=39` for 2026-08-16.
+Row fields observed live:
+
+| Field | Status | Notes |
+| --- | --- | --- |
+| `flightId` | AVAILABLE | stable source id |
+| `acno` | AVAILABLE | aircraft number |
+| `flightNo` | AVAILABLE | flight number |
+| `flightDate` / `sta` / `std` / `etd` / `atd` / `eta` / `ata` | AVAILABLE | planned/estimated/actual times |
+| `dep3code` / `arr3code` | AVAILABLE | city/airport display (business location) |
+| `departureAirport` / `arrivalAirport` | AVAILABLE | airport codes (ZGSZ/ZBAD) |
+| `status` | AVAILABLE | flight status label (code map PARTIAL) |
+| `dorI` | PARTIAL / UNKNOWN | domestic/international marker |
+| `focUser` | RESTRICTED | operator reference when populated |
+| `dd` / `fc` / `nonWork` | UNKNOWN / PARTIAL | codes |
+
+### 8.2 Routine-task row fields (LIVE VERIFIED 2026-08-16)
+
+`/api/routine-tasks` returned `total=48` for 2026-08-16. Row fields observed
+live:
+
+| Field | Status | Notes |
+| --- | --- | --- |
+| `taskid` | AVAILABLE | stable task source id |
+| `acno` | AVAILABLE | aircraft number |
+| `taskType` / `taskTypeName` | AVAILABLE | task type code + label |
+| `tasksts` / `taskstsName` | AVAILABLE | task status code + label (code map partial) |
+| `bay` | AVAILABLE | bay / station-like |
+| `startPlanDate` | AVAILABLE | planned start |
+| `outFlightNo` / `outDate` / `outDateType` | AVAILABLE | outbound flight + time (date-type map partial) |
+| `inFlightNo` / `inDate` / `inDateType` | AVAILABLE | inbound flight + time (nullable) |
+| `outFlight` / `inFlight` | AVAILABLE | route city display (business location) |
+| `acType` / `engType` | AVAILABLE | aircraft/engine type |
+| `flightDate` / `cobt` | AVAILABLE / PARTIAL | task flight date / pushback time |
+| `workPackage` | PARTIAL / UNKNOWN | work package |
+| `dd` / `fc` / `nonWork` / `doneNonWork` / `repeatWork` | UNKNOWN / PARTIAL | codes |
+| `alarmCount` / `oxygenT` / `oxygenP` / `oxygenPb` / `oxygenY` | UNKNOWN / PARTIAL | operational codes |
+| `fxWorker` / `fxWorkerEmp` / `wxWorker` / `wxWorkerEmp` | RESTRICTED | worker names + employee numbers (not persisted) |
+
+Inspection candidate service (`InspectionBusinessCandidateService`) consumes
+the live fields above (SOURCE_DIRECT only; DERIVED remains auxiliary).
+
 ## 9. Data availability decisions
 
 1. Current online state is `AVAILABLE`. AEE online transition rows are also an
@@ -183,3 +228,8 @@ CHA can begin collecting its own explicitly scoped events prospectively.
    activity remains `UNKNOWN`.
 6. Missing values remain unknown/null. They must not be converted to zero for
    visual convenience.
+7. AEE data-API authentication is **TOKEN-ONLY** (live verified 2026-08-16):
+   a request carrying only the custom `token` header and no Cookie returns
+   `error=200` on DevOnlineList/RecordFileList; without the header it returns
+   `error=333`. CHA's server-side token provider must keep the token server-
+   side only; token lifetime/refresh still require validation.
