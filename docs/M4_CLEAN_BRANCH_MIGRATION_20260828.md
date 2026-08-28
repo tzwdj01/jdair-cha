@@ -49,6 +49,12 @@ The clean branch intentionally does **not** retain the original 48-commit
 history. Approved final-tree sanitization replaces environment-specific
 infrastructure literals with safe documentation/test placeholders.
 
+During the final clean-tree audit, six archived legacy release snapshots were
+also found to contain a non-empty fallback password value. Their fallback is
+now empty and the snapshots continue to read credentials only from the runtime
+environment. This is a security-only migration difference; it does not modify
+any production release or deployment state.
+
 ## Verification Rule
 
 The authoritative clean branch head is read from Git after the final migration

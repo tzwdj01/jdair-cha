@@ -72,7 +72,7 @@ Use only these labels: `COMPLETED / VERIFIED`, `COMPLETED / UNVERIFIED`,
 
 **ACTIVE PHASE: PHASE 6 — DASHBOARD CONSOLIDATION & CANARY HARDENING**
 
-**STATUS: IN PROGRESS / DASHBOARD CANARY NO-GO**
+**STATUS: IN PROGRESS / CLEAN-BRANCH VALIDATION**
 
 Phase 6 is limited to local hardening and evidence preparation:
 
@@ -100,11 +100,9 @@ Phase 6 is limited to local hardening and evidence preparation:
 ### BLOCKED
 
 - `M4 CLOSED`, broad user rollout, M5 and Legacy retirement are not authorized.
-- **CURRENT BLOCKER (2026-08-28):** the 48 unpushed commits contain 25
-  non-documentation infrastructure-address history hits. A local Git bundle
-  backup is required before any sanitation decision. Stop for
-  `OWNER ACTION REQUIRED — GIT HISTORY SANITIZATION DECISION`; never rewrite
-  history automatically.
+- An AuthorizedUser Dashboard Canary deployment remains separately authorized
+  work. The current clean-branch migration must be fully validated and pushed
+  before any deployment decision.
 
 ### AEE VERIFICATION REQUIRED
 
@@ -185,9 +183,9 @@ rollout by implication.
   files outside Git.
 - Run an address/sensitive-string audit for both tracked files and unpushed
   history before push.
-- If current files are clean but unpushed history needs a mass rewrite, make a
-  local bundle backup and stop for an owner decision. Do not force-push,
-  filter-repo or rebase dozens of commits automatically.
+- The original M4 local development branch and verified external bundle are
+  retained for recovery. Publish only the clean branch; do not force-push,
+  filter-repo or publish the historical development branch.
 - No production release/tag/merge is implied by a local Phase 6 commit.
 
 ---
@@ -217,15 +215,13 @@ permission to start M5.
 | 2026-08-28 | Read-only production feature/health observation recorded the current feature state above. No deployment or configuration change was made. |
 | 2026-08-28 | Local Phase 6 full validation: 301 tests passed, 2 isolated PostgreSQL rehearsal tests skipped, package content passed, current tracked-file secret/address scan passed. Production remains unchanged. |
 | 2026-08-28 | Unpushed-history audit: 48 commits ahead of the remote contain 25 non-documentation address hits. High-confidence key/Bearer/credential-URL scan found no hits. History sanitation requires owner approval; no rewrite, commit or push may proceed. |
+| 2026-08-28 | Owner authorized a clean-branch squash migration. The historical local branch and external recovery bundles were retained; the clean branch was rebuilt from the verified remote base with final-tree reconciliation and approved sanitization. |
 
 ---
 
 ## 11. Next Recommended Actions
 
-1. Create and verify a repository-external Git bundle of the current refs.
-2. Obtain `OWNER ACTION REQUIRED — GIT HISTORY SANITIZATION DECISION` before
-   any rebase, filter-repo, commit or push.
-3. After an owner-approved sanitation plan and a clean re-audit, create one
-   focused Phase 6 hardening commit and push it without deployment.
-4. Only after separate owner deployment approval, perform a controlled
+1. Complete clean-branch regression, package and security/address checks, then
+   push only `codex/m4-clean-phase6-20260828` without deployment.
+2. Only after separate owner deployment approval, perform a controlled
    AuthorizedUser Dashboard Canary and record real production evidence.
