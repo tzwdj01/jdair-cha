@@ -16,28 +16,29 @@ plans.
 
 ## 2. Current Production Baseline
 
-Production Preflight observation on **2026-08-30** before the newly authorized
-Phase 6 AuthorizedUser Dashboard Canary Retry:
+Production recovery evidence on **2026-08-30** after the authorized private
+PostgreSQL connectivity gate:
 
 | Item | Observed state |
 | --- | --- |
-| V2 health / live / ready | prior stable V2 release active; live and ready HTTP 200 |
-| Phase 6 V2 candidate | not rebuilt or deployed in this retry; the prior pool-failure candidate remains rolled back |
+| V2 health / live / ready | prior stable V2 release remains active; internal live and ready HTTP 200 |
+| Phase 6 V2 candidate | not rebuilt or deployed during recovery; the prior pool-failure candidate remains rolled back |
 | PostgreSQL client policy | protected V2 and scheduler runtime uses TLS-enforcing `sslmode=require` and `gssencmode=disable` |
-| Time synchronization | CHA node `chrony` is active with normal, low observed offsets; PostgreSQL-node current recheck was not reached after the connection stop gate |
-| Inspection PostgreSQL data | no mutation was made; current CHA application-equivalent fresh connection Preflight failed `0/3` |
+| Private PostgreSQL path | recovered: three fresh CHA application-equivalent connections completed `SELECT 1`; TLS was active on every validated connection |
+| Time synchronization | CHA and PostgreSQL nodes retain healthy `chrony`, normal leap status and low observed offsets |
+| Inspection PostgreSQL data | retained; the controlled scheduler cycle persisted through the existing native read-only path without duplicate identity groups |
 | Current stable V2 readiness PostgreSQL field | `not_enabled`; this is expected for the rolled-back stable release and is not proof that PostgreSQL data is absent |
-| M4 scheduler | safely stopped after a recent private PostgreSQL timeout/restart and the current `0/3` connection failure; no additional cycle was forced |
-| Production PostgreSQL | not modified; current reachability from the protected CHA runtime is blocked by fresh connection failures |
+| M4 scheduler | recovered and active under its existing systemd service; one controlled cycle passed before managed start, with no immediate PostgreSQL error or restart |
+| Production PostgreSQL | existing private listener restored through minimal cluster-to-Tailnet startup ordering; no public listener, data, schema or HBA change |
 | Legacy / Nginx / Realtime scope | unchanged by this retry; do not infer or alter Realtime allowlists from public feature responses |
 | Remote database backup | historical Master Plan records off-host backup PASS; it was not revalidated during this PG-blocked Preflight |
 
 The current operational state is safe but is **not** a successful Dashboard
 Canary. The prior V2 release, Legacy and Nginx remain active; the low-rate
-scheduler is deliberately stopped until private PostgreSQL connectivity is
-restored. Do not modify further protected production
-configuration, systemd, database, secret, current-symlink, firewall, or AEE
-settings without a new explicit owner authorization.
+scheduler is now active through systemd. No Candidate deployment,
+AuthorizedUser Dashboard Canary, access-policy mutation, database business-data
+change, Nginx change or AEE change occurred in this recovery. Do not make a
+further protected production change without a new explicit owner authorization.
 
 ---
 
@@ -77,6 +78,14 @@ Use only these labels: `COMPLETED / VERIFIED`, `COMPLETED / UNVERIFIED`,
   invocation. A manual one-cycle and the first systemd-managed cycle both
   completed DEVICE -> MEDIA -> ALARM with no timeout/restart loop. Unchanged
   device state did not create new `initial_snapshot` rows.
+- **Phase 6 private PostgreSQL recovery:** the first failing layer was a
+  loopback-only PostgreSQL listener caused by missing Tailnet service ordering
+  at cluster startup. The authorized minimal dependency drop-in restored the
+  existing private listener. Three protected, service-equivalent fresh
+  `SELECT 1` connections passed with TLS active; a single controlled scheduler
+  cycle was idempotent; and the existing systemd scheduler was recovered
+  active without immediate restart or PostgreSQL error. See
+  `docs/aee/M4_PHASE6_PRIVATE_PG_CONNECTIVITY_RECOVERY_20260830.md`.
 - **M4 Phase 6B local hardening:** production evidence and source tracing
   confirmed an application-side capacity bug: seven overview domains were
   launched together against a four-connection data pool whose psycopg2
@@ -118,34 +127,30 @@ Use only these labels: `COMPLETED / VERIFIED`, `COMPLETED / UNVERIFIED`,
 **ACTIVE PHASE: PHASE 6 — DASHBOARD CONSOLIDATION & CANARY HARDENING**
 
 **CURRENT SUBPHASE: AUTHORIZEDUSER DASHBOARD PRODUCTION CANARY RETRY —
-PREFLIGHT**
+RECOVERY GATE PASSED / DEPLOYMENT PENDING**
 
-**STATUS: BLOCKED — PRODUCTION PG CONNECTION STILL UNSTABLE**
+**STATUS: READY FOR CONTROLLED CANDIDATE DEPLOYMENT AND CANARY RETRY**
 
-Phase 6B remains `COMPLETED / VERIFIED` locally. The owner authorized the
-separate Canary Retry on 2026-08-30, but its mandatory Preflight found that
-three protected CHA application-equivalent PostgreSQL connection attempts all
-failed with `OperationalError`. A recent scheduler process had also failed on
-the same private path and restarted once. Per the approved failure policy, the
-scheduler was safely stopped and no Candidate was built or deployed.
+Phase 6B remains `COMPLETED / VERIFIED` locally. The 2026-08-30 Preflight
+connection stop gate has been resolved without an architecture change:
+PostgreSQL was configured for private access but started loopback-only because
+its cluster service lacked existing Tailnet startup ordering. The authorized
+minimal dependency drop-in restored the listener, followed by three protected
+TLS connections, one idempotent controlled scheduler cycle and a systemd
+managed-scheduler start. No Candidate package was rebuilt or deployed, and no
+Dashboard/AuthorizedUser Canary request was performed.
 
-### TODO — after the production PostgreSQL connection gate is restored
+### TODO — after the private PostgreSQL recovery gate
 
-1. Restore and demonstrate stable protected CHA → PostgreSQL connectivity using
-   the existing private/TLS-only architecture. Recheck current PostgreSQL-node
-   time synchronization before any Candidate deployment; do not introduce a
-   new proxy, public port or speculative infrastructure workaround.
-2. Re-run three application-equivalent fresh connections with TLS active. Only
-   after `3/3` pass may the scheduler recovery gate run: one controlled cycle,
-   then managed scheduler start with no restart/persistence loop.
-3. Rebuild the Candidate from the clean remote-tracked Phase 6B commit and
+1. On a separate explicit owner go-ahead, rebuild the Candidate from the clean
+   remote-tracked Phase 6B commit and
    confirm `RUNNING_RELEASE`, `RUNNING_COMMIT` and `PACKAGE_HASH` before
    browser/API validation.
-4. Obtain a lawful ordinary authenticated-but-not-AuthorizedUser test identity
+2. Obtain a lawful ordinary authenticated-but-not-AuthorizedUser test identity
    for the real `403` production gate. The enabled inspector may only be
    temporarily disabled if a future owner authorization explicitly accepts that
    reversible test mutation.
-5. Re-run the complete AuthorizedUser Dashboard Canary: anonymous `401`,
+3. Re-run the complete AuthorizedUser Dashboard Canary: anonymous `401`,
    ordinary/disabled `403`, enabled inspector/admin `200`, pool behavior,
    Dashboard cold/warm response time, PG -> API -> Dashboard reconciliation,
    and M2/Legacy regression.
@@ -153,9 +158,6 @@ scheduler was safely stopped and no Candidate was built or deployed.
 ### BLOCKED
 
 - `M4 CLOSED`, broad user rollout, M5 and Legacy retirement are not authorized.
-- **PRODUCTION PG CONNECTION STILL UNSTABLE:** the 2026-08-30 protected
-  application-equivalent Preflight was `0/3`; do not deploy the Candidate or
-  restart the scheduler until the private PostgreSQL connection gate passes.
 - Completion of the actual non-AuthorizedUser `403` gate requires a lawful,
   explicitly supplied test identity; do not enumerate AEE/MCS8 users or
   repurpose unrelated accounts.
@@ -190,11 +192,11 @@ do not invent upstream behavior.
 
 ## 5. Constraints / Non-goals
 
-This Phase must not:
+This recovery-complete Phase must not:
 
-- retry the Dashboard Canary or modify protected production environment,
-  systemd, Nginx, PostgreSQL, firewall, or AEE settings without explicit owner
-  approval;
+- deploy the Candidate, retry the Dashboard Canary, alter the protected
+  production environment, systemd, Nginx, PostgreSQL, firewall or AEE settings
+  without a new explicit owner instruction for that next gate;
 - introduce a second authentication system or complex RBAC;
 - add business KPIs, visual-dashboard redesign, new scheduler domains,
   automatic Flight/Routine matching, PTZ, Talkback, recording, 32 streams,
@@ -298,14 +300,15 @@ permission to start M5.
 | 2026-08-29 | The Phase 6 Dashboard probe then exposed a real candidate `psycopg2.pool.PoolError: connection pool exhausted`, an HTTP 500 on an inspection endpoint, and a readiness timeout. The candidate was rolled back; the prior V2 release is healthy and the low-rate scheduler remains active. See `docs/aee/M4_PHASE6_PG_RECOVERY_CANARY_20260829.md`. |
 | 2026-08-29 | Owner authorized Phase 6B local-only hardening. Source tracing confirmed `ThreadedConnectionPool` (not `SimpleConnectionPool`), one process-scoped four-connection data pool, a separate two-connection workflow pool, seven unbounded overview domains, non-waiting `getconn()`, and concurrent direct/readiness demand as the incident mechanism. No production deployment or state change is part of Phase 6B. |
 | 2026-08-30 | Owner authorized the Phase 6 AuthorizedUser Dashboard Canary Retry. Read-only Preflight confirmed the stable V2/Legacy/Nginx baseline, TLS-only PostgreSQL runtime policy and healthy CHA `chrony`; however, three protected application-equivalent PostgreSQL fresh connections failed with `OperationalError`. A recent scheduler timeout had already caused one systemd restart. The scheduler was safely stopped to prevent recurrence. No Candidate package/build/deployment, PostgreSQL mutation, network change or Dashboard/access test occurred. See `docs/aee/M4_PHASE6_CANARY_RETRY_PREFLIGHT_BLOCK_20260830.md`. |
+| 2026-08-30 | Authorized private PostgreSQL recovery found a cluster startup-order defect: PostgreSQL had the correct existing private listener configuration but started before its Tailnet address was ready and listened only on loopback. A minimal service dependency drop-in restored the private listener. Three fresh protected TLS connections passed; `chrony` remained healthy on both nodes; the existing controlled scheduler cycle passed without duplicate identities; and the systemd scheduler was recovered active with no immediate PostgreSQL failure or restart. No Candidate or Dashboard Canary ran. See `docs/aee/M4_PHASE6_PRIVATE_PG_CONNECTIVITY_RECOVERY_20260830.md`. |
 
 ---
 
 ## 11. Next Recommended Actions
 
-1. Restore and prove the existing private PostgreSQL connection path stable,
-   then recover the low-rate scheduler with the documented one-cycle gate.
-2. Re-run the already authorized AuthorizedUser Dashboard Canary from the clean
-   Phase 6B baseline only after the PostgreSQL Preflight passes.
+1. Preserve the recovered low-rate scheduler under natural production
+   observation; do not manufacture a long polling run.
+2. Await a distinct owner instruction to rebuild/deploy the clean Phase 6B
+   Candidate and execute the controlled AuthorizedUser Dashboard Canary.
 3. Obtain a lawful ordinary non-AuthorizedUser test account for the required
    real `403` access-control evidence.

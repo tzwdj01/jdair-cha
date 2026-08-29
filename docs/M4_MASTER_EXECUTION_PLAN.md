@@ -4,7 +4,7 @@ Date: `2026-08-18`
 
 Current governance correction: `2026-08-26` (reviewed `2026-08-28`)
 
-Status: `ACTIVE — PHASE 6 DASHBOARD CONSOLIDATION & CANARY HARDENING / CANARY NO-GO`
+Status: `ACTIVE — PHASE 6 DASHBOARD CONSOLIDATION & CANARY HARDENING / PRIVATE PG RECOVERY PASS / CANARY RETRY PENDING`
 
 本文件是 **M4 剩余阶段的单一执行路线图**。它保存详细执行顺序、验收标准、
 stop gates、deferred scope 与最终 M4 closure criteria。
@@ -20,6 +20,16 @@ stop gates、deferred scope 与最终 M4 closure criteria。
 > remains NO-GO until access control, connection pooling, readiness, package and
 > security-history gates pass. `docs/aee/M4_COMPLETION_REPORT_20260818.md` is
 > preserved as historical evidence, not current closure authority.
+
+> **Current operational correction (2026-08-30):** the Phase 6 private
+> PostgreSQL connection stop gate is now `PASS`. The existing cluster had
+> started loopback-only because it lacked Tailnet startup ordering; an
+> authorized minimal dependency drop-in restored its existing private listener.
+> Protected TLS `SELECT 1` passed `3/3`, the bounded scheduler gate passed and
+> the systemd scheduler is active. The Candidate remains undeployed and the
+> AuthorizedUser Dashboard Canary has not run; it requires a separate
+> controlled deployment instruction. See
+> `docs/aee/M4_PHASE6_PRIVATE_PG_CONNECTIVITY_RECOVERY_20260830.md`.
 
 ---
 
@@ -218,7 +228,7 @@ Canary 记录，未污染业务数据。备份链路今日 12:33 验证有效。
 * 设备最新快照：1 台设备真实掉线（transition 入库）。
 * CHA 资源：Mem 745Mi/1.9Gi、disk 25G/39G（68%）、swap 4G。
 * Aliyun PG：Mem 306Mi/1.6Gi、disk 5.7G/40G（16%）、load 0.00；
-  listener 仅 127.0.0.1:5432 + Aliyun Tailscale 内网 IP:5432，**公网 5432
+  listener 仅 loopback:5432 + Aliyun Tailscale 内网 IP:5432，**公网 5432
   未监听**（加固保持）。
 * V2 health：`/api/v2/health`、`/live`、`/ready` 均 200；v2 于 12:13 本地
   时间重启（uptime ~31min），重启后全部健康检查 200，无回归。
@@ -293,12 +303,12 @@ Canary 记录，未污染业务数据。备份链路今日 12:33 验证有效。
 
 ## 8. PHASE 6 — M4 P4 Dashboard Consolidation
 
-**Current status (governance correction effective 2026-08-26):**
-`IN PROGRESS / DASHBOARD CANARY NO-GO`. This phase is presently restricted to
-local hardening: unified CHA-login + AuthorizedUser enforcement, bounded
-PostgreSQL reuse, isolated concurrent overview aggregation, honest readiness,
-zero-failure tests, package verification and address/history audit. No
-production deployment or feature-flag change is implied.
+**Current status (operational correction effective 2026-08-30):**
+`IN PROGRESS / CANARY RETRY PENDING`. The local hardening gates are complete;
+the later private PostgreSQL listener stop gate is also complete. This phase
+now awaits only a separately controlled Candidate deployment and AuthorizedUser
+Dashboard Canary. No production Candidate deployment or feature-flag change is
+implied by this plan update.
 
 真实生产数据积累后进入 `M4 P4 — DASHBOARD CONSOLIDATION & OPERATIONAL
 ANALYTICS`（M4 最终核心产品阶段）。
@@ -461,15 +471,16 @@ production service 自然运行，下一次任务再读取历史结果。
 3. Inspection User Canary ✅ PASS (historical limited-canary evidence)
 4. Real Business Observation remains active naturally; do not manufacture long
    polling runs.
-5. **→ PHASE 6 Dashboard Consolidation & Canary Hardening — IN PROGRESS / NO-GO**
-6. → AuthorizedUser Dashboard Canary only after Phase 6 local acceptance and a
-   separate owner deployment authorization.
+5. **→ PHASE 6 Dashboard Consolidation & Canary Hardening — IN PROGRESS / CANARY RETRY PENDING**
+6. → AuthorizedUser Dashboard Canary only after the recovered scheduler remains
+   under normal observation and a separate owner deployment authorization.
 7. → M4 Final Acceptance / Closure only after a later owner authorization.
 
 **Current phase: PHASE 6 — Dashboard Consolidation & Canary Hardening.**
 
-**Current stop gate: no production deployment or M4 closure.**
+**Current stop gate: no Candidate deployment, Dashboard Canary or M4 closure
+without a separate owner instruction.**
 
-**Current next action: complete local access, pool, overview, readiness,
-package and security-history gates described in the 2026-08-26 governance
-correction.**
+**Current next action: await the next controlled Phase 6 Candidate deployment
+instruction; preserve normal scheduler observation without manufactured
+long-running tests.**
