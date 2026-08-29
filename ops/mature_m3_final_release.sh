@@ -102,10 +102,35 @@ rollback_on_error() {
 }
 trap 'rollback_on_error' ERR
 
+run_candidate_tests() {
+  # The production EnvironmentFile is intentionally rich in CHA/AEE/MCS8 and
+  # PostgreSQL settings.  The package test suite must run against its own
+  # defaults, rather than inheriting those live settings and turning a
+  # deterministic release check into a production-configuration check.
+  #
+  # Preserve PATH and generic test controls (used by the isolated rehearsal),
+  # but remove every supported runtime-configuration namespace in this
+  # subshell.  Nothing is changed in the parent deployment environment.
+  local test_home="${work_root}/.release-test-home"
+  install -d -m 0700 "$test_home"
+  (
+    while IFS='=' read -r variable_name _; do
+      case "$variable_name" in
+        CHA_*|PG*|DATABASE_URL|MCS8_*|AEE_*)
+          unset "$variable_name"
+          ;;
+      esac
+    done < <(env)
+    export HOME="$test_home"
+    "$venv_python" -m unittest discover -s tests -v
+  )
+}
+
 # Validate the extracted candidate with the exact interpreter used by the
 # production service. A test failure occurs before current is switched and
-# therefore must not restart the service.
-(cd "$work_root" && "$venv_python" -m unittest discover -s tests -v)
+# therefore must not restart the service.  This is deliberately isolated from
+# protected production runtime configuration.
+(cd "$work_root" && run_candidate_tests)
 
 test ! -e "$release_dir"
 install -d -m 0755 "$(dirname "$release_dir")"

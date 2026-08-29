@@ -51,6 +51,9 @@ class ReleaseToolingTests(unittest.TestCase):
             '"$venv_python" -m unittest discover -s tests -v',
             source,
         )
+        self.assertIn("run_candidate_tests()", source)
+        self.assertIn("CHA_*|PG*|DATABASE_URL|MCS8_*|AEE_*", source)
+        self.assertIn("protected production runtime configuration", source)
         self.assertNotIn("python3 -m unittest", source)
 
     def test_release_rolls_back_only_after_current_switch(self) -> None:
@@ -67,6 +70,8 @@ class ReleaseToolingTests(unittest.TestCase):
         self.assertIn("test-failure", source)
         self.assertIn("health-failure", source)
         self.assertIn("production_paths_touched", source)
+        self.assertIn("FAKE_EXPECT_TEST_ENV_SANITIZED", source)
+        self.assertIn('test -z "${CHA_PG_HOST:-}"', source)
         self.assertNotIn("/opt/jdair-cha", source)
 
 

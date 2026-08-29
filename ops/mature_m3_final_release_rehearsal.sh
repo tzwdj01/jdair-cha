@@ -76,6 +76,12 @@ prepare_scenario() {
 #!/usr/bin/env bash
 set -Eeuo pipefail
 printf '%s\n' "$*" >> "$FAKE_PYTHON_LOG"
+if [ "${FAKE_EXPECT_TEST_ENV_SANITIZED:-false}" = "true" ] \
+  && printf '%s\n' "$*" | grep -q -- '-m unittest'; then
+  test -z "${CHA_PG_HOST:-}"
+  test -z "${CHA_V2_AEE_USERNAME:-}"
+  test -z "${PGGSSENCMODE:-}"
+fi
 if [ "${FAKE_TEST_FAILURE:-false}" = "true" ] \
   && printf '%s\n' "$*" | grep -q -- '-m unittest'; then
   exit 42
@@ -93,7 +99,11 @@ run_release() {
   FAKE_SYSTEMCTL_LOG="${work_root}/${scenario}/systemctl.log" \
   FAKE_PYTHON_LOG="${work_root}/${scenario}/python.log" \
   FAKE_TEST_FAILURE="${FAKE_TEST_FAILURE:-false}" \
+  FAKE_EXPECT_TEST_ENV_SANITIZED=true \
   FAKE_HEALTH_STATUS="${FAKE_HEALTH_STATUS:-200}" \
+  CHA_PG_HOST="release-test-must-not-leak" \
+  CHA_V2_AEE_USERNAME="release-test-must-not-leak" \
+  PGGSSENCMODE=disable \
   CHA_M3_PACKAGE="$package" \
   CHA_M3_PACKAGE_SHA256="$package_sha" \
   CHA_V2_ROOT="${work_root}/${scenario}/v2" \
