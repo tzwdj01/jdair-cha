@@ -1,6 +1,6 @@
 # M4 Phase 6 — Production Private PostgreSQL Connectivity Recovery
 
-Date: `2026-08-30`  
+Date: `2026-08-30`
 Status: `PASS — SCHEDULER RECOVERED / ACTIVE`
 
 ## 1. Scope and Safety Boundary
