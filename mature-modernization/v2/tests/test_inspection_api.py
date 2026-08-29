@@ -24,7 +24,11 @@ from app.data.normalization import (
     normalize_media_files,
 )
 from app.data.realtime_views import build_realtime_view_event
-from app.data.store import MemoryInspectionRecordStore, MemoryInspectionStore
+from app.data.store import (
+    MemoryInspectionRecordStore,
+    MemoryInspectionStore,
+    PostgresPoolExhaustedError,
+)
 from app.services.business_candidates import (
     BusinessFlight,
     BusinessRoutineTask,
@@ -374,6 +378,75 @@ async def _seeded_service() -> InspectionDataService:
 
 
 class InspectionAPITests(unittest.IsolatedAsyncioTestCase):
+    async def test_system_version_exposes_non_secret_runtime_identity(self) -> None:
+        request = SimpleNamespace(
+            state=SimpleNamespace(request_id="test-runtime-identity")
+        )
+        main_module = _load_main_for_unit_test()
+        try:
+            with patch.object(
+                main_module,
+                "release_identity",
+                return_value={
+                    "running_release": "phase6-candidate",
+                    "running_commit": "0123456789abcdef",
+                    "package_hash": "package-test-hash",
+                },
+            ):
+                response = await main_module.version(request)
+        finally:
+            sys.modules.pop("app.main", None)
+
+        payload = json.loads(response.body)
+        self.assertEqual(
+            payload["data"]["running_release"],
+            "phase6-candidate",
+        )
+        self.assertEqual(
+            payload["data"]["running_commit"],
+            "0123456789abcdef",
+        )
+        self.assertEqual(payload["data"]["package_hash"], "package-test-hash")
+
+    async def test_pool_busy_inspection_route_returns_safe_503(self) -> None:
+        class _BusyService:
+            async def realtime_overview(self, **_kwargs):
+                raise PostgresPoolExhaustedError("driver detail must not leak")
+
+        main_module = _load_main_for_unit_test()
+        try:
+            self.assertIs(
+                main_module.app.exception_handlers[
+                    PostgresPoolExhaustedError
+                ],
+                main_module.postgresql_pool_exhausted,
+            )
+            app = FastAPI()
+            app.add_exception_handler(
+                PostgresPoolExhaustedError,
+                main_module.postgresql_pool_exhausted,
+            )
+            app.include_router(
+                create_inspection_router(
+                    _settings(True),
+                    _BusyService(),
+                    _envelope,
+                    access=_AllowAccess(),
+                )
+            )
+            response = await _request(
+                app,
+                "/api/v2/inspection/realtime?days=1",
+            )
+        finally:
+            sys.modules.pop("app.main", None)
+
+        payload = response.json()
+        self.assertEqual(response.status_code, 503)
+        self.assertFalse(payload["ok"])
+        self.assertEqual(payload["data"]["code"], "database_busy")
+        self.assertNotIn("driver detail", response.text)
+
     async def test_readiness_reports_inspection_pg_degraded_without_failing_legacy(
         self,
     ) -> None:

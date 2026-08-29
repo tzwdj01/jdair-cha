@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import hashlib
+import io
 import json
+import subprocess
 import tarfile
 from pathlib import Path
 
@@ -21,6 +24,50 @@ def should_package(path: Path, source: Path) -> bool:
     if path.name == ".env" or path.name.startswith(".env."):
         return False
     return True
+
+
+def source_commit(root: Path) -> str:
+    """Return a traceable, clean source commit without shipping Git metadata."""
+
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--verify", "HEAD"],
+            cwd=root,
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=3,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise SystemExit(
+            "unable to resolve the source commit for the release package"
+        ) from exc
+    commit = result.stdout.strip()
+    if not (
+        len(commit) == 40
+        and all(char in "0123456789abcdef" for char in commit)
+    ):
+        raise SystemExit("invalid source commit for the release package")
+
+    try:
+        status = subprocess.run(
+            ["git", "status", "--porcelain", "--untracked-files=normal"],
+            cwd=root,
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=3,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise SystemExit(
+            "unable to verify source cleanliness for the release package"
+        ) from exc
+    if status.stdout.strip():
+        raise SystemExit(
+            "refusing to package a dirty source tree; commit the intended "
+            "release first so COMMIT matches the artifact"
+        )
+    return commit
 
 
 def main() -> None:
@@ -102,8 +149,14 @@ def main() -> None:
         member.gid = 0
         member.uname = "root"
         member.gname = "root"
+        member.mtime = 0
+        member.mode = 0o755 if member.name.endswith(".sh") else 0o644
         return member
 
+    rollback_helper = root / "ops" / "rollback-v2.sh"
+    if not rollback_helper.is_file():
+        raise SystemExit("missing rollback helper: ops/rollback-v2.sh")
+    commit = source_commit(root)
     with tarfile.open(output, "w:gz", format=tarfile.PAX_FORMAT) as archive:
         for path in sorted(source.rglob("*")):
             if path.is_file() and should_package(path, source):
@@ -112,7 +165,34 @@ def main() -> None:
                     arcname=path.relative_to(source),
                     filter=normalize_member,
                 )
-    print(json.dumps({"package": str(output), "size": output.stat().st_size}))
+        archive.add(
+            rollback_helper,
+            arcname="ops/rollback-v2.sh",
+            recursive=False,
+            filter=normalize_member,
+        )
+        metadata = f"{commit}\n".encode("utf-8")
+        member = tarfile.TarInfo("COMMIT")
+        member.size = len(metadata)
+        member.uid = 0
+        member.gid = 0
+        member.uname = "root"
+        member.gname = "root"
+        member.mtime = 0
+        member.mode = 0o644
+        archive.addfile(member, io.BytesIO(metadata))
+
+    package_hash = hashlib.sha256(output.read_bytes()).hexdigest()
+    print(
+        json.dumps(
+            {
+                "package": str(output),
+                "size": output.stat().st_size,
+                "sha256": package_hash,
+                "commit": commit,
+            }
+        )
+    )
 
 
 if __name__ == "__main__":

@@ -104,6 +104,22 @@ def release_marker(name: str, default: str) -> str:
     return value or default
 
 
+def release_identity() -> dict[str, str]:
+    """Return non-secret runtime identity from the active release directory.
+
+    ``RELEASE_ROOT`` is resolved from the imported package path.  When
+    systemd starts V2 through the ``current`` symlink, ``__file__`` resolves
+    to the real release directory, so this reports the code actually running
+    rather than merely the mutable symlink target.
+    """
+
+    return {
+        "running_release": RELEASE_ROOT.name,
+        "running_commit": release_marker("COMMIT", "unknown"),
+        "package_hash": release_marker("PACKAGE_SHA256", "unknown"),
+    }
+
+
 @dataclass(frozen=True)
 class Settings:
     service_name: str

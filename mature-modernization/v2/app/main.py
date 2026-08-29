@@ -15,8 +15,8 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from .api.inspection import create_inspection_router
 from .api.inspection_access import InspectionAccess
 from .api.inspections import create_inspections_router
-from .config import Settings
-from .data.store import StoreViewEventSink
+from .config import Settings, release_identity
+from .data.store import PostgresPoolExhaustedError, StoreViewEventSink
 from .realtime.api import create_realtime_router
 from .realtime.session_manager import RealtimeSessionManager
 from .services.dashboard import (
@@ -259,6 +259,26 @@ async def unhandled_error(request: Request, _: Exception):
     )
 
 
+@app.exception_handler(PostgresPoolExhaustedError)
+async def postgresql_pool_exhausted(
+    request: Request,
+    _: PostgresPoolExhaustedError,
+):
+    """Fail bounded inspection reads honestly instead of returning a raw 500."""
+
+    return envelope(
+        request,
+        {
+            "code": "database_busy",
+            "message": (
+                "Inspection data is temporarily busy. Please retry shortly."
+            ),
+        },
+        ok=False,
+        status_code=503,
+    )
+
+
 @app.get("/api/v2/health", include_in_schema=False)
 async def health(request: Request):
     return envelope(
@@ -311,6 +331,7 @@ async def readiness(request: Request):
         inspection_record_store,
     )
     inspection_degraded = postgresql["status"] in {
+        "degraded",
         "misconfigured",
         "unavailable",
     }
@@ -424,6 +445,7 @@ async def version(request: Request):
             "version": settings.version,
             "build": settings.build,
             "environment": settings.environment,
+            **release_identity(),
         },
     )
 

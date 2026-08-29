@@ -1,6 +1,6 @@
 # CHA Video Record System Optimization — Active Task Goal
 
-Last updated: `2026-08-28`
+Last updated: `2026-08-29`
 
 ## 1. Overall Objective
 
@@ -16,27 +16,28 @@ plans.
 
 ## 2. Current Production Baseline
 
-Production observation on **2026-08-28** after a controlled Phase 6 Canary
-attempt and rollback:
+Read-only production observation on **2026-08-29** after the authorized
+PostgreSQL connection recovery, scheduler recovery, candidate retry, and
+safety rollback:
 
 | Item | Observed state |
 | --- | --- |
-| V2 health / live / ready | HTTP 200 |
-| `dashboard_v2` | enabled |
-| `inspection_v2` | enabled |
-| `realtime_readonly` | enabled |
-| `realtime_audio` / `realtime_control` / `account_pool_v2` | disabled |
-| `records_v2` | disabled |
-| Current readiness PostgreSQL field | reports `not_enabled` in the deployed release; this is a known observability gap, **not** proof that the production data store is absent |
-| Realtime rollout scope / allowlist | not inferred from the public feature response; do not change or guess it |
-| Phase 6 candidate | rolled back; it is not the active V2 release |
-| M4 scheduler | safely stopped after PostgreSQL connection timeouts caused a restart loop; existing PostgreSQL data was retained |
+| V2 health / live / ready | prior stable V2 release active; live and ready HTTP 200 |
+| Phase 6 V2 candidate | rolled back after a real `connection pool exhausted` Canary failure; it is not active |
+| PostgreSQL client policy | protected V2 and scheduler runtime uses TLS-enforcing `sslmode=require` and `gssencmode=disable` |
+| Time synchronization | both production nodes verified healthy through their existing `chrony` service; no manual time change was made |
+| Inspection PostgreSQL data | retained and receiving the approved low-rate native scheduler collection |
+| Current stable V2 readiness PostgreSQL field | `not_enabled`; this is expected for the rolled-back stable release and is not proof that PostgreSQL data is absent |
+| M4 scheduler | systemd-managed, active/healthy, low-rate/sequential, restart count zero; the latest observed cycle completed DEVICE → MEDIA → ALARM successfully |
+| Production PostgreSQL | service/readiness healthy; durable inspection data remains available to the scheduler |
+| Legacy / Nginx / Realtime scope | unchanged by this retry; do not infer or alter Realtime allowlists from public feature responses |
+| Remote database backup | `REMOTE BACKUP DESTINATION REQUIRED`; local disk is not an accepted sole production backup |
 
-The prior V2 release is active. Legacy, Nginx and currently enabled Realtime
-continue under their existing operational controls. No further production
+The current operational state is safe but is **not** a successful Dashboard
+Canary. The prior V2 release, Legacy, Nginx, and the low-rate scheduler remain
+under their existing controls. Do not modify further protected production
 configuration, systemd, database, secret, current-symlink, firewall, or AEE
-change may be made until the PostgreSQL connection-policy remediation below has
-explicit owner approval.
+settings without a new explicit owner authorization.
 
 ---
 
@@ -65,19 +66,50 @@ Use only these labels: `COMPLETED / VERIFIED`, `COMPLETED / UNVERIFIED`,
   The artifact test was repaired, then both source and extracted-package suites
   passed with no failures. The release helper and independent rollback wrapper
   were exercised during the controlled attempt.
+- Production time synchronization and the approved PostgreSQL client policy
+  were verified on both nodes. Repeated service-equivalent fresh connections
+  passed with PostgreSQL TLS active.
+- The Phase 6 candidate passed V2 live/ready and an enabled-inspector,
+  production-PG-backed device-read gate before the later pool failure.
 - Anonymous access to an Inspection data API returned `401`; no anonymous data
-  exposure was observed.
+  exposure was observed. An enabled inspector received `200`.
+- The scheduler kill switch was proven through an environment-only disabled
+  invocation. A manual one-cycle and the first systemd-managed cycle both
+  completed DEVICE -> MEDIA -> ALARM with no timeout/restart loop. Unchanged
+  device state did not create new `initial_snapshot` rows.
+- **M4 Phase 6B local hardening:** production evidence and source tracing
+  confirmed an application-side capacity bug: seven overview domains were
+  launched together against a four-connection data pool whose psycopg2
+  `getconn()` call is non-waiting. A simultaneous direct inspection read and
+  readiness probe could then receive a raw pool-exhaustion failure. The driver
+  pool is already `ThreadedConnectionPool`, not `SimpleConnectionPool`; the
+  defect was unbounded aggregation and missing application-level exhaustion
+  handling, not a thread-unsafe driver pool.
+- Phase 6B adds a process-scoped, bounded pool lease; a process-shared
+  two-domain overview limit that reserves two of the four data connections for
+  direct reads/readiness; fast `database_busy` degradation; bounded readiness;
+  release runtime identity; and a bounded rollback live-health retry. See
+  `docs/aee/M4_PHASE6B_POOL_CONCURRENCY_HARDENING_20260829.md`.
+- Phase 6B local validation passed: `315` source tests passed with `2`
+  explicit isolated-PostgreSQL skips and `0` failures; Python compile checks,
+  the Node realtime-runtime regression, a disposable rollback rehearsal, and
+  source release-tooling checks all passed. The final M4 package is built only
+  from a clean committed source tree so its runtime commit marker cannot
+  misidentify a dirty artifact.
 
 ### COMPLETED / UNVERIFIED
 
 - Historical M3 fullscreen user-activation evidence remains
   `COMPLETED / UNVERIFIED` by the approved M3 waiver.
-- The Phase 6 code was briefly deployed only for the controlled attempt and
-  then rolled back. Any claim that it is active in production is
-  `COMPLETED / UNVERIFIED` and false until a successful retry occurs.
-- Non-authorized/disabled `403`, enabled-inspector `200`, admin `200`,
-  PostgreSQL/API/Dashboard reconciliation, pool behavior, and performance
-  remain `COMPLETED / UNVERIFIED`; the attempt did not reach those gates.
+- The Phase 6 code was deployed for the controlled retry but rolled back after
+  a real candidate failure. Any claim that it is active in production is false
+  until a future successful retry.
+- Real authenticated-but-not-AuthorizedUser `403`, disabled-user `403`, and
+  admin `200` have not been completed in this retry. Do not simulate these
+  outcomes with arbitrary production identities.
+- Full Dashboard API cold/warm performance, candidate pool recovery behavior,
+  PostgreSQL -> API -> Dashboard reconciliation, and M2 compatibility were
+  not accepted. The browser probe exposed the blocking pool failure first.
 
 ### IN PROGRESS
 
@@ -85,48 +117,53 @@ Use only these labels: `COMPLETED / VERIFIED`, `COMPLETED / UNVERIFIED`,
 
 **ACTIVE PHASE: PHASE 6 — DASHBOARD CONSOLIDATION & CANARY HARDENING**
 
-**STATUS: BLOCKED / PRODUCTION POSTGRESQL CONNECTION POLICY DECISION REQUIRED**
+**CURRENT SUBPHASE: PHASE 6B — POSTGRESQL POOL / DASHBOARD CONCURRENCY
+HARDENING**
 
-Phase 6 implementation and clean-branch preparation are complete. The only
-active work is the blocked production-retry gate:
+**STATUS: COMPLETED / VERIFIED — READY FOR OWNER-AUTHORIZED DASHBOARD CANARY
+RETRY**
 
-1. obtain owner approval for a secure PostgreSQL client connection policy;
-2. verify time synchronization on both production nodes;
-3. after approval, validate one read-only app connection, bounded pool health,
-   and one scheduler cycle before any Dashboard Canary retry;
-4. re-run the full authorized-user access, data reconciliation, and
-   performance gates.
+The PostgreSQL client-negotiation/time-synchronization gate and the narrow
+Phase 6B pool/concurrency remediation are complete. The owner must now
+explicitly authorize a separate Dashboard Canary Retry. Phase 6B did not
+deploy, restart the normal scheduler, alter production PostgreSQL, or retry
+the Dashboard Canary.
 
-### TODO — only after the blocked production prerequisite is resolved
+### TODO — after explicit owner authorization for a Canary Retry
 
-- Owner-approved protected-environment change to a verified PostgreSQL
-  connection policy. The evidence supports TLS-enforcing `sslmode=require`;
-  do not silently apply a GSS workaround or weaken the private-network policy.
-- Restart and verify only the affected V2 and scheduler services.
-- Re-run the owner-authorized **AuthorizedUser Dashboard Canary**: anonymous
-  401; non-authorized/disabled 403; enabled inspector/admin 200; PostgreSQL
-  readiness; Dashboard response time; pool behavior; Legacy/Realtime
-  regression; and PG → API → Dashboard reconciliation.
-- Resume natural operational observation only after a successful retry. Do not
-  create artificial hours-long scheduler runs or expand product scope.
+1. Obtain explicit owner authorization for a new Phase 6 **Dashboard Canary
+   Retry**. Confirm the expected candidate `RUNNING_RELEASE`,
+   `RUNNING_COMMIT` and `PACKAGE_HASH` before browser/API validation.
+2. Obtain a lawful ordinary authenticated-but-not-AuthorizedUser test identity
+   for the real `403` production gate. The enabled inspector may only be
+   temporarily disabled if a future owner authorization explicitly accepts that
+   reversible test mutation.
+3. Re-run the complete AuthorizedUser Dashboard Canary: anonymous `401`,
+   ordinary/disabled `403`, enabled inspector/admin `200`, pool behavior,
+   Dashboard cold/warm response time, PG -> API -> Dashboard reconciliation,
+   and M2/Legacy regression.
+4. Resolve the off-host backup destination before claiming P3.2 Canary or M4
+   completion. Do not use the PostgreSQL system disk as the sole backup.
 
 ### BLOCKED
 
 - `M4 CLOSED`, broad user rollout, M5 and Legacy retirement are not authorized.
-- Production PostgreSQL client connections using the current `sslmode=prefer`
-  configuration time out although private TCP reachability is available. This
-  blocked both the Phase 6 candidate and the low-rate scheduler.
-- Both production nodes currently report `NTPSynchronized=no`; their
-  server-local dates require owner review before a transport-security decision.
-- The scheduler is intentionally inactive to prevent repeated MCS8 reads while
-  persistence cannot open a new PostgreSQL connection.
+- A production candidate retry remains blocked until an owner explicitly
+  authorizes that separate deployment/Canary operation. Phase 6B itself must
+  not perform it.
+- Completion of the actual non-AuthorizedUser `403` gate requires a lawful,
+  explicitly supplied test identity; do not enumerate AEE/MCS8 users or
+  repurpose unrelated accounts.
+- `REMOTE BACKUP DESTINATION REQUIRED` remains unresolved and prevents any
+  claim that P3.2 Canary or M4 is complete.
 
 ### AEE VERIFICATION REQUIRED
 
-No new AEE/MCS8/media behavior is in Phase 6 scope. Existing AEE/MCS8 unknowns
-(code maps, upstream behavior or device compatibility) remain reference-only
-and must follow `docs/codex/AEE_REFERENCE_IMPLEMENTATION.md` before any future
-media/data adapter change.
+No new AEE/MCS8/media protocol behavior is in this Phase 6 remediation scope.
+The running scheduler continues to use the already verified native MCS8
+read-only path. Any future AEE/MCS8/media behavior change remains
+`AEE VERIFICATION REQUIRED` and must follow
+`docs/codex/AEE_REFERENCE_IMPLEMENTATION.md` before implementation.
 
 ---
 
@@ -176,9 +213,18 @@ Phase 6 local acceptance requires:
   enabled inspector and admin paths across Dashboard/data/workflow routes;
 - pool reuse, `putconn`, rollback, broken-connection discard and `closeall`
   tests;
-- overview concurrency and per-domain failure-isolation tests;
-- readiness unit/integration tests for ready, misconfigured and unavailable
-  inspection PostgreSQL states;
+- a production-shape concurrent regression test covering overview + direct
+  inspection read + readiness against one small bounded pool, followed by a
+  recovery read proving no retained lease;
+- overview concurrency and per-domain failure-isolation tests, including
+  truthful `database_busy` degradation;
+- readiness unit/integration tests for ready, degraded, misconfigured and
+  unavailable inspection PostgreSQL states;
+- source and extracted-package verification that the runtime exposes
+  non-secret `RUNNING_RELEASE`, `RUNNING_COMMIT` and `PACKAGE_HASH`;
+- a disposable rollback rehearsal proving an initial listener-not-bound health
+  result retries within a bounded window and succeeds only after V2 is active
+  and `live` returns HTTP 200;
 - `git diff --check`, tracked-file secret/address scan, package build and
   package-content verification;
 - no accidental business/API contract regression.
@@ -211,14 +257,20 @@ first; no full rollout by implication.
 
 ## 9. Done Criteria for This Phase
 
-This Phase remains blocked until the PostgreSQL connection policy and time-sync
-review are resolved. After a successful authorized-user production Canary, it
-is eligible for the following conclusion only when every relevant acceptance
-item passes:
+The PostgreSQL connection-policy and time-synchronization gate is complete.
+Phase 6B is locally complete only when the production pool failure has a
+documented cause; the pool is thread-safe and process-scoped; overview
+concurrency is bounded; exhaustion degrades rather than cascades; readiness
+returns promptly and honestly; lifecycle, release identity and rollback retry
+rehearsals pass; and the clean branch is packaged/pushed.
+
+Even after Phase 6B passes, **Phase 6 itself remains pending** a separately
+authorized production Dashboard Canary Retry. It is eligible for the following
+broader conclusion only when every relevant Canary acceptance item passes:
 
 ```text
 M4 PHASE 6 CANARY HARDENING PASS
-READY FOR AUTHORIZEDUSER DASHBOARD CANARY DEPLOYMENT
+DASHBOARD CANARY READY FOR OWNER BUSINESS ACCEPTANCE
 ```
 
 It does **not** mean M4 Closed, a production deployment, a full-user rollout or
@@ -239,14 +291,19 @@ permission to start M5.
 | 2026-08-28 | Phase 6 candidate deployment attempted from the clean branch. The first run stopped before `current` changed because the production archive omitted source-only release-tooling scripts required by one test. The test was made artifact-aware, source and extracted-package tests passed, and the guarded deployment then completed. |
 | 2026-08-28 | Authenticated Dashboard/Inspection validation failed before the access/data gates: new PostgreSQL connections with the current `sslmode=prefer` timed out. The prior V2 release was restored with the prepared rollback wrapper. The scheduler exhibited the same timeout/restart loop and was safely stopped. See `docs/aee/M4_PHASE6_AUTHORIZEDUSER_DASHBOARD_CANARY_20260828.md`. |
 | 2026-08-28 | Read-only connection evidence: private TCP and PostgreSQL TLS handshake were reachable; `sslmode=require` and `sslmode=prefer` with GSS encryption disabled completed `SELECT 1`, while current `sslmode=prefer` timed out. Both production nodes reported unsynchronized NTP and server-local date drift requiring owner review. |
+| 2026-08-29 | Authorized recovery completed: both nodes' existing chrony time synchronization was healthy; protected V2/scheduler policy was set to `sslmode=require` plus `gssencmode=disable`; repeated service-equivalent TLS connections passed; minimal authorized inspection read passed; scheduler kill switch, controlled one-cycle, and managed service startup passed. |
+| 2026-08-29 | The Phase 6 Dashboard probe then exposed a real candidate `psycopg2.pool.PoolError: connection pool exhausted`, an HTTP 500 on an inspection endpoint, and a readiness timeout. The candidate was rolled back; the prior V2 release is healthy and the low-rate scheduler remains active. See `docs/aee/M4_PHASE6_PG_RECOVERY_CANARY_20260829.md`. |
+| 2026-08-29 | Owner authorized Phase 6B local-only hardening. Source tracing confirmed `ThreadedConnectionPool` (not `SimpleConnectionPool`), one process-scoped four-connection data pool, a separate two-connection workflow pool, seven unbounded overview domains, non-waiting `getconn()`, and concurrent direct/readiness demand as the incident mechanism. No production deployment or state change is part of Phase 6B. |
 
 ---
 
 ## 11. Next Recommended Actions
 
-1. Obtain an explicit owner decision for the protected PostgreSQL connection
-   policy and NTP remediation; do not guess or apply it automatically.
-2. Once approved, restore a stable V2/scheduler PostgreSQL connection using a
-   read-only probe and a single low-rate scheduler cycle.
-3. Re-run the AuthorizedUser Dashboard Canary from the clean branch and record
-   access, performance, pool, data reconciliation, and rollback evidence.
+1. Ask the owner to authorize a separate AuthorizedUser Dashboard Canary Retry
+   only after Phase 6B reports `READY FOR AUTHORIZEDUSER DASHBOARD CANARY
+   RETRY`.
+2. Obtain a lawful ordinary non-AuthorizedUser test account, then re-run the
+   entire authorized-user access, performance, reconciliation, and M2
+   compatibility matrix.
+3. Provide and validate an off-host PostgreSQL backup destination before any
+   P3.2/M4 completion claim.

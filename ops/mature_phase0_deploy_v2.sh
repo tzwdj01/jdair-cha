@@ -17,6 +17,38 @@ nginx_backup="/tmp/jdair-cha.conf.before-v2-${release_stamp}"
 env_backup="/tmp/jdair-cha-v2.env.before-${release_stamp}"
 previous_target=""
 service_existed="no"
+health_base="${CHA_V2_HEALTH_BASE:-http://127.0.0.1:8791}"
+health_attempts="${CHA_V2_HEALTH_ATTEMPTS:-12}"
+health_retry_seconds="${CHA_V2_HEALTH_RETRY_SECONDS:-0.5}"
+
+case "$health_attempts" in
+  ''|*[!0-9]*|0)
+    printf 'CHA_V2_HEALTH_ATTEMPTS must be a positive integer\n' >&2
+    exit 2
+    ;;
+esac
+
+wait_for_v2_live() {
+  attempt=1
+  while [ "$attempt" -le "$health_attempts" ]; do
+    service_state="$(systemctl is-active jdair-cha-v2.service 2>/dev/null || true)"
+    live_http="$(
+      curl -sS -o /dev/null -w '%{http_code}' --max-time 3 \
+        "${health_base}/api/v2/health/live" 2>/dev/null || true
+    )"
+    if [ "$service_state" = "active" ] && [ "$live_http" = "200" ]; then
+      printf 'V2_HEALTH_ATTEMPT=%s\n' "$attempt"
+      printf 'V2_LIVE_HTTP=%s\n' "$live_http"
+      return 0
+    fi
+    if [ "$attempt" -lt "$health_attempts" ]; then
+      sleep "$health_retry_seconds"
+    fi
+    attempt=$((attempt + 1))
+  done
+  printf 'V2 service did not become active with live HTTP 200 within bounded retry window\n' >&2
+  return 1
+}
 
 if [ -L "$current_link" ] || [ -e "$current_link" ]; then
   previous_target="$(readlink -f "$current_link" || true)"
@@ -41,6 +73,7 @@ restore_previous() {
   if [ -n "$previous_target" ] && [ -d "$previous_target" ]; then
     ln -sfn "$previous_target" "$current_link"
     systemctl restart jdair-cha-v2.service >/dev/null 2>&1
+    wait_for_v2_live >/dev/null 2>&1 || true
   elif [ "$service_existed" = "no" ]; then
     systemctl disable jdair-cha-v2.service >/dev/null 2>&1
     rm -f "$service_unit"
@@ -58,6 +91,7 @@ trap on_error ERR
 
 test -s "$package"
 tar -tzf "$package" >/dev/null
+package_hash="$(sha256sum "$package" | cut -d' ' -f1)"
 
 install -d -m 0755 -o jdair-demo -g jdair-demo \
   "$v2_root" "$v2_root/releases" "$v2_root/data"
@@ -72,12 +106,16 @@ fi
 mkdir -p "$release_dir"
 tar -xzf "$package" -C "$release_dir"
 chown -R jdair-demo:jdair-demo "$release_dir"
+printf '%s\n' "$package_hash" > "$release_dir/PACKAGE_SHA256"
+chown jdair-demo:jdair-demo "$release_dir/PACKAGE_SHA256"
 
 python3 -m compileall -q "$release_dir/app"
 release_version="$(tr -d '\r\n[:space:]' < "$release_dir/VERSION")"
 release_build="$(tr -d '\r\n[:space:]' < "$release_dir/BUILD" 2>/dev/null || printf 'unknown')"
 test -n "$release_version"
 test -n "$release_build"
+test -s "$release_dir/COMMIT"
+test -x "$release_dir/ops/rollback-v2.sh"
 
 if [ ! -x "$venv_dir/bin/python" ]; then
   python3 -m venv "$venv_dir"
@@ -244,21 +282,14 @@ if [ -n "$previous_target" ] && [ -d "$previous_target" ]; then
   cat > "$release_dir/rollback-to-previous.sh" <<EOF
 #!/usr/bin/env bash
 set -Eeuo pipefail
-previous_target="${previous_target}"
-previous_env="${previous_env_backup}"
-test -d "\$previous_target"
-test -f "\$previous_env"
-install -m 0600 "\$previous_env" /etc/jdair-cha/v2.env
-ln -sfn "\$previous_target" /opt/jdair-cha/v2/current
-systemctl restart jdair-cha-v2.service
-sleep 3
-test "\$(systemctl is-active jdair-cha-v2.service)" = "active"
-test "\$(systemctl is-active jdair-cha.service)" = "active"
-test "\$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 http://127.0.0.1:8791/api/v2/health)" = "200"
-grep -q "\"version\":\"\$(tr -d '\r\n[:space:]' < "\$previous_target/VERSION")\"" <(curl -sS --max-time 15 http://127.0.0.1:8791/api/v2/system/version)
-printf 'V2_ROLLBACK_TARGET=%s\n' "\$(readlink -f /opt/jdair-cha/v2/current)"
-printf 'V2_SERVICE=%s\n' "\$(systemctl is-active jdair-cha-v2.service)"
-printf 'LEGACY_SERVICE=%s\n' "\$(systemctl is-active jdair-cha.service)"
+CHA_V2_ROOT="/opt/jdair-cha/v2" \\
+CHA_V2_CURRENT="/opt/jdair-cha/v2/current" \\
+CHA_V2_ROLLBACK_TARGET="${previous_target}" \\
+CHA_V2_ENV_FILE="/etc/jdair-cha/v2.env" \\
+CHA_V2_ENV_BACKUP="${previous_env_backup}" \\
+CHA_V2_SERVICE="jdair-cha-v2.service" \\
+CHA_V2_HEALTH_BASE="${health_base}" \\
+exec "\$(dirname "\$0")/ops/rollback-v2.sh"
 EOF
   chmod 700 "$release_dir/rollback-to-previous.sh"
   chown jdair-demo:jdair-demo "$release_dir/rollback-to-previous.sh"
@@ -267,7 +298,7 @@ fi
 systemctl daemon-reload
 systemctl enable jdair-cha-v2.service
 systemctl restart jdair-cha-v2.service
-sleep 3
+wait_for_v2_live
 
 test "$(systemctl is-active jdair-cha-v2.service)" = "active"
 direct_http="$(curl -sS -o /tmp/jdair-cha-v2-direct.json -w '%{http_code}' \
@@ -360,13 +391,15 @@ if [ "$expected_dashboard" = "true" ]; then
 fi
 
 release_hash="$(find "$release_dir" -type f -print0 | sort -z | xargs -0 sha256sum | sha256sum | cut -d' ' -f1)"
-package_hash="$(sha256sum "$package" | cut -d' ' -f1)"
 
 printf 'RELEASE_NAME=%s\n' "$release_name"
 printf 'RELEASE_DIR=%s\n' "$release_dir"
 printf 'PREVIOUS_TARGET=%s\n' "$previous_target"
 printf 'CURRENT_TARGET=%s\n' "$(readlink -f "$current_link")"
+printf 'RUNNING_RELEASE=%s\n' "$(basename "$(readlink -f "$current_link")")"
+printf 'RUNNING_COMMIT=%s\n' "$(tr -d '\r\n[:space:]' < "$release_dir/COMMIT")"
 printf 'PACKAGE_SHA256=%s\n' "$package_hash"
+printf 'PACKAGE_HASH=%s\n' "$(tr -d '\r\n[:space:]' < "$release_dir/PACKAGE_SHA256")"
 printf 'RELEASE_TREE_SHA256=%s\n' "$release_hash"
 printf 'V2_SERVICE=%s\n' "$(systemctl is-active jdair-cha-v2.service)"
 printf 'LEGACY_SERVICE=%s\n' "$(systemctl is-active jdair-cha.service)"

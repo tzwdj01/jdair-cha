@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import asyncio
+import time
 import unittest
 from types import SimpleNamespace
 
+from app.data.store import PostgresPoolExhaustedError
 from app.services.inspection_readiness import inspection_postgresql_readiness
 
 
@@ -74,6 +77,31 @@ class InspectionPostgresqlReadinessTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(raised_state["status"], "unavailable")
         self.assertNotIn("database down", str(raised_state))
+
+    async def test_reports_degraded_quickly_for_pool_busy_or_timeout(self) -> None:
+        busy_state = await inspection_postgresql_readiness(
+            SimpleNamespace(inspection_store_pg_enabled=True),
+            _Store(error=PostgresPoolExhaustedError("busy")),
+            _Store(),
+            health_check_timeout_seconds=0.1,
+        )
+        self.assertEqual(busy_state["status"], "degraded")
+        self.assertNotIn("busy", str(busy_state))
+
+        class _SlowStore:
+            async def health_check(self) -> bool:
+                await asyncio.sleep(0.2)
+                return True
+
+        started = time.monotonic()
+        timeout_state = await inspection_postgresql_readiness(
+            SimpleNamespace(inspection_store_pg_enabled=True),
+            _SlowStore(),
+            _Store(),
+            health_check_timeout_seconds=0.02,
+        )
+        self.assertLess(time.monotonic() - started, 0.15)
+        self.assertEqual(timeout_state["status"], "degraded")
 
 
 if __name__ == "__main__":

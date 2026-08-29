@@ -5,12 +5,15 @@ import datetime as dt
 import os
 import unittest
 from contextlib import contextmanager
+from pathlib import Path
 from unittest.mock import patch
 
 from app.data.realtime_views import build_realtime_view_event
 from app.data.store import (
     PostgresInspectionRecordStore,
     PostgresInspectionStore,
+    PostgresPoolClosedError,
+    PostgresPoolExhaustedError,
 )
 from app.data.store.pool import PostgresConnectionPool
 
@@ -99,6 +102,16 @@ class _FakePool:
         self.available.clear()
 
 
+class _DriverPoolExhausted(Exception):
+    pass
+
+
+class _DriverExhaustedPool(_FakePool):
+    def getconn(self) -> _FakeConnection:
+        self.get_calls += 1
+        raise _DriverPoolExhausted("driver pool exhausted")
+
+
 class PooledConnectionTests(unittest.TestCase):
     """Pool behavior independent of a live PostgreSQL server."""
 
@@ -139,6 +152,65 @@ class PooledConnectionTests(unittest.TestCase):
             pool.close()
             self.assertTrue(fake_pool.closed)
             self.assertFalse(pool.initialized)
+
+    def test_to_thread_store_uses_thread_safe_driver_pool_not_simple_pool(self) -> None:
+        source = (
+            Path(__file__).resolve().parents[1]
+            / "app"
+            / "data"
+            / "store"
+            / "pool.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn("ThreadedConnectionPool", source)
+        self.assertNotIn("SimpleConnectionPool", source)
+
+    def test_pool_exhaustion_is_bounded_and_recoverable(self) -> None:
+        with patch(
+            "app.data.store.pool._ThreadedConnectionPool",
+            _FakePool,
+        ):
+            pool = PostgresConnectionPool(
+                min_connections=1,
+                max_connections=1,
+                acquire_timeout_seconds=0.001,
+                connection_kwargs={"host": "127.0.0.1"},
+            )
+            with pool.connection():
+                with self.assertRaises(PostgresPoolExhaustedError) as raised:
+                    pool.connection()
+            self.assertEqual(raised.exception.code, "database_busy")
+            # The timed-out attempt did not leak a lease: the next request can
+            # acquire the same bounded process pool normally.
+            with pool.connection():
+                pass
+            fake_pool = _FakePool.instances[0]
+            self.assertEqual(len(_FakePool.instances), 1)
+            self.assertEqual(len(fake_pool.returns), 2)
+
+    def test_driver_pool_error_is_normalized_without_leaking_lease(self) -> None:
+        with (
+            patch(
+                "app.data.store.pool._ThreadedConnectionPool",
+                _DriverExhaustedPool,
+            ),
+            patch(
+                "app.data.store.pool._PoolError",
+                _DriverPoolExhausted,
+            ),
+        ):
+            pool = PostgresConnectionPool(
+                min_connections=1,
+                max_connections=1,
+                acquire_timeout_seconds=0.001,
+                connection_kwargs={"host": "127.0.0.1"},
+            )
+            with self.assertRaises(PostgresPoolExhaustedError):
+                pool.connection()
+            # The normalized driver failure releases the permit, so a second
+            # attempt reaches the driver rather than falsely remaining busy.
+            with self.assertRaises(PostgresPoolExhaustedError):
+                pool.connection()
+            self.assertEqual(_DriverExhaustedPool.instances[0].get_calls, 2)
 
     def test_context_manager_rolls_back_and_returns_healthy_connection(self) -> None:
         with patch(
@@ -201,6 +273,33 @@ class PooledConnectionTests(unittest.TestCase):
         self.assertFalse(workflow_store._pool.initialized)
         data_store.close()
         workflow_store.close()
+
+    def test_store_reuses_one_process_scoped_pool_and_closes_once(self) -> None:
+        with (
+            patch(
+                "app.data.store.pool._ThreadedConnectionPool",
+                _FakePool,
+            ),
+            patch("app.data.store.postgres.psycopg2", object()),
+        ):
+            store = PostgresInspectionStore(
+                host="127.0.0.1",
+                database="cha_m4_test",
+                user="cha_test",
+                sslmode="disable",
+            )
+            initial_pool = store._pool
+            with store._connect():
+                pass
+            with store._connect():
+                pass
+            self.assertIs(store._pool, initial_pool)
+            self.assertEqual(len(_FakePool.instances), 1)
+            store.close()
+            self.assertTrue(_FakePool.instances[0].closed)
+            with self.assertRaises(PostgresPoolClosedError):
+                store._connect()
+            self.assertEqual(len(_FakePool.instances), 1)
 
     def test_store_health_checks_use_bounded_connection_contexts(self) -> None:
         class _Cursor:

@@ -33,6 +33,26 @@ REHEARSAL_SCRIPT = (
     if REPO_ROOT is not None
     else None
 )
+PHASE6_ROLLBACK_REHEARSAL = (
+    REPO_ROOT / "ops" / "mature_phase6_rollback_rehearsal.sh"
+    if REPO_ROOT is not None
+    else None
+)
+M4_PACKAGE_SCRIPT = (
+    REPO_ROOT / "ops" / "mature_m4_inspection_build_package.py"
+    if REPO_ROOT is not None
+    else None
+)
+PHASE0_DEPLOY_SCRIPT = (
+    REPO_ROOT / "ops" / "mature_phase0_deploy_v2.sh"
+    if REPO_ROOT is not None
+    else None
+)
+V2_ROLLBACK_SCRIPT = (
+    REPO_ROOT / "ops" / "rollback-v2.sh"
+    if REPO_ROOT is not None
+    else None
+)
 
 
 @unittest.skipIf(
@@ -73,6 +93,52 @@ class ReleaseToolingTests(unittest.TestCase):
         self.assertIn("FAKE_EXPECT_TEST_ENV_SANITIZED", source)
         self.assertIn('test -z "${CHA_PG_HOST:-}"', source)
         self.assertNotIn("/opt/jdair-cha", source)
+
+    def test_phase6_rollback_uses_bounded_live_health_retry(self) -> None:
+        assert V2_ROLLBACK_SCRIPT is not None
+        source = V2_ROLLBACK_SCRIPT.read_text(encoding="utf-8")
+        self.assertIn('health_attempts="${CHA_V2_HEALTH_ATTEMPTS:-12}"', source)
+        self.assertIn('health_retry_seconds="${CHA_V2_HEALTH_RETRY_SECONDS:-0.5}"', source)
+        self.assertIn("wait_for_live()", source)
+        self.assertIn('systemctl restart "$service"', source)
+        self.assertIn("/api/v2/health/live", source)
+        self.assertIn("RUNNING_RELEASE", source)
+        self.assertIn("RUNNING_COMMIT", source)
+        self.assertIn("PACKAGE_HASH", source)
+        self.assertNotIn("sleep 3", source)
+
+    def test_phase6_rollback_rehearsal_is_disposable_and_retries_once(self) -> None:
+        assert PHASE6_ROLLBACK_REHEARSAL is not None
+        source = PHASE6_ROLLBACK_REHEARSAL.read_text(encoding="utf-8")
+        self.assertIn("mktemp -d", source)
+        self.assertIn("fake-bin", source)
+        self.assertIn("FAKE_HEALTH_COUNT", source)
+        self.assertIn("ROLLBACK_HEALTH_ATTEMPT=2", source)
+        self.assertIn("M4_PHASE6_ROLLBACK_REHEARSAL=passed", source)
+        self.assertNotIn("/opt/jdair-cha", source)
+
+    def test_m4_package_carries_runtime_identity_and_rollback_helper(self) -> None:
+        assert M4_PACKAGE_SCRIPT is not None
+        source = M4_PACKAGE_SCRIPT.read_text(encoding="utf-8")
+        self.assertIn('arcname="ops/rollback-v2.sh"', source)
+        self.assertIn('tarfile.TarInfo("COMMIT")', source)
+        self.assertIn("source_commit(root)", source)
+        self.assertIn(
+            '"status", "--porcelain", "--untracked-files=normal"',
+            source,
+        )
+        self.assertIn("refusing to package a dirty source tree", source)
+
+    def test_phase6_deploy_delegates_rollback_to_bounded_helper(self) -> None:
+        assert PHASE0_DEPLOY_SCRIPT is not None
+        source = PHASE0_DEPLOY_SCRIPT.read_text(encoding="utf-8")
+        self.assertIn("wait_for_v2_live()", source)
+        self.assertIn('test -x "$release_dir/ops/rollback-v2.sh"', source)
+        self.assertIn('exec "\\$(dirname "\\$0")/ops/rollback-v2.sh"', source)
+        self.assertIn('printf \'%s\\n\' "$package_hash" > "$release_dir/PACKAGE_SHA256"', source)
+        self.assertIn("RUNNING_RELEASE", source)
+        self.assertIn("RUNNING_COMMIT", source)
+        self.assertIn("PACKAGE_HASH", source)
 
 
 if __name__ == "__main__":

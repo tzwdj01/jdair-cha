@@ -1,14 +1,18 @@
 from __future__ import annotations
 
 import os
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
+from app import config as config_module
 from app.config import (
     Settings,
     env_bool,
     env_positive_float_map,
     normalize_base_url,
+    release_identity,
 )
 
 
@@ -213,6 +217,27 @@ class ConfigTests(unittest.TestCase):
             clear=False,
         ):
             self.assertEqual(env_positive_float_map("TEST_THRESHOLDS"), {})
+
+    def test_release_identity_reads_runtime_markers_without_env_secrets(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            release_root = Path(raw) / "phase6-candidate"
+            release_root.mkdir()
+            (release_root / "COMMIT").write_text(
+                "0123456789abcdef0123456789abcdef01234567\n",
+                encoding="utf-8",
+            )
+            (release_root / "PACKAGE_SHA256").write_text(
+                "package-test-hash\n",
+                encoding="utf-8",
+            )
+            with patch.object(config_module, "RELEASE_ROOT", release_root):
+                identity = release_identity()
+        self.assertEqual(identity["running_release"], "phase6-candidate")
+        self.assertEqual(
+            identity["running_commit"],
+            "0123456789abcdef0123456789abcdef01234567",
+        )
+        self.assertEqual(identity["package_hash"], "package-test-hash")
 
 
 if __name__ == "__main__":

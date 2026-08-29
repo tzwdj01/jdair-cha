@@ -1,12 +1,20 @@
 from __future__ import annotations
 
+import asyncio
 from typing import Any
+
+from ..data.store import PostgresPoolExhaustedError
+
+
+DEFAULT_HEALTH_CHECK_TIMEOUT_SECONDS = 1.0
 
 
 async def inspection_postgresql_readiness(
     settings: Any,
     inspection_store: Any | None,
     inspection_record_store: Any | None,
+    *,
+    health_check_timeout_seconds: float = DEFAULT_HEALTH_CHECK_TIMEOUT_SECONDS,
 ) -> dict[str, Any]:
     """Report the optional M4 PostgreSQL dependency without leaking details.
 
@@ -31,16 +39,31 @@ async def inspection_postgresql_readiness(
             "impact": "inspection_dashboard_and_workflow",
         }
 
-    try:
-        data_ok = await _health_check(inspection_store)
-        workflow_ok = await _health_check(inspection_record_store)
-    except Exception:
+    if health_check_timeout_seconds <= 0:
+        raise ValueError("health_check_timeout_seconds must be positive")
+
+    results = await asyncio.gather(
+        _health_check(inspection_store, health_check_timeout_seconds),
+        _health_check(inspection_record_store, health_check_timeout_seconds),
+        return_exceptions=True,
+    )
+    if any(
+        isinstance(result, (PostgresPoolExhaustedError, asyncio.TimeoutError))
+        for result in results
+    ):
+        return {
+            "status": "degraded",
+            "required": True,
+            "impact": "inspection_dashboard_and_workflow",
+        }
+    if any(isinstance(result, Exception) for result in results):
         return {
             "status": "unavailable",
             "required": True,
             "impact": "inspection_dashboard_and_workflow",
         }
 
+    data_ok, workflow_ok = (bool(result) for result in results)
     if not (data_ok and workflow_ok):
         return {
             "status": "unavailable",
@@ -55,8 +78,8 @@ async def inspection_postgresql_readiness(
     }
 
 
-async def _health_check(store: Any) -> bool:
+async def _health_check(store: Any, timeout_seconds: float) -> bool:
     checker = getattr(store, "health_check", None)
     if not callable(checker):
         return False
-    return bool(await checker())
+    return bool(await asyncio.wait_for(checker(), timeout=timeout_seconds))

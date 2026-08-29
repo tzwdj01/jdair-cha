@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import asyncio
 import datetime as dt
+import threading
+import time
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from app.data.normalization import (
@@ -11,8 +14,14 @@ from app.data.normalization import (
     normalize_media_files,
 )
 from app.data.realtime_views import build_realtime_view_event
-from app.data.store import MemoryInspectionRecordStore, MemoryInspectionStore
+from app.data.store import (
+    MemoryInspectionRecordStore,
+    MemoryInspectionStore,
+    PostgresPoolExhaustedError,
+)
+from app.data.store.pool import PostgresConnectionPool
 from app.services.inspection import InspectionDataService
+from app.services.inspection_readiness import inspection_postgresql_readiness
 from app.services.inspection_records import InspectionRecordService
 from app.services.production_overview import ProductionOverviewService
 
@@ -278,18 +287,20 @@ class ProductionOverviewServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(overview["alarms"]["available"])
         self.assertTrue(overview["inspections"]["available"])
 
-    async def test_independent_domains_start_concurrently(self) -> None:
-        """Gathered domains must not serially accumulate DB round trips."""
+    async def test_domains_use_shared_bounded_concurrency(self) -> None:
+        """Overview retains parallelism without consuming every DB connection."""
 
         started = 0
-        all_started = asyncio.Event()
+        active = 0
+        peak_active = 0
 
         async def domain(*_args, **_kwargs):
-            nonlocal started
+            nonlocal started, active, peak_active
             started += 1
-            if started == 7:
-                all_started.set()
-            await asyncio.wait_for(all_started.wait(), timeout=0.2)
+            active += 1
+            peak_active = max(peak_active, active)
+            await asyncio.sleep(0.01)
+            active -= 1
             return {"available": True}
 
         with (
@@ -319,6 +330,11 @@ class ProductionOverviewServiceTests(unittest.IsolatedAsyncioTestCase):
             )
 
         self.assertEqual(started, 7)
+        self.assertEqual(
+            self.overview_service._max_concurrent_domains,
+            2,
+        )
+        self.assertLessEqual(peak_active, 2)
         self.assertTrue(all(item["available"] for item in (
             overview["devices"],
             overview["media"],
@@ -328,6 +344,160 @@ class ProductionOverviewServiceTests(unittest.IsolatedAsyncioTestCase):
             overview["locations"],
             overview["data_quality"],
         )))
+
+    async def test_pool_exhausted_domain_is_isolated_as_database_busy(self) -> None:
+        with patch.object(
+            self.inspection_service,
+            "media_overview",
+            side_effect=PostgresPoolExhaustedError("busy"),
+        ):
+            overview = await self.overview_service.build(
+                days=1,
+                as_of=self.end,
+            )
+        self.assertFalse(overview["media"]["available"])
+        self.assertEqual(overview["media"]["error"], "database_busy")
+        self.assertTrue(overview["devices"]["available"])
+        self.assertTrue(overview["alarms"]["available"])
+
+    async def test_production_shape_overview_read_and_readiness_share_small_pool(
+        self,
+    ) -> None:
+        """Reproduce the Canary request shape without a live PostgreSQL server.
+
+        One process-scoped four-connection data pool serves a bounded
+        seven-domain overview, a direct inspection read and readiness at the
+        same time. The overview limit reserves two connections, so direct
+        reads and readiness complete without a PoolError cascade.
+        """
+
+        class _Connection:
+            def commit(self) -> None:
+                return None
+
+            def rollback(self) -> None:
+                return None
+
+        class _DriverPool:
+            instances: list["_DriverPool"] = []
+
+            def __init__(self, _minimum: int, maximum: int, **_kwargs) -> None:
+                self.maximum = maximum
+                self.active = 0
+                self.peak_active = 0
+                self.returns = 0
+                self.closed = False
+                self._lock = threading.Lock()
+                type(self).instances.append(self)
+
+            def getconn(self) -> _Connection:
+                with self._lock:
+                    if self.active >= self.maximum:
+                        raise AssertionError("driver pool capacity exceeded")
+                    self.active += 1
+                    self.peak_active = max(self.peak_active, self.active)
+                return _Connection()
+
+            def putconn(
+                self,
+                _connection: _Connection,
+                close: bool = False,
+            ) -> None:
+                del close
+                with self._lock:
+                    self.active -= 1
+                    self.returns += 1
+
+            def closeall(self) -> None:
+                self.closed = True
+
+        class _PoolBackedDataStore:
+            def __init__(self) -> None:
+                self.pool = PostgresConnectionPool(
+                    min_connections=1,
+                    max_connections=4,
+                    acquire_timeout_seconds=0.2,
+                    connection_kwargs={"host": "127.0.0.1"},
+                )
+
+            async def read(self) -> bool:
+                return await asyncio.to_thread(self._read_sync)
+
+            async def health_check(self) -> bool:
+                return await self.read()
+
+            def _read_sync(self) -> bool:
+                with self.pool.connection():
+                    # Hold each bounded lease just long enough to overlap the
+                    # three request categories in this regression shape.
+                    time.sleep(0.025)
+                    return True
+
+        class _WorkflowStore:
+            async def health_check(self) -> bool:
+                return True
+
+        with patch("app.data.store.pool._ThreadedConnectionPool", _DriverPool):
+            store = _PoolBackedDataStore()
+            overview_service = ProductionOverviewService(
+                None,
+                None,
+                max_concurrent_domains=2,
+            )
+
+            async def domain(*_args, **_kwargs):
+                await store.read()
+                return {"available": True}
+
+            with (
+                patch.object(overview_service, "_devices", side_effect=domain),
+                patch.object(overview_service, "_media", side_effect=domain),
+                patch.object(overview_service, "_realtime", side_effect=domain),
+                patch.object(
+                    overview_service,
+                    "_inspections",
+                    side_effect=domain,
+                ),
+                patch.object(overview_service, "_alarms", side_effect=domain),
+                patch.object(
+                    overview_service,
+                    "_locations",
+                    side_effect=domain,
+                ),
+                patch.object(
+                    overview_service,
+                    "_data_quality",
+                    side_effect=domain,
+                ),
+            ):
+                overview, direct_read, readiness = await asyncio.wait_for(
+                    asyncio.gather(
+                        overview_service.build(days=1, as_of=self.end),
+                        store.read(),
+                        inspection_postgresql_readiness(
+                            SimpleNamespace(
+                                inspection_store_pg_enabled=True
+                            ),
+                            store,
+                            _WorkflowStore(),
+                            health_check_timeout_seconds=0.5,
+                        ),
+                    ),
+                    timeout=1.0,
+                )
+
+            self.assertTrue(direct_read)
+            self.assertEqual(readiness["status"], "ready")
+            self.assertTrue(overview["devices"]["available"])
+            self.assertTrue(overview["data_quality"]["available"])
+            driver_pool = _DriverPool.instances[0]
+            self.assertLessEqual(driver_pool.peak_active, 4)
+            self.assertEqual(driver_pool.active, 0)
+            # A later request still works, proving the concurrent path did not
+            # retain a connection or semaphore lease.
+            self.assertTrue(await store.read())
+            self.assertEqual(driver_pool.active, 0)
+            store.pool.close()
 
 
 if __name__ == "__main__":

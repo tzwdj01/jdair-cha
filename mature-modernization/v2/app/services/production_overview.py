@@ -8,6 +8,7 @@ from typing import Any
 
 UTC = dt.timezone.utc
 SHANGHAI = dt.timezone(dt.timedelta(hours=8), name="Asia/Shanghai")
+DEFAULT_MAX_CONCURRENT_DOMAINS = 2
 
 
 class ProductionOverviewService:
@@ -28,10 +29,18 @@ class ProductionOverviewService:
         record_service: Any,
         *,
         business_timezone: dt.tzinfo = SHANGHAI,
+        max_concurrent_domains: int = DEFAULT_MAX_CONCURRENT_DOMAINS,
     ) -> None:
+        if max_concurrent_domains < 1:
+            raise ValueError("max_concurrent_domains must be positive")
         self._inspection_service = inspection_service
         self._record_service = record_service
         self._business_tz = business_timezone
+        # app.main constructs this service once per V2 process. The inspection
+        # data pool has four connections; two concurrent overview domains leave
+        # room for direct inspection reads and readiness probes.
+        self._max_concurrent_domains = max_concurrent_domains
+        self._domain_semaphore = asyncio.Semaphore(max_concurrent_domains)
 
     async def build(
         self,
@@ -47,13 +56,13 @@ class ProductionOverviewService:
 
         devices, media, realtime, inspections, alarms, locations, quality = (
             await asyncio.gather(
-                self._devices(start, end),
-                self._media(start, end),
-                self._realtime(start, end),
-                self._inspections(start, end),
-                self._alarms(start, end),
-                self._locations(start, end),
-                self._data_quality(start, end),
+                self._run_domain(self._devices, start, end),
+                self._run_domain(self._media, start, end),
+                self._run_domain(self._realtime, start, end),
+                self._run_domain(self._inspections, start, end),
+                self._run_domain(self._alarms, start, end),
+                self._run_domain(self._locations, start, end),
+                self._run_domain(self._data_quality, start, end),
             )
         )
         return {
@@ -73,6 +82,17 @@ class ProductionOverviewService:
             "locations": locations,
             "data_quality": quality,
         }
+
+    async def _run_domain(
+        self,
+        operation: Any,
+        start: dt.datetime,
+        end: dt.datetime,
+    ) -> dict[str, Any]:
+        """Run one overview domain under the shared pool-aware limit."""
+
+        async with self._domain_semaphore:
+            return await operation(start, end)
 
     async def _devices(
         self,
