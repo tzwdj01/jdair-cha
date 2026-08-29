@@ -483,7 +483,12 @@ class ProductionOverviewServiceTests(unittest.IsolatedAsyncioTestCase):
                             health_check_timeout_seconds=0.5,
                         ),
                     ),
-                    timeout=1.0,
+                    # This is a deadlock/capacity watchdog, not a latency
+                    # target.  On Windows, a fresh default thread executor can
+                    # take over a second to warm up under a loaded test run;
+                    # retain a bounded assertion without making the package
+                    # suite depend on that one-off executor startup cost.
+                    timeout=3.0,
                 )
 
             self.assertTrue(direct_read)
