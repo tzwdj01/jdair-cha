@@ -507,7 +507,10 @@ pass. A fresh connection failure, wrong runtime, anonymous exposure,
 AuthorizedUser regression, PoolError cascade, systemic Dashboard failure or
 Legacy regression requires rollback and stops this retry.**
 
-**Current next action: apply the minimal scheduler lifecycle logging fix,
-re-enable and revalidate the accepted public TLS PostgreSQL path, recover the
-managed scheduler using explicit completion/wait evidence, then execute the
-authorized Candidate Canary. Do not manufacture long-running scheduler runs.**
+**Current next action: await a fresh owner confirmation after the wrong-runtime
+rollback stop gate. On authorization, use the new no-mutation exact-package
+preflight, then deploy that same package with its expected SHA-256/commit and
+verify runtime identity before the bounded Candidate Canary. Revalidate only
+the approved public TLS path, scheduler completion/wait evidence and normal
+service/time health; do not manufacture long-running scheduler runs or reopen
+closed infrastructure investigations.**

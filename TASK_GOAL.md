@@ -186,18 +186,26 @@ branch adds bounded credential-free `scheduler_cycle_started`,
 `scheduler_cycle_completed` and `scheduler_waiting` records before the
 authorized restart verification.
 
-### TODO — current authorized gate
+### TODO — after fresh owner confirmation for the retry
 
-1. Restore the already validated public PostgreSQL listener and minimal
-   `hostssl` `/32` access boundary; run only three TCP and five fresh TLS
-   protected-connection checks.
-2. On success, switch the protected V2 and scheduler runtime host only, start
-   the scheduler, and accept recovery only after explicit completed/waiting
-   lifecycle evidence plus PostgreSQL persistence.
-3. Build the clean committed Candidate and run the bounded AuthorizedUser
-   Dashboard Canary: runtime identity; anonymous `401`; lawful ordinary and
-   disabled-user `403`; enabled inspector/admin `200`; bounded pool behavior;
-   real PG-to-API-to-Dashboard reconciliation; M2/Legacy regression.
+1. Build the clean committed Candidate and transfer it together with the
+   matching release helper into a run-scoped staging location. Do not rely on
+   a historical default package filename.
+2. Run `CHA_V2_DEPLOY_VERIFY_ONLY=true` using the expected package SHA-256 and
+   commit. The emitted source identity must equal the package that will be
+   deployed; a mismatch ends the attempt before any production mutation.
+3. Perform only the short approved production preflight: active public TLS
+   PostgreSQL path, active scheduler with explicit recent
+   `scheduler_cycle_completed`/`scheduler_waiting` evidence, time
+   synchronization and stable V2/Legacy/Nginx health. Do not reopen closed
+   network, pool, scheduler-stall or media investigations without new evidence.
+4. Deploy the same verified package with the same expected identity values.
+   Verify `RUNNING_RELEASE`, `RUNNING_COMMIT` and package hash before any
+   business gate. Roll back immediately for a wrong runtime or any other P0.
+5. Only then run the bounded AuthorizedUser Dashboard Canary: anonymous `401`;
+   lawful ordinary and disabled-user `403`; enabled inspector/admin `200`;
+   bounded pool behavior; real PG-to-API-to-Dashboard reconciliation; and
+   M2/Legacy regression.
 
 ### BLOCKED
 
