@@ -480,15 +480,21 @@ class ProductionOverviewServiceTests(unittest.IsolatedAsyncioTestCase):
                             ),
                             store,
                             _WorkflowStore(),
-                            health_check_timeout_seconds=0.5,
+                            # Readiness timeout behavior is covered by
+                            # test_inspection_readiness. This concurrency
+                            # regression must isolate pool sharing from
+                            # one-off Windows executor warm-up, so it uses a
+                            # wider watchdog and asserts the healthy path.
+                            health_check_timeout_seconds=10.0,
                         ),
                     ),
                     # This is a deadlock/capacity watchdog, not a latency
-                    # target.  On Windows, a fresh default thread executor can
-                    # take over a second to warm up under a loaded test run;
-                    # retain a bounded assertion without making the package
-                    # suite depend on that one-off executor startup cost.
-                    timeout=3.0,
+                    # target. On Windows, the fresh default thread executor
+                    # and its completion callbacks can be delayed for several
+                    # seconds under a loaded suite. Keep the watchdog bounded
+                    # without making the package suite depend on one-off local
+                    # executor warm-up; real latency is validated by Canary.
+                    timeout=10.0,
                 )
 
             self.assertTrue(direct_read)

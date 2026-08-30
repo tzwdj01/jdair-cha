@@ -155,6 +155,7 @@ CHA_V2_FEATURE_REALTIME_AUDIO=false
 CHA_V2_FEATURE_REALTIME_CONTROL=false
 CHA_V2_FEATURE_ACCOUNT_POOL_V2=false
 CHA_V2_FEATURE_RECORDS_V2=false
+CHA_V2_FEATURE_INSPECTION_V2=false
 EOF
   chmod 600 "$env_file"
 else
@@ -209,6 +210,7 @@ allowed = {
     "CHA_V2_FEATURE_REALTIME_CONTROL",
     "CHA_V2_FEATURE_ACCOUNT_POOL_V2",
     "CHA_V2_FEATURE_RECORDS_V2",
+    "CHA_V2_FEATURE_INSPECTION_V2",
 }
 updates = {}
 for line in feature_path.read_text(encoding="utf-8").splitlines():
@@ -368,12 +370,19 @@ test "$legacy_http" = "200"
 test "$feature_http" = "200"
 grep -q '"status":"ok"' /tmp/jdair-cha-v2-proxied.json
 expected_dashboard="false"
+expected_realtime_readonly="false"
+expected_inspection="false"
 if [ -f "$release_dir/FEATURES.env" ]; then
   expected_dashboard="$(awk -F= '$1=="CHA_V2_FEATURE_DASHBOARD_V2"{print tolower($2)}' "$release_dir/FEATURES.env" | tail -n1)"
+  expected_realtime_readonly="$(awk -F= '$1=="CHA_V2_FEATURE_REALTIME_READONLY"{print tolower($2)}' "$release_dir/FEATURES.env" | tail -n1)"
+  expected_inspection="$(awk -F= '$1=="CHA_V2_FEATURE_INSPECTION_V2"{print tolower($2)}' "$release_dir/FEATURES.env" | tail -n1)"
 fi
 test -n "$expected_dashboard"
+test -n "$expected_realtime_readonly"
+test -n "$expected_inspection"
 grep -q "\"dashboard_v2\":${expected_dashboard}" /tmp/jdair-cha-v2-features.json
-grep -q '"realtime_readonly":false' /tmp/jdair-cha-v2-features.json
+grep -q "\"realtime_readonly\":${expected_realtime_readonly}" /tmp/jdair-cha-v2-features.json
+grep -q "\"inspection_v2\":${expected_inspection}" /tmp/jdair-cha-v2-features.json
 
 dashboard_page_http="not-enabled"
 dashboard_api_http="not-enabled"
@@ -410,6 +419,8 @@ printf 'DASHBOARD_PAGE_HTTP=%s\n' "$dashboard_page_http"
 printf 'DASHBOARD_API_HTTP=%s\n' "$dashboard_api_http"
 printf 'LEGACY_HTTP=%s\n' "$legacy_http"
 printf 'DASHBOARD_V2=%s\n' "$expected_dashboard"
+printf 'REALTIME_READONLY=%s\n' "$expected_realtime_readonly"
+printf 'INSPECTION_V2=%s\n' "$expected_inspection"
 printf 'VERSION=%s\n' "$release_version"
 printf 'BUILD=%s\n' "$release_build"
 printf 'ROLLBACK_TO_PREVIOUS=%s\n' "$release_dir/rollback-to-previous.sh"

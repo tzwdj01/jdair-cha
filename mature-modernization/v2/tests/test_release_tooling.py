@@ -139,6 +139,29 @@ class ReleaseToolingTests(unittest.TestCase):
         self.assertIn("RUNNING_RELEASE", source)
         self.assertIn("RUNNING_COMMIT", source)
         self.assertIn("PACKAGE_HASH", source)
+        self.assertIn('"CHA_V2_FEATURE_INSPECTION_V2"', source)
+        self.assertIn("expected_realtime_readonly", source)
+        self.assertIn("expected_inspection", source)
+
+    def test_phase6_canary_features_enable_inspection_without_disabling_realtime(
+        self,
+    ) -> None:
+        assert REPO_ROOT is not None
+        values = {}
+        for line in (
+            REPO_ROOT / "mature-modernization" / "v2" / "FEATURES.env"
+        ).read_text(encoding="utf-8").splitlines():
+            if line and not line.startswith("#"):
+                key, value = line.split("=", 1)
+                values[key] = value
+
+        self.assertEqual(values["CHA_V2_FEATURE_DASHBOARD_V2"], "true")
+        self.assertEqual(values["CHA_V2_FEATURE_INSPECTION_V2"], "true")
+        self.assertEqual(values["CHA_V2_FEATURE_REALTIME_READONLY"], "true")
+        self.assertEqual(values["CHA_V2_FEATURE_REALTIME_AUDIO"], "false")
+        self.assertEqual(values["CHA_V2_FEATURE_REALTIME_CONTROL"], "false")
+        self.assertEqual(values["CHA_V2_FEATURE_ACCOUNT_POOL_V2"], "false")
+        self.assertEqual(values["CHA_V2_FEATURE_RECORDS_V2"], "false")
 
 
 if __name__ == "__main__":
