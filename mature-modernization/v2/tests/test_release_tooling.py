@@ -1,6 +1,13 @@
 from __future__ import annotations
 
+import hashlib
+import os
+import shlex
+import subprocess
+import tarfile
+import tempfile
 import unittest
+from io import BytesIO
 from pathlib import Path
 
 
@@ -55,11 +62,57 @@ V2_ROLLBACK_SCRIPT = (
 )
 
 
+def _bash_path(path: Path) -> str:
+    """Translate a Windows checkout path for the locally available WSL bash."""
+
+    resolved = path.resolve()
+    if os.name == "nt" and resolved.drive:
+        return f"/mnt/{resolved.drive[0].lower()}{resolved.as_posix()[2:]}"
+    return str(resolved)
+
+
 @unittest.skipIf(
     REPO_ROOT is None,
     "repository-level release tooling is intentionally absent from release packages",
 )
 class ReleaseToolingTests(unittest.TestCase):
+    def _phase6_package(self, path: Path, commit: str) -> str:
+        content = f"{commit}\n".encode("utf-8")
+        with tarfile.open(path, "w:gz") as archive:
+            member = tarfile.TarInfo("COMMIT")
+            member.size = len(content)
+            archive.addfile(member, BytesIO(content))
+        return hashlib.sha256(path.read_bytes()).hexdigest()
+
+    def _run_phase6_verify(
+        self,
+        *,
+        package: Path,
+        package_hash: str,
+        expected_commit: str,
+    ) -> subprocess.CompletedProcess[str]:
+        assert PHASE0_DEPLOY_SCRIPT is not None
+        values = {
+            "CHA_V2_RELEASE_PACKAGE": _bash_path(package),
+            "CHA_V2_EXPECTED_PACKAGE_SHA256": package_hash,
+            "CHA_V2_EXPECTED_COMMIT": expected_commit,
+            "CHA_V2_DEPLOY_VERIFY_ONLY": "true",
+        }
+        assignments = " ".join(
+            f"{key}={shlex.quote(value)}" for key, value in values.items()
+        )
+        return subprocess.run(
+            [
+                "bash",
+                "-lc",
+                f"env {assignments} bash {shlex.quote(_bash_path(PHASE0_DEPLOY_SCRIPT))}",
+            ],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
     def test_release_uses_configured_production_venv(self) -> None:
         assert RELEASE_SCRIPT is not None
         source = RELEASE_SCRIPT.read_text(encoding="utf-8")
@@ -144,6 +197,42 @@ class ReleaseToolingTests(unittest.TestCase):
         self.assertIn("expected_inspection", source)
         self.assertIn('if [ "$expected_inspection" = "true" ]; then', source)
         self.assertIn('"code":"unauthorized"', source)
+
+    def test_phase6_deploy_verify_only_binds_the_exact_package(self) -> None:
+        assert PHASE0_DEPLOY_SCRIPT is not None
+        commit = "0123456789abcdef0123456789abcdef01234567"
+        with tempfile.TemporaryDirectory() as temporary:
+            package = Path(temporary) / "candidate.tar.gz"
+            package_hash = self._phase6_package(package, commit)
+            result = self._run_phase6_verify(
+                package=package,
+                package_hash=package_hash,
+                expected_commit=commit,
+            )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("SOURCE_PACKAGE_IDENTITY=verified", result.stdout)
+        self.assertIn(f"SOURCE_COMMIT={commit}", result.stdout)
+        self.assertIn(f"SOURCE_PACKAGE_SHA256={package_hash}", result.stdout)
+
+    def test_phase6_deploy_verify_only_rejects_mismatched_candidate(self) -> None:
+        assert PHASE0_DEPLOY_SCRIPT is not None
+        commit = "0123456789abcdef0123456789abcdef01234567"
+        different_commit = "fedcba9876543210fedcba9876543210fedcba98"
+        with tempfile.TemporaryDirectory() as temporary:
+            package = Path(temporary) / "candidate.tar.gz"
+            package_hash = self._phase6_package(package, commit)
+            result = self._run_phase6_verify(
+                package=package,
+                package_hash=package_hash,
+                expected_commit=different_commit,
+            )
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(
+            "release package COMMIT does not match the expected Candidate",
+            result.stderr,
+        )
 
     def test_phase6_canary_features_enable_inspection_without_disabling_realtime(
         self,

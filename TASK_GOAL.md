@@ -154,8 +154,24 @@ Use only these labels: `COMPLETED / VERIFIED`, `COMPLETED / UNVERIFIED`,
 **CURRENT SUBPHASE: PUBLIC PG PATH RECOVERY + AUTHORIZEDUSER DASHBOARD CANARY
 RETRY**
 
-**STATUS: IN PROGRESS — PUBLIC TLS PATH ACCEPTED; SCHEDULER RECOVERY AND
-CANDIDATE CANARY AUTHORIZED**
+**STATUS: IN PROGRESS — PUBLIC TLS PATH ACCEPTED; SCHEDULER RECOVERED;
+CANDIDATE RETRY OWNER CONFIRMATION REQUIRED**
+
+The first resumed Candidate deployment was **not** an accepted Canary attempt.
+The operator-side preflight validated the new package, but the historical
+release helper selected its separate fixed default package path. Runtime
+identity therefore exposed an older Candidate before business or authorization
+acceptance tests began. The generated rollback helper immediately restored the
+prior V2 release; V2, Legacy, Nginx and the scheduler remained healthy. This is
+a release-tooling P0, not evidence of a Dashboard, PostgreSQL, MCS8 or
+AuthorizedUser product regression.
+
+The helper now accepts an explicit package path and optional expected SHA-256
+and commit, verifies those values before it installs a trap, creates a release
+directory, changes `current` or touches a service, and supports a no-mutation
+verify-only preflight. Local release-tooling regression and full-suite evidence
+passed. A future production retry must use that exact-package preflight and
+receive a fresh owner confirmation after the rollback stop gate.
 
 The private-listener recovery, pool/concurrency hardening and timeout
 containment remain `COMPLETED / VERIFIED`; they are not being reopened. The

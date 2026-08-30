@@ -1,6 +1,13 @@
 set -Eeuo pipefail
 
-package="/tmp/jdair-cha-v2-release.tar.gz"
+# A Phase 6 canary must bind the exact package that was validated by its
+# preflight.  Keep the historical default for older release callers, but never
+# require an operator to rename a verified Candidate over a possibly stale
+# file in /tmp.
+package="${CHA_V2_RELEASE_PACKAGE:-/tmp/jdair-cha-v2-release.tar.gz}"
+expected_package_sha256="${CHA_V2_EXPECTED_PACKAGE_SHA256:-}"
+expected_commit="${CHA_V2_EXPECTED_COMMIT:-}"
+verify_only="${CHA_V2_DEPLOY_VERIFY_ONLY:-false}"
 v2_root="/opt/jdair-cha/v2"
 release_stamp="$(date +%Y%m%d%H%M%S)"
 release_label="${CHA_V2_RELEASE_LABEL:-m2-dashboard-preview}"
@@ -28,6 +35,24 @@ case "$health_attempts" in
     ;;
 esac
 
+case "$verify_only" in
+  true|false)
+    ;;
+  *)
+    printf 'CHA_V2_DEPLOY_VERIFY_ONLY must be true or false\n' >&2
+    exit 2
+    ;;
+esac
+
+if [ -n "$expected_package_sha256" ] && ! printf '%s' "$expected_package_sha256" | grep -Eq '^[0-9a-f]{64}$'; then
+  printf 'CHA_V2_EXPECTED_PACKAGE_SHA256 must be a lowercase SHA-256\n' >&2
+  exit 2
+fi
+if [ -n "$expected_commit" ] && ! printf '%s' "$expected_commit" | grep -Eq '^[0-9a-f]{40}$'; then
+  printf 'CHA_V2_EXPECTED_COMMIT must be a lowercase Git commit\n' >&2
+  exit 2
+fi
+
 wait_for_v2_live() {
   attempt=1
   while [ "$attempt" -le "$health_attempts" ]; do
@@ -49,13 +74,6 @@ wait_for_v2_live() {
   printf 'V2 service did not become active with live HTTP 200 within bounded retry window\n' >&2
   return 1
 }
-
-if [ -L "$current_link" ] || [ -e "$current_link" ]; then
-  previous_target="$(readlink -f "$current_link" || true)"
-fi
-if [ -f "$service_unit" ]; then
-  service_existed="yes"
-fi
 
 restore_previous() {
   set +e
@@ -87,11 +105,37 @@ on_error() {
   restore_previous
   exit "$status"
 }
-trap on_error ERR
-
 test -s "$package"
 tar -tzf "$package" >/dev/null
 package_hash="$(sha256sum "$package" | cut -d' ' -f1)"
+package_commit="$(tar -xOf "$package" COMMIT | tr -d '\r\n[:space:]')"
+if ! printf '%s' "$package_commit" | grep -Eq '^[0-9a-f]{40}$'; then
+  printf 'release package COMMIT must be a lowercase Git commit\n' >&2
+  exit 2
+fi
+if [ -n "$expected_package_sha256" ] && [ "$package_hash" != "$expected_package_sha256" ]; then
+  printf 'release package SHA-256 does not match the expected Candidate\n' >&2
+  exit 2
+fi
+if [ -n "$expected_commit" ] && [ "$package_commit" != "$expected_commit" ]; then
+  printf 'release package COMMIT does not match the expected Candidate\n' >&2
+  exit 2
+fi
+printf 'SOURCE_PACKAGE_IDENTITY=verified\n'
+printf 'SOURCE_COMMIT=%s\n' "$package_commit"
+printf 'SOURCE_PACKAGE_SHA256=%s\n' "$package_hash"
+if [ "$verify_only" = "true" ]; then
+  exit 0
+fi
+
+if [ -L "$current_link" ] || [ -e "$current_link" ]; then
+  previous_target="$(readlink -f "$current_link" || true)"
+fi
+if [ -f "$service_unit" ]; then
+  service_existed="yes"
+fi
+
+trap on_error ERR
 
 install -d -m 0755 -o jdair-demo -g jdair-demo \
   "$v2_root" "$v2_root/releases" "$v2_root/data"

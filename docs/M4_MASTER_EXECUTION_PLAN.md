@@ -307,13 +307,24 @@ Canary 记录，未污染业务数据。备份链路今日 12:33 验证有效。
 ## 8. PHASE 6 — M4 P4 Dashboard Consolidation
 
 **Current status (operational correction effective 2026-08-30):**
-`IN PROGRESS / PUBLIC PG PATH ACCEPTED / AUTHORIZEDUSER DASHBOARD CANARY
-AUTHORIZED`. The local hardening gates, private PostgreSQL recovery, and their
+`IN PROGRESS / PUBLIC PG PATH ACCEPTED / CANDIDATE RETRY OWNER CONFIRMATION
+REQUIRED`. The local hardening gates, private PostgreSQL recovery, and their
 historical scratch evidence remain preserved. An owner-authorized public TLS
 path, restricted to the CHA egress `/32`, later passed bounded fresh-connection
 evidence and is the accepted recovery path for this Canary. The Candidate may
 proceed only after the short public-path revalidation and explicit managed
 scheduler cycle-completed/waiting evidence.
+
+**Release safety correction:** the first resumed deployment was rolled back
+before Canary acceptance because its historical helper used a fixed default
+package name instead of the separately verified Candidate path. Runtime
+identity correctly detected the mismatch. The helper now binds an explicit
+package path plus optional expected SHA-256/commit *before* any rollback trap,
+release creation, `current` switch or service mutation. Its verify-only mode
+and mismatch rejection are automated. This is a release-tooling correction;
+it does not reopen a completed data-store, scheduler, MCS8 or Dashboard issue.
+A production retry needs a fresh owner confirmation following the P0 rollback
+stop gate.
 
 真实生产数据积累后进入 `M4 P4 — DASHBOARD CONSOLIDATION & OPERATIONAL
 ANALYTICS`（M4 最终核心产品阶段）。
