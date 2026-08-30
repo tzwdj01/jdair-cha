@@ -265,13 +265,32 @@ class MCS8ProductionScheduler:
         while True:
             if stop.is_set():
                 break
-            result = await self.run_cycle()
+            next_cycle_index = self._cycle_index + 1
+            logger.info(
+                "scheduler_cycle_started cycle_index=%d",
+                next_cycle_index,
+            )
+            try:
+                result = await self.run_cycle()
+            except Exception as exc:
+                logger.warning(
+                    "scheduler_cycle_failed cycle_index=%d error_type=%s",
+                    next_cycle_index,
+                    type(exc).__name__,
+                )
+                raise
             completed.append(result)
             self._write_state(result)
+            _log_cycle_completed(result)
             if stop.is_set():
                 break
             if max_cycles > 0 and len(completed) >= max_cycles:
                 break
+            logger.info(
+                "scheduler_waiting cycle_index=%d next_cycle_seconds=%d",
+                result.cycle_index,
+                period_seconds,
+            )
             try:
                 await asyncio.wait_for(stop.wait(), timeout=period_seconds)
             except asyncio.TimeoutError:
@@ -316,6 +335,58 @@ def _source_result(
         duration_seconds=round(duration_seconds, 3),
         last_successful_at=source.last_successful_at,
     )
+
+
+def _log_cycle_completed(result: CycleResult) -> None:
+    """Emit one bounded, credential-free lifecycle record per cycle."""
+
+    by_source = {item.source: item for item in result.sources}
+    device = by_source.get("device_status")
+    media = by_source.get("media_files")
+    alarms = by_source.get("alarms")
+    location_stored = _quality_flag_count(
+        device.quality_flags if device else (),
+        "device_locations_stored=",
+    )
+    location_invalid = _quality_flag_count(
+        device.quality_flags if device else (),
+        "device_locations_invalid=",
+    )
+    stored_total = sum(item.stored_count for item in result.sources)
+    logger.info(
+        "scheduler_cycle_completed cycle_index=%d duration_seconds=%.3f "
+        "device_status=%s/%d/%d media_files=%s/%d/%d alarms=%s/%d/%d "
+        "location_stored=%s location_invalid=%s store_result=%s store_rows=%d",
+        result.cycle_index,
+        result.duration_seconds,
+        device.status if device else "not_reported",
+        device.fetched_source_count if device else 0,
+        device.stored_count if device else 0,
+        media.status if media else "not_reported",
+        media.fetched_source_count if media else 0,
+        media.stored_count if media else 0,
+        alarms.status if alarms else "not_reported",
+        alarms.fetched_source_count if alarms else 0,
+        alarms.stored_count if alarms else 0,
+        location_stored if location_stored is not None else "not_reported",
+        location_invalid if location_invalid is not None else "not_reported",
+        "ok" if result.all_successful else "partial",
+        stored_total,
+    )
+
+
+def _quality_flag_count(
+    flags: tuple[str, ...],
+    prefix: str,
+) -> int | None:
+    for flag in flags:
+        if not flag.startswith(prefix):
+            continue
+        try:
+            return int(flag.removeprefix(prefix))
+        except ValueError:
+            return None
+    return None
 
 
 def _source_result_to_dict(item: SourceCycleResult) -> dict[str, Any]:

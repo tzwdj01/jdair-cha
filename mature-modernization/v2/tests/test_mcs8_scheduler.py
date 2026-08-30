@@ -404,6 +404,45 @@ class MCS8ProductionSchedulerTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertGreaterEqual(len(results), 1)
 
+    async def test_run_logs_cycle_lifecycle_without_sensitive_values(self) -> None:
+        adapter = _FakeAdapter()
+        adapter.device_rows[0].update(
+            {
+                "nJingDu": "121.4737",
+                "nWeiDu": "31.2304",
+                "gpsTime": "2026-08-17 09:40:00",
+            }
+        )
+        scheduler, _, _ = _build(adapter)
+        stop = asyncio.Event()
+
+        async def stopper() -> None:
+            await asyncio.sleep(0.05)
+            stop.set()
+
+        asyncio.create_task(stopper())
+        with self.assertLogs(
+            "uvicorn.error.cha.inspection.mcs8_scheduler",
+            level="INFO",
+        ) as captured:
+            results = await scheduler.run(
+                period_seconds=60,
+                max_cycles=0,
+                stop_event=stop,
+            )
+
+        self.assertEqual(len(results), 1)
+        output = "\n".join(captured.output)
+        self.assertIn("scheduler_cycle_started cycle_index=1", output)
+        self.assertIn("scheduler_cycle_completed cycle_index=1", output)
+        self.assertIn("device_status=ok/2/2", output)
+        self.assertIn("location_stored=1", output)
+        self.assertIn("media_files=ok/0/0", output)
+        self.assertIn("alarms=ok/0/0", output)
+        self.assertIn("store_result=ok store_rows=2", output)
+        self.assertIn("scheduler_waiting cycle_index=1 next_cycle_seconds=60", output)
+        self.assertNotIn("server-token", output)
+
 
 if __name__ == "__main__":
     unittest.main()

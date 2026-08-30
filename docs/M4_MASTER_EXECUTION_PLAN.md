@@ -307,14 +307,13 @@ Canary 记录，未污染业务数据。备份链路今日 12:33 验证有效。
 ## 8. PHASE 6 — M4 P4 Dashboard Consolidation
 
 **Current status (operational correction effective 2026-08-30):**
-`IN PROGRESS / CANDIDATE ROLLED BACK / ROOT CAUSE REQUIRED`. The local
-hardening gates and later private PostgreSQL listener stop gate are complete.
-The separately authorized Candidate was deployed, but the authorized
-production-overview request did not complete and Candidate readiness returned
-PostgreSQL `degraded`. The rollback helper restored the prior V2 release.
-This phase may not retry the Candidate until an evidence-led investigation
-identifies the data-store PostgreSQL health timeout and a later owner gate
-permits the next action.
+`IN PROGRESS / PUBLIC PG PATH ACCEPTED / AUTHORIZEDUSER DASHBOARD CANARY
+AUTHORIZED`. The local hardening gates, private PostgreSQL recovery, and their
+historical scratch evidence remain preserved. An owner-authorized public TLS
+path, restricted to the CHA egress `/32`, later passed bounded fresh-connection
+evidence and is the accepted recovery path for this Canary. The Candidate may
+proceed only after the short public-path revalidation and explicit managed
+scheduler cycle-completed/waiting evidence.
 
 真实生产数据积累后进入 `M4 P4 — DASHBOARD CONSOLIDATION & OPERATIONAL
 ANALYTICS`（M4 最终核心产品阶段）。
@@ -478,23 +477,26 @@ production service 自然运行，下一次任务再读取历史结果。
 4. Real Business Observation remains active naturally; do not manufacture long
    polling runs.
 5. **→ PHASE 6 Dashboard Consolidation & Canary Hardening — IN PROGRESS /
-   CANDIDATE ROLLED BACK**
+   AUTHORIZEDUSER CANARY RETRY AUTHORIZED**
 6. → Local data-store timeout containment PASS: bounded driver-connection
    acquisition and per-domain Dashboard timeout now prevent one stalled
    connection from indefinitely blocking the overview. The underlying
    production slow-connection cause remains unproven.
-7. → Separate owner authorization for a scoped production revalidation only;
-   do not automatically repeat the Candidate or a full Dashboard Canary.
+7. → The historical private-path revalidation recorded `RAW_CONNECTION_SLOW`,
+   but the subsequently owner-approved public TLS path passed the bounded TCP
+   and fresh-connection evidence. Do not reopen closed Tailnet, pool or
+   scheduler-stall investigations without new production evidence.
 8. → M4 Final Acceptance / Closure only after a later owner authorization.
 
 **Current phase: PHASE 6 — Dashboard Consolidation & Canary Hardening.**
 
-**Current stop gate: no Candidate redeployment, Dashboard Canary retry or M4
-closure without a separate owner instruction. Local containment of the
-application-side timeout amplifier passed; the actual production
-slow-connection cause remains unproven and must be measured in any authorized
-revalidation.**
+**Current stop gate: public-path revalidation, managed scheduler recovery and
+the complete Candidate authorization/security/data/compatibility gates must
+pass. A fresh connection failure, wrong runtime, anonymous exposure,
+AuthorizedUser regression, PoolError cascade, systemic Dashboard failure or
+Legacy regression requires rollback and stops this retry.**
 
-**Current next action: preserve normal scheduler observation and await an
-owner-approved, bounded production revalidation plan; do not manufacture
-long-running tests or repeat the failed production Candidate.**
+**Current next action: apply the minimal scheduler lifecycle logging fix,
+re-enable and revalidate the accepted public TLS PostgreSQL path, recover the
+managed scheduler using explicit completion/wait evidence, then execute the
+authorized Candidate Canary. Do not manufacture long-running scheduler runs.**
