@@ -360,6 +360,44 @@ class ProductionOverviewServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(overview["devices"]["available"])
         self.assertTrue(overview["alarms"]["available"])
 
+    async def test_slow_domain_is_bounded_as_database_timeout(self) -> None:
+        async def slow_domain(
+            _start: dt.datetime,
+            _end: dt.datetime,
+        ) -> dict[str, object]:
+            await asyncio.sleep(0.2)
+            return {"available": True}
+
+        async def fast_domain(
+            _start: dt.datetime,
+            _end: dt.datetime,
+        ) -> dict[str, object]:
+            return {"available": True}
+
+        service = ProductionOverviewService(
+            None,
+            None,
+            max_concurrent_domains=2,
+            domain_timeout_seconds=0.02,
+        )
+        service._devices = slow_domain  # type: ignore[method-assign]
+        service._media = fast_domain  # type: ignore[method-assign]
+        service._realtime = fast_domain  # type: ignore[method-assign]
+        service._inspections = fast_domain  # type: ignore[method-assign]
+        service._alarms = fast_domain  # type: ignore[method-assign]
+        service._locations = fast_domain  # type: ignore[method-assign]
+        service._data_quality = fast_domain  # type: ignore[method-assign]
+
+        started_at = time.monotonic()
+        overview = await service.build(days=1)
+        self.assertLess(time.monotonic() - started_at, 0.15)
+        self.assertEqual(
+            overview["devices"],
+            {"available": False, "error": "database_timeout"},
+        )
+        self.assertTrue(overview["media"]["available"])
+        self.assertTrue(overview["data_quality"]["available"])
+
     async def test_production_shape_overview_read_and_readiness_share_small_pool(
         self,
     ) -> None:

@@ -55,6 +55,13 @@ class PostgresConnectionPool:
         self._connection_kwargs = dict(connection_kwargs)
         self._acquire_timeout_seconds = acquire_timeout_seconds
         self._lock = threading.Lock()
+        # psycopg2's ThreadedConnectionPool serializes getconn(), including
+        # a cold TCP/TLS connection attempt. Keep a separate, bounded gate in
+        # front of that driver call: a slow upstream connect must not strand
+        # every asyncio.to_thread caller behind the driver's unbounded lock.
+        # Queries still use the full connection pool once a connection is
+        # acquired; this gate covers only getconn().
+        self._driver_getconn_gate = threading.Lock()
         self._pool: Any = None
         self._closed = False
         # ``ThreadedConnectionPool`` is thread-safe, but its ``getconn`` call
@@ -93,6 +100,15 @@ class PostgresConnectionPool:
                 "PostgreSQL connection pool is temporarily busy"
             )
 
+        driver_gate_acquired = self._driver_getconn_gate.acquire(
+            timeout=self._acquire_timeout_seconds
+        )
+        if not driver_gate_acquired:
+            self._leases.release()
+            raise PostgresPoolExhaustedError(
+                "PostgreSQL connection pool is temporarily busy"
+            )
+
         try:
             pool = self._get_pool()
             connection = pool.getconn()
@@ -107,6 +123,8 @@ class PostgresConnectionPool:
         except Exception:
             self._leases.release()
             raise
+        finally:
+            self._driver_getconn_gate.release()
         return _PooledConnection(pool, connection, self._leases)
 
     def close(self) -> None:

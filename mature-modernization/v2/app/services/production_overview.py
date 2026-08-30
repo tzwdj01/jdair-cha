@@ -9,6 +9,7 @@ from typing import Any
 UTC = dt.timezone.utc
 SHANGHAI = dt.timezone(dt.timedelta(hours=8), name="Asia/Shanghai")
 DEFAULT_MAX_CONCURRENT_DOMAINS = 2
+DEFAULT_DOMAIN_TIMEOUT_SECONDS = 3.0
 
 
 class ProductionOverviewService:
@@ -30,9 +31,12 @@ class ProductionOverviewService:
         *,
         business_timezone: dt.tzinfo = SHANGHAI,
         max_concurrent_domains: int = DEFAULT_MAX_CONCURRENT_DOMAINS,
+        domain_timeout_seconds: float = DEFAULT_DOMAIN_TIMEOUT_SECONDS,
     ) -> None:
         if max_concurrent_domains < 1:
             raise ValueError("max_concurrent_domains must be positive")
+        if domain_timeout_seconds <= 0:
+            raise ValueError("domain_timeout_seconds must be positive")
         self._inspection_service = inspection_service
         self._record_service = record_service
         self._business_tz = business_timezone
@@ -41,6 +45,11 @@ class ProductionOverviewService:
         # room for direct inspection reads and readiness probes.
         self._max_concurrent_domains = max_concurrent_domains
         self._domain_semaphore = asyncio.Semaphore(max_concurrent_domains)
+        # A PostgreSQL connect/query operation runs in asyncio.to_thread. A
+        # caller timeout cannot cancel that native thread, so bound the visible
+        # Dashboard domain and return an honest unavailable result instead of
+        # letting one stalled connection make the whole page wait indefinitely.
+        self._domain_timeout_seconds = domain_timeout_seconds
 
     async def build(
         self,
@@ -92,7 +101,13 @@ class ProductionOverviewService:
         """Run one overview domain under the shared pool-aware limit."""
 
         async with self._domain_semaphore:
-            return await operation(start, end)
+            try:
+                return await asyncio.wait_for(
+                    operation(start, end),
+                    timeout=self._domain_timeout_seconds,
+                )
+            except asyncio.TimeoutError:
+                return _unavailable("database_timeout")
 
     async def _devices(
         self,

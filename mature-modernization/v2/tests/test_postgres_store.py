@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 import datetime as dt
 import os
+import threading
+import time
 import unittest
 from contextlib import contextmanager
 from pathlib import Path
@@ -112,6 +114,22 @@ class _DriverExhaustedPool(_FakePool):
         raise _DriverPoolExhausted("driver pool exhausted")
 
 
+class _SlowGetconnPool(_FakePool):
+    started = threading.Event()
+    release = threading.Event()
+
+    @classmethod
+    def reset(cls) -> None:
+        cls.started = threading.Event()
+        cls.release = threading.Event()
+
+    def getconn(self) -> _FakeConnection:
+        self.get_calls += 1
+        type(self).started.set()
+        type(self).release.wait(timeout=2)
+        return _FakeConnection()
+
+
 class PooledConnectionTests(unittest.TestCase):
     """Pool behavior independent of a live PostgreSQL server."""
 
@@ -211,6 +229,46 @@ class PooledConnectionTests(unittest.TestCase):
             with self.assertRaises(PostgresPoolExhaustedError):
                 pool.connection()
             self.assertEqual(_DriverExhaustedPool.instances[0].get_calls, 2)
+
+    def test_slow_driver_acquisition_is_bounded_and_recoverable(self) -> None:
+        """A cold driver connect cannot strand later to_thread callers."""
+
+        _SlowGetconnPool.reset()
+        with patch(
+            "app.data.store.pool._ThreadedConnectionPool",
+            _SlowGetconnPool,
+        ):
+            pool = PostgresConnectionPool(
+                min_connections=1,
+                max_connections=2,
+                acquire_timeout_seconds=0.04,
+                connection_kwargs={"host": "127.0.0.1"},
+            )
+            first_done = threading.Event()
+
+            def first_acquisition() -> None:
+                try:
+                    with pool.connection():
+                        pass
+                finally:
+                    first_done.set()
+
+            worker = threading.Thread(target=first_acquisition, daemon=True)
+            worker.start()
+            self.assertTrue(_SlowGetconnPool.started.wait(timeout=0.5))
+
+            started_at = time.monotonic()
+            with self.assertRaises(PostgresPoolExhaustedError):
+                with pool.connection():
+                    pass
+            self.assertLess(time.monotonic() - started_at, 0.2)
+
+            _SlowGetconnPool.release.set()
+            worker.join(timeout=1)
+            self.assertTrue(first_done.is_set())
+            with pool.connection():
+                pass
+            pool.close()
 
     def test_context_manager_rolls_back_and_returns_healthy_connection(self) -> None:
         with patch(
