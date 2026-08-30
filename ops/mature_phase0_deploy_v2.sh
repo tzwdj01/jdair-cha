@@ -393,10 +393,21 @@ if [ "$expected_dashboard" = "true" ]; then
   dashboard_api_http="$(curl -sS -H 'Host: cha.jdair.top' \
     -o /tmp/jdair-cha-v2-dashboard-api.json -w '%{http_code}' \
     --max-time 15 http://127.0.0.1/api/v2/dashboard/overview)"
-  test "$dashboard_page_http" = "200"
-  test "$dashboard_api_http" = "401"
-  grep -q 'CHA 态势总览' /tmp/jdair-cha-v2-dashboard.html
-  grep -q '"authentication_required"' /tmp/jdair-cha-v2-dashboard-api.json
+  if [ "$expected_inspection" = "true" ]; then
+    # Phase 6 applies the AuthorizedUser boundary to the pre-existing M2
+    # dashboard routes. Anonymous release checks must therefore expect the
+    # stable 401 envelope rather than treating access control as a failed
+    # HTML route. The authorized browser/API checks remain a Canary concern.
+    test "$dashboard_page_http" = "401"
+    test "$dashboard_api_http" = "401"
+    grep -q '"code":"unauthorized"' /tmp/jdair-cha-v2-dashboard.html
+    grep -q '"code":"unauthorized"' /tmp/jdair-cha-v2-dashboard-api.json
+  else
+    test "$dashboard_page_http" = "200"
+    test "$dashboard_api_http" = "401"
+    grep -q 'CHA 态势总览' /tmp/jdair-cha-v2-dashboard.html
+    grep -q '"authentication_required"' /tmp/jdair-cha-v2-dashboard-api.json
+  fi
 fi
 
 release_hash="$(find "$release_dir" -type f -print0 | sort -z | xargs -0 sha256sum | sha256sum | cut -d' ' -f1)"

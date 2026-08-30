@@ -142,6 +142,8 @@ class ReleaseToolingTests(unittest.TestCase):
         self.assertIn('"CHA_V2_FEATURE_INSPECTION_V2"', source)
         self.assertIn("expected_realtime_readonly", source)
         self.assertIn("expected_inspection", source)
+        self.assertIn('if [ "$expected_inspection" = "true" ]; then', source)
+        self.assertIn('"code":"unauthorized"', source)
 
     def test_phase6_canary_features_enable_inspection_without_disabling_realtime(
         self,
