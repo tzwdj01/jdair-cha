@@ -16,29 +16,31 @@ plans.
 
 ## 2. Current Production Baseline
 
-Production recovery evidence on **2026-08-30** after the authorized private
-PostgreSQL connectivity gate:
+Production state on **2026-08-30** after the authorized Phase 6 Candidate
+retry was contained by rollback:
 
 | Item | Observed state |
 | --- | --- |
-| V2 health / live / ready | prior stable V2 release remains active; internal live and ready HTTP 200 |
-| Phase 6 V2 candidate | not rebuilt or deployed during recovery; the prior pool-failure candidate remains rolled back |
+| V2 health / live / ready | prior stable V2 release is again active after rollback; V2 `live` is HTTP 200 |
+| Phase 6 V2 candidate | Candidate commit `0d389d8` was packaged, deployed and identity-verified, then rolled back after the authorized Dashboard data request and current V2 PostgreSQL readiness gate failed |
 | PostgreSQL client policy | protected V2 and scheduler runtime uses TLS-enforcing `sslmode=require` and `gssencmode=disable` |
 | Private PostgreSQL path | recovered: three fresh CHA application-equivalent connections completed `SELECT 1`; TLS was active on every validated connection |
 | Time synchronization | CHA and PostgreSQL nodes retain healthy `chrony`, normal leap status and low observed offsets |
 | Inspection PostgreSQL data | retained; the controlled scheduler cycle persisted through the existing native read-only path without duplicate identity groups |
-| Current stable V2 readiness PostgreSQL field | `not_enabled`; this is expected for the rolled-back stable release and is not proof that PostgreSQL data is absent |
+| Candidate readiness PostgreSQL field | HTTP 200 envelope but `status=degraded` / PostgreSQL `status=degraded`; this was a Canary failure, not a successful readiness result |
 | M4 scheduler | recovered and active under its existing systemd service; one controlled cycle passed before managed start, with no immediate PostgreSQL error or restart |
 | Production PostgreSQL | existing private listener restored through minimal cluster-to-Tailnet startup ordering; no public listener, data, schema or HBA change |
 | Legacy / Nginx / Realtime scope | unchanged by this retry; do not infer or alter Realtime allowlists from public feature responses |
 | Remote database backup | historical Master Plan records off-host backup PASS; it was not revalidated during this PG-blocked Preflight |
 
 The current operational state is safe but is **not** a successful Dashboard
-Canary. The prior V2 release, Legacy and Nginx remain active; the low-rate
-scheduler is now active through systemd. No Candidate deployment,
-AuthorizedUser Dashboard Canary, access-policy mutation, database business-data
-change, Nginx change or AEE change occurred in this recovery. Do not make a
-further protected production change without a new explicit owner authorization.
+Canary. The prior V2 release was restored by its generated rollback helper;
+Legacy remains active and the low-rate scheduler remains active through
+systemd with `NRestarts=0` after rollback. The Candidate did not write
+production business data, mutate the PostgreSQL schema or change AEE behavior.
+Do not retry the Candidate or make another protected production change until
+the new data-store PostgreSQL health failure has a documented cause and a
+separate owner gate authorizes the next action.
 
 ---
 
@@ -59,9 +61,10 @@ Use only these labels: `COMPLETED / VERIFIED`, `COMPLETED / UNVERIFIED`,
   dated evidence in `docs/aee/` and the Master Plan.
 - Current local Phase 6 implementation has a shared AuthorizedUser boundary,
   bounded PostgreSQL pool, concurrent overview aggregation and readiness model.
-  On 2026-08-28, the full local suite passed **301 tests** with **2 explicit
-  isolated-PostgreSQL skips**; package content and the current tracked-file
-  secret/address scan also passed.
+  The current source suite passed **316 tests** with **2 explicit
+  isolated-PostgreSQL skips**; the exact extracted Candidate package also
+  passed **316 tests** with **10 intentional archive-only skips**. Package
+  content and the tracked-file sensitive-string scan passed.
 - The guarded release helper correctly fail-stopped before a first `current`
   switch when a source-only test was unavailable in the production archive.
   The artifact test was repaired, then both source and extracted-package suites
@@ -105,14 +108,27 @@ Use only these labels: `COMPLETED / VERIFIED`, `COMPLETED / UNVERIFIED`,
   source release-tooling checks all passed. The final M4 package is built only
   from a clean committed source tree so its runtime commit marker cannot
   misidentify a dirty artifact.
+- **2026-08-30 release safety corrections:** Candidate features preserve
+  read-only realtime while enabling the intended Inspection Canary; the
+  deployment helper now accepts the Inspection feature line and validates
+  feature state dynamically. Its anonymous Dashboard assertion correctly
+  expects the AuthorizedUser `401` envelope when Inspection is enabled.
+- The Candidate release helper completed package validation, V2/Legacy
+  start-up checks, Nginx syntax/reload checks and runtime identity checks for
+  commit `0d389d8`. Anonymous Dashboard page/API checks correctly returned
+  `401`; no anonymous Inspection data was exposed.
 
 ### COMPLETED / UNVERIFIED
 
 - Historical M3 fullscreen user-activation evidence remains
   `COMPLETED / UNVERIFIED` by the approved M3 waiver.
-- The Phase 6 code was deployed for the controlled retry but rolled back after
-  a real candidate failure. Any claim that it is active in production is false
-  until a future successful retry.
+- The Phase 6 Candidate was deployed for the controlled retry and then rolled
+  back. A lawfully supplied enabled test user could open the authorized
+  Dashboard shell, but its production-overview data request did not complete
+  within a bounded browser probe. Candidate V2 readiness reported PostgreSQL
+  `degraded`; a protected one-shot `PostgresInspectionStore` health check
+  timed out while the separate workflow-store health check passed. Any claim
+  that the Candidate is active or accepted in production is false.
 - Real authenticated-but-not-AuthorizedUser `403`, disabled-user `403`, and
   admin `200` have not been completed in this retry. Do not simulate these
   outcomes with arbitrary production identities.
@@ -127,30 +143,31 @@ Use only these labels: `COMPLETED / VERIFIED`, `COMPLETED / UNVERIFIED`,
 **ACTIVE PHASE: PHASE 6 — DASHBOARD CONSOLIDATION & CANARY HARDENING**
 
 **CURRENT SUBPHASE: AUTHORIZEDUSER DASHBOARD PRODUCTION CANARY RETRY —
-RECOVERY GATE PASSED / DEPLOYMENT PENDING**
+CANDIDATE ROLLED BACK / DATA-STORE POSTGRESQL ROOT CAUSE REQUIRED**
 
-**STATUS: READY FOR CONTROLLED CANDIDATE DEPLOYMENT AND CANARY RETRY**
+**STATUS: BLOCKED — DO NOT RETRY THE CANDIDATE**
 
-Phase 6B remains `COMPLETED / VERIFIED` locally. The 2026-08-30 Preflight
-connection stop gate has been resolved without an architecture change:
-PostgreSQL was configured for private access but started loopback-only because
-its cluster service lacked existing Tailnet startup ordering. The authorized
-minimal dependency drop-in restored the listener, followed by three protected
-TLS connections, one idempotent controlled scheduler cycle and a systemd
-managed-scheduler start. No Candidate package was rebuilt or deployed, and no
-Dashboard/AuthorizedUser Canary request was performed.
+The private-listener recovery remains `COMPLETED / VERIFIED` and is not being
+reopened. The separately authorized Candidate retry proved a new, narrower
+application-facing failure: the candidate's PostgreSQL **data-store** health
+path timed out and prevented the authorized production-overview request from
+finishing, although the workflow-store health check passed. The Candidate was
+immediately rolled back. This is not evidence of an AEE/MCS8/media defect and
+does not authorize a new media architecture or a further production retry.
 
-### TODO — after the private PostgreSQL recovery gate
+### TODO — after root-cause authorization
 
-1. On a separate explicit owner go-ahead, rebuild the Candidate from the clean
-   remote-tracked Phase 6B commit and
-   confirm `RUNNING_RELEASE`, `RUNNING_COMMIT` and `PACKAGE_HASH` before
-   browser/API validation.
-2. Obtain a lawful ordinary authenticated-but-not-AuthorizedUser test identity
+1. Form a bounded, evidence-led root-cause plan for the Candidate
+   `PostgresInspectionStore` timeout. Prefer isolated/rehearsal reproduction;
+   do not repeat the production Candidate or reopen the already-passed private
+   listener gate without a new explicit owner authorization.
+2. After the data-store health path is demonstrated healthy, obtain a lawful
+   ordinary authenticated-but-not-AuthorizedUser test identity
    for the real `403` production gate. The enabled inspector may only be
    temporarily disabled if a future owner authorization explicitly accepts that
    reversible test mutation.
-3. Re-run the complete AuthorizedUser Dashboard Canary: anonymous `401`,
+3. Only after a new production gate, re-run the complete AuthorizedUser
+   Dashboard Canary: anonymous `401`,
    ordinary/disabled `403`, enabled inspector/admin `200`, pool behavior,
    Dashboard cold/warm response time, PG -> API -> Dashboard reconciliation,
    and M2/Legacy regression.
@@ -158,6 +175,10 @@ Dashboard/AuthorizedUser Canary request was performed.
 ### BLOCKED
 
 - `M4 CLOSED`, broad user rollout, M5 and Legacy retirement are not authorized.
+- The Phase 6 retry is blocked by the observed Candidate
+  `PostgresInspectionStore` health timeout / degraded readiness. The direct
+  cause is not yet proven; do not guess that the already-recovered Tailnet
+  listener, AEE, MCS8 or a media protocol is responsible.
 - Completion of the actual non-AuthorizedUser `403` gate requires a lawful,
   explicitly supplied test identity; do not enumerate AEE/MCS8 users or
   repurpose unrelated accounts.
@@ -300,15 +321,17 @@ permission to start M5.
 | 2026-08-29 | The Phase 6 Dashboard probe then exposed a real candidate `psycopg2.pool.PoolError: connection pool exhausted`, an HTTP 500 on an inspection endpoint, and a readiness timeout. The candidate was rolled back; the prior V2 release is healthy and the low-rate scheduler remains active. See `docs/aee/M4_PHASE6_PG_RECOVERY_CANARY_20260829.md`. |
 | 2026-08-29 | Owner authorized Phase 6B local-only hardening. Source tracing confirmed `ThreadedConnectionPool` (not `SimpleConnectionPool`), one process-scoped four-connection data pool, a separate two-connection workflow pool, seven unbounded overview domains, non-waiting `getconn()`, and concurrent direct/readiness demand as the incident mechanism. No production deployment or state change is part of Phase 6B. |
 | 2026-08-30 | Owner authorized the Phase 6 AuthorizedUser Dashboard Canary Retry. Read-only Preflight confirmed the stable V2/Legacy/Nginx baseline, TLS-only PostgreSQL runtime policy and healthy CHA `chrony`; however, three protected application-equivalent PostgreSQL fresh connections failed with `OperationalError`. A recent scheduler timeout had already caused one systemd restart. The scheduler was safely stopped to prevent recurrence. No Candidate package/build/deployment, PostgreSQL mutation, network change or Dashboard/access test occurred. See `docs/aee/M4_PHASE6_CANARY_RETRY_PREFLIGHT_BLOCK_20260830.md`. |
-| 2026-08-30 | Authorized private PostgreSQL recovery found a cluster startup-order defect: PostgreSQL had the correct existing private listener configuration but started before its Tailnet address was ready and listened only on loopback. A minimal service dependency drop-in restored the private listener. Three fresh protected TLS connections passed; `chrony` remained healthy on both nodes; the existing controlled scheduler cycle passed without duplicate identities; and the systemd scheduler was recovered active with no immediate PostgreSQL failure or restart. No Candidate or Dashboard Canary ran. See `docs/aee/M4_PHASE6_PRIVATE_PG_CONNECTIVITY_RECOVERY_20260830.md`. |
+| 2026-08-30 | Authorized private PostgreSQL recovery found a cluster startup-order defect: PostgreSQL had the correct existing private listener configuration but started before its Tailnet address was ready and listened only on loopback. A minimal service dependency drop-in restored the private listener. Three fresh protected TLS connections passed; `chrony` remained healthy on both nodes; the existing controlled scheduler cycle passed without duplicate identities; and the systemd scheduler was recovered active with no immediate PostgreSQL failure or restart. See `docs/aee/M4_PHASE6_PRIVATE_PG_CONNECTIVITY_RECOVERY_20260830.md`. |
+| 2026-08-30 | Authorized Phase 6 Candidate retry: source and extracted-package tests passed, Candidate `0d389d8` deployed with verified runtime identity and correct anonymous `401` boundary. A lawful enabled test user loaded the Dashboard shell, but `/api/v2/dashboard/production-overview` did not finish within the bounded browser probe; Candidate readiness reported PostgreSQL `degraded`, and a protected `PostgresInspectionStore` health check timed out while the workflow-store check passed. The generated rollback helper restored the prior V2 release; scheduler remained active with `NRestarts=0`. See `docs/aee/M4_PHASE6_CANARY_RETRY_ROLLBACK_20260830.md`. |
 
 ---
 
 ## 11. Next Recommended Actions
 
-1. Preserve the recovered low-rate scheduler under natural production
-   observation; do not manufacture a long polling run.
-2. Await a distinct owner instruction to rebuild/deploy the clean Phase 6B
-   Candidate and execute the controlled AuthorizedUser Dashboard Canary.
-3. Obtain a lawful ordinary non-AuthorizedUser test account for the required
-   real `403` access-control evidence.
+1. Preserve the low-rate scheduler under natural production observation; do
+   not manufacture a long polling run.
+2. Do not redeploy the Candidate. Seek a separate owner authorization for a
+   bounded root-cause investigation of the data-store PostgreSQL timeout,
+   preferably in an isolated rehearsal environment.
+3. After that gate is resolved, obtain a lawful ordinary non-AuthorizedUser
+   test account for the required real `403` access-control evidence.

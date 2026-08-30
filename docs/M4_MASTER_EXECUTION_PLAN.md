@@ -4,7 +4,7 @@ Date: `2026-08-18`
 
 Current governance correction: `2026-08-26` (reviewed `2026-08-28`)
 
-Status: `ACTIVE — PHASE 6 DASHBOARD CONSOLIDATION & CANARY HARDENING / PRIVATE PG RECOVERY PASS / CANARY RETRY PENDING`
+Status: `ACTIVE — PHASE 6 DASHBOARD CONSOLIDATION & CANARY HARDENING / PRIVATE PG RECOVERY PASS / CANDIDATE ROLLED BACK / ROOT CAUSE REQUIRED`
 
 本文件是 **M4 剩余阶段的单一执行路线图**。它保存详细执行顺序、验收标准、
 stop gates、deferred scope 与最终 M4 closure criteria。
@@ -26,10 +26,13 @@ stop gates、deferred scope 与最终 M4 closure criteria。
 > started loopback-only because it lacked Tailnet startup ordering; an
 > authorized minimal dependency drop-in restored its existing private listener.
 > Protected TLS `SELECT 1` passed `3/3`, the bounded scheduler gate passed and
-> the systemd scheduler is active. The Candidate remains undeployed and the
-> AuthorizedUser Dashboard Canary has not run; it requires a separate
-> controlled deployment instruction. See
-> `docs/aee/M4_PHASE6_PRIVATE_PG_CONNECTIVITY_RECOVERY_20260830.md`.
+> the systemd scheduler is active. A later authorized Candidate deployment
+> verified its runtime identity and anonymous `401` boundary, but an enabled
+> test user's production-overview data request did not finish and Candidate
+> readiness reported PostgreSQL `degraded`. The generated rollback helper
+> restored the prior V2 release. Do not retry until the data-store PostgreSQL
+> health timeout has a documented cause. See
+> `docs/aee/M4_PHASE6_CANARY_RETRY_ROLLBACK_20260830.md`.
 
 ---
 
@@ -304,11 +307,14 @@ Canary 记录，未污染业务数据。备份链路今日 12:33 验证有效。
 ## 8. PHASE 6 — M4 P4 Dashboard Consolidation
 
 **Current status (operational correction effective 2026-08-30):**
-`IN PROGRESS / CANARY RETRY PENDING`. The local hardening gates are complete;
-the later private PostgreSQL listener stop gate is also complete. This phase
-now awaits only a separately controlled Candidate deployment and AuthorizedUser
-Dashboard Canary. No production Candidate deployment or feature-flag change is
-implied by this plan update.
+`IN PROGRESS / CANDIDATE ROLLED BACK / ROOT CAUSE REQUIRED`. The local
+hardening gates and later private PostgreSQL listener stop gate are complete.
+The separately authorized Candidate was deployed, but the authorized
+production-overview request did not complete and Candidate readiness returned
+PostgreSQL `degraded`. The rollback helper restored the prior V2 release.
+This phase may not retry the Candidate until an evidence-led investigation
+identifies the data-store PostgreSQL health timeout and a later owner gate
+permits the next action.
 
 真实生产数据积累后进入 `M4 P4 — DASHBOARD CONSOLIDATION & OPERATIONAL
 ANALYTICS`（M4 最终核心产品阶段）。
@@ -471,16 +477,18 @@ production service 自然运行，下一次任务再读取历史结果。
 3. Inspection User Canary ✅ PASS (historical limited-canary evidence)
 4. Real Business Observation remains active naturally; do not manufacture long
    polling runs.
-5. **→ PHASE 6 Dashboard Consolidation & Canary Hardening — IN PROGRESS / CANARY RETRY PENDING**
-6. → AuthorizedUser Dashboard Canary only after the recovered scheduler remains
-   under normal observation and a separate owner deployment authorization.
+5. **→ PHASE 6 Dashboard Consolidation & Canary Hardening — IN PROGRESS / CANDIDATE ROLLED BACK**
+6. → Bounded root-cause investigation for the Candidate data-store PostgreSQL
+   health timeout, followed only by a separate owner authorization for another
+   production retry.
 7. → M4 Final Acceptance / Closure only after a later owner authorization.
 
 **Current phase: PHASE 6 — Dashboard Consolidation & Canary Hardening.**
 
-**Current stop gate: no Candidate deployment, Dashboard Canary or M4 closure
-without a separate owner instruction.**
+**Current stop gate: no Candidate redeployment, Dashboard Canary retry or M4
+closure until the data-store PostgreSQL health timeout is explained and a
+separate owner instruction opens the next gate.**
 
-**Current next action: await the next controlled Phase 6 Candidate deployment
-instruction; preserve normal scheduler observation without manufactured
-long-running tests.**
+**Current next action: preserve normal scheduler observation and await a
+bounded root-cause authorization; do not manufacture long-running tests or
+repeat the failed production Candidate.**
