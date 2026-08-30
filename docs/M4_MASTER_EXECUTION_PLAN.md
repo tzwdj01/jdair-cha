@@ -477,18 +477,24 @@ production service 自然运行，下一次任务再读取历史结果。
 3. Inspection User Canary ✅ PASS (historical limited-canary evidence)
 4. Real Business Observation remains active naturally; do not manufacture long
    polling runs.
-5. **→ PHASE 6 Dashboard Consolidation & Canary Hardening — IN PROGRESS / CANDIDATE ROLLED BACK**
-6. → Bounded root-cause investigation for the Candidate data-store PostgreSQL
-   health timeout, followed only by a separate owner authorization for another
-   production retry.
-7. → M4 Final Acceptance / Closure only after a later owner authorization.
+5. **→ PHASE 6 Dashboard Consolidation & Canary Hardening — IN PROGRESS /
+   CANDIDATE ROLLED BACK**
+6. → Local data-store timeout containment PASS: bounded driver-connection
+   acquisition and per-domain Dashboard timeout now prevent one stalled
+   connection from indefinitely blocking the overview. The underlying
+   production slow-connection cause remains unproven.
+7. → Separate owner authorization for a scoped production revalidation only;
+   do not automatically repeat the Candidate or a full Dashboard Canary.
+8. → M4 Final Acceptance / Closure only after a later owner authorization.
 
 **Current phase: PHASE 6 — Dashboard Consolidation & Canary Hardening.**
 
 **Current stop gate: no Candidate redeployment, Dashboard Canary retry or M4
-closure until the data-store PostgreSQL health timeout is explained and a
-separate owner instruction opens the next gate.**
+closure without a separate owner instruction. Local containment of the
+application-side timeout amplifier passed; the actual production
+slow-connection cause remains unproven and must be measured in any authorized
+revalidation.**
 
-**Current next action: preserve normal scheduler observation and await a
-bounded root-cause authorization; do not manufacture long-running tests or
-repeat the failed production Candidate.**
+**Current next action: preserve normal scheduler observation and await an
+owner-approved, bounded production revalidation plan; do not manufacture
+long-running tests or repeat the failed production Candidate.**

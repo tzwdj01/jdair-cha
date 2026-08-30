@@ -117,6 +117,17 @@ Use only these labels: `COMPLETED / VERIFIED`, `COMPLETED / UNVERIFIED`,
   start-up checks, Nginx syntax/reload checks and runtime identity checks for
   commit `0d389d8`. Anonymous Dashboard page/API checks correctly returned
   `401`; no anonymous Inspection data was exposed.
+- **2026-08-30 local data-store timeout containment:** source tracing and a
+  deterministic slow-driver regression proved that one cold/blocking
+  `psycopg2` `getconn()` call can keep its driver lock while its
+  `asyncio.to_thread` caller has already timed out. The local fix puts a
+  bounded application gate around driver connection acquisition and bounds
+  each Dashboard overview domain, returning the truthful
+  `database_busy`/`database_timeout` result rather than indefinitely blocking
+  the page. This proves containment of that application-side failure
+  amplifier; it does **not** prove why the Candidate's production connection
+  was slow. Source and extracted-package suites passed 318 tests (2 source
+  isolated-PostgreSQL skips; 10 archive-only skips).
 
 ### COMPLETED / UNVERIFIED
 
@@ -142,26 +153,33 @@ Use only these labels: `COMPLETED / VERIFIED`, `COMPLETED / UNVERIFIED`,
 
 **ACTIVE PHASE: PHASE 6 — DASHBOARD CONSOLIDATION & CANARY HARDENING**
 
-**CURRENT SUBPHASE: AUTHORIZEDUSER DASHBOARD PRODUCTION CANARY RETRY —
-CANDIDATE ROLLED BACK / DATA-STORE POSTGRESQL ROOT CAUSE REQUIRED**
+**CURRENT SUBPHASE: DATA-STORE POSTGRESQL TIMEOUT CONTAINMENT —
+LOCAL PASS / PRODUCTION REVALIDATION OWNER GATE REQUIRED**
 
-**STATUS: BLOCKED — DO NOT RETRY THE CANDIDATE**
+**STATUS: IN PROGRESS — CANDIDATE REMAINS ROLLED BACK; DO NOT RETRY WITHOUT
+EXPLICIT OWNER AUTHORIZATION**
 
 The private-listener recovery remains `COMPLETED / VERIFIED` and is not being
 reopened. The separately authorized Candidate retry proved a new, narrower
 application-facing failure: the candidate's PostgreSQL **data-store** health
 path timed out and prevented the authorized production-overview request from
 finishing, although the workflow-store health check passed. The Candidate was
-immediately rolled back. This is not evidence of an AEE/MCS8/media defect and
-does not authorize a new media architecture or a further production retry.
+immediately rolled back. Local analysis has now proven and contained one
+application-side timeout amplification mechanism, with deterministic
+regression coverage. The actual production slow connection remains unproven:
+do not attribute it to the recovered listener, AEE, MCS8, Tailnet, media
+protocol behavior or a PostgreSQL driver defect. This work does not authorize
+a new media architecture or a further production retry.
 
-### TODO — after root-cause authorization
+### TODO — after production revalidation authorization
 
-1. Form a bounded, evidence-led root-cause plan for the Candidate
-   `PostgresInspectionStore` timeout. Prefer isolated/rehearsal reproduction;
-   do not repeat the production Candidate or reopen the already-passed private
-   listener gate without a new explicit owner authorization.
-2. After the data-store health path is demonstrated healthy, obtain a lawful
+1. Obtain a separate owner authorization for a tightly scoped production
+   revalidation plan. It must measure the data-store connection/read path,
+   Dashboard cold/warm response time, pool busy/timeout outcomes and rollback
+   conditions. It must not reopen the already-passed private-listener gate or
+   repeat a full Canary by default.
+2. After the data-store health path is demonstrated healthy in that authorized
+   revalidation, obtain a lawful
    ordinary authenticated-but-not-AuthorizedUser test identity
    for the real `403` production gate. The enabled inspector may only be
    temporarily disabled if a future owner authorization explicitly accepts that
@@ -175,10 +193,12 @@ does not authorize a new media architecture or a further production retry.
 ### BLOCKED
 
 - `M4 CLOSED`, broad user rollout, M5 and Legacy retirement are not authorized.
-- The Phase 6 retry is blocked by the observed Candidate
-  `PostgresInspectionStore` health timeout / degraded readiness. The direct
-  cause is not yet proven; do not guess that the already-recovered Tailnet
-  listener, AEE, MCS8 or a media protocol is responsible.
+- The next Phase 6 production revalidation is blocked pending a separate owner
+  gate. The observed Candidate `PostgresInspectionStore` health timeout /
+  degraded readiness has local application-side containment, but its upstream
+  slow-connection cause is not yet proven; do not guess that the
+  already-recovered Tailnet listener, AEE, MCS8 or a media protocol is
+  responsible.
 - Completion of the actual non-AuthorizedUser `403` gate requires a lawful,
   explicitly supplied test identity; do not enumerate AEE/MCS8 users or
   repurpose unrelated accounts.
