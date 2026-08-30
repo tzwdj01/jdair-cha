@@ -1,6 +1,6 @@
 # CHA Video Record System Optimization — Active Task Goal
 
-Last updated: `2026-08-30`
+Last updated: `2026-08-31`
 
 ## 1. Overall Objective
 
@@ -14,7 +14,32 @@ plans.
 
 ---
 
-## 2. Current Production Baseline
+## 2. Current Superseding State
+
+**ACTIVE MILESTONE: M4**
+
+**ACTIVE PHASE: PHASE 6 — DASHBOARD CONSOLIDATION & CANARY HARDENING**
+
+**CURRENT SUBPHASE: OWNER-OBSERVED REFINEMENT — AUTHORIZEDUSER MANAGEMENT UI**
+
+The owner-authorized Phase 6 Candidate at commit `c2e14c1` is deployed and
+usable in production. V2, Legacy, Nginx and the low-rate scheduler are active;
+the protected public PostgreSQL TLS path is the accepted production path. This
+does not close M4, authorize a full rollout or authorize M5.
+
+Owner Business Acceptance identified one bounded M4 usability gap: the
+AuthorizedUser API exists, but an administrator has no dedicated management
+page. The current work is limited to an admin-protected Dashboard page that
+reuses the existing AuthorizedUser list/create/enable/disable API. It must not
+create a second identity system, manage AEE credentials, add a role beyond
+`admin`/`inspector`, or alter existing production users during verification.
+
+All dated recovery and retry records below remain historical evidence. They
+must not override this current production state.
+
+---
+
+## 3. Historical Production Baseline (2026-08-30)
 
 Production state on **2026-08-30** before the owner-authorized public
 PostgreSQL-path recovery and Phase 6 Candidate Canary retry:
@@ -42,7 +67,7 @@ the PostgreSQL schema or change AEE behavior.
 
 ---
 
-## 3. Project Status Classification
+## 4. Project Status Classification
 
 Use only these labels: `COMPLETED / VERIFIED`, `COMPLETED / UNVERIFIED`,
 `IN PROGRESS`, `TODO`, `BLOCKED`, `AEE VERIFICATION REQUIRED`.
@@ -151,11 +176,10 @@ Use only these labels: `COMPLETED / VERIFIED`, `COMPLETED / UNVERIFIED`,
 
 **ACTIVE PHASE: PHASE 6 — DASHBOARD CONSOLIDATION & CANARY HARDENING**
 
-**CURRENT SUBPHASE: PUBLIC PG PATH RECOVERY + AUTHORIZEDUSER DASHBOARD CANARY
-RETRY**
+**CURRENT SUBPHASE: OWNER-OBSERVED REFINEMENT — AUTHORIZEDUSER MANAGEMENT UI**
 
-**STATUS: IN PROGRESS — PUBLIC TLS PATH ACCEPTED; SCHEDULER RECOVERED;
-CANDIDATE RETRY OWNER CONFIRMATION REQUIRED**
+**STATUS: IN PROGRESS — IMPLEMENT, VERIFY, EXACT-PACKAGE DEPLOY AND VALIDATE
+THE ADMIN/INSPECTOR BOUNDARY WITHOUT CHANGING EXISTING PRODUCTION USERS**
 
 The first resumed Candidate deployment was **not** an accepted Canary attempt.
 The operator-side preflight validated the new package, but the historical
@@ -186,26 +210,22 @@ branch adds bounded credential-free `scheduler_cycle_started`,
 `scheduler_cycle_completed` and `scheduler_waiting` records before the
 authorized restart verification.
 
-### TODO — after fresh owner confirmation for the retry
+### TODO — current Owner-Observed Refinement
 
-1. Build the clean committed Candidate and transfer it together with the
-   matching release helper into a run-scoped staging location. Do not rely on
-   a historical default package filename.
-2. Run `CHA_V2_DEPLOY_VERIFY_ONLY=true` using the expected package SHA-256 and
-   commit. The emitted source identity must equal the package that will be
-   deployed; a mismatch ends the attempt before any production mutation.
-3. Perform only the short approved production preflight: active public TLS
-   PostgreSQL path, active scheduler with explicit recent
-   `scheduler_cycle_completed`/`scheduler_waiting` evidence, time
-   synchronization and stable V2/Legacy/Nginx health. Do not reopen closed
-   network, pool, scheduler-stall or media investigations without new evidence.
-4. Deploy the same verified package with the same expected identity values.
-   Verify `RUNNING_RELEASE`, `RUNNING_COMMIT` and package hash before any
-   business gate. Roll back immediately for a wrong runtime or any other P0.
-5. Only then run the bounded AuthorizedUser Dashboard Canary: anonymous `401`;
-   lawful ordinary and disabled-user `403`; enabled inspector/admin `200`;
-   bounded pool behavior; real PG-to-API-to-Dashboard reconciliation; and
-   M2/Legacy regression.
+1. Add the administrator-only `/api/v2/dashboard/users` page and admin-only
+   navigation affordance, reusing the existing AuthorizedUser API and server
+   access boundary.
+2. Limit new user roles to `admin` and `inspector`; allow the page to submit a
+   current CHA login identity without collecting a password or AEE credential.
+3. Complete isolated admin/inspector/anonymous/invalid-role tests, then run
+   the full suite, source/package sensitive scan and `git diff --check`.
+4. Build one clean, committed Candidate and use explicit package path,
+   SHA-256, commit and verify-only release gates. Never select a historical or
+   `/tmp` artifact implicitly.
+5. After the short normal production preflight, deploy only that exact package
+   and verify the existing admin can open the page, the existing inspector gets
+   `403`, and current AuthorizedUser rows remain unchanged. Production write
+   actions remain for a later explicit owner operation.
 
 ### BLOCKED
 
@@ -228,7 +248,7 @@ read-only path. Any future AEE/MCS8/media behavior change remains
 
 ---
 
-## 4. AEE Reference Evidence Rules
+## 5. AEE Reference Evidence Rules
 
 For AEE, MCS8, realtime video, WebRTC, WebSocket media sessions, RTP, codec,
 stream profile, SDK behavior or device compatibility work:
@@ -246,7 +266,7 @@ do not invent upstream behavior.
 
 ---
 
-## 5. Constraints / Non-goals
+## 6. Constraints / Non-goals
 
 This recovery-complete Phase must not:
 
@@ -264,7 +284,7 @@ This recovery-complete Phase must not:
 
 ---
 
-## 6. Verification Requirements
+## 7. Verification Requirements
 
 Phase 6 local acceptance requires:
 
@@ -292,7 +312,7 @@ Phase 6 local acceptance requires:
 
 ---
 
-## 7. Production Safety Requirements
+## 8. Production Safety Requirements
 
 Any retry needs explicit owner authorization and a rollback baseline.
 Before/after it must verify service state, restart count, Legacy health, V2
@@ -302,7 +322,7 @@ first; no full rollout by implication.
 
 ---
 
-## 8. Git / Release Requirements
+## 9. Git / Release Requirements
 
 - Work only on the active branch; do not overwrite unrelated edits.
 - Keep secrets, cookies, tokens, backups, archives and production environment
@@ -316,7 +336,7 @@ first; no full rollout by implication.
 
 ---
 
-## 9. Done Criteria for This Phase
+## 10. Done Criteria for This Phase
 
 The PostgreSQL connection-policy and time-synchronization gate is complete.
 Phase 6B is locally complete only when the production pool failure has a
@@ -339,7 +359,7 @@ permission to start M5.
 
 ---
 
-## 10. Evidence / Decision Log
+## 11. Evidence / Decision Log
 
 | Date | Evidence / decision |
 | --- | --- |
@@ -362,12 +382,10 @@ permission to start M5.
 
 ---
 
-## 11. Next Recommended Actions
+## 12. Next Recommended Actions
 
-1. Preserve the low-rate scheduler under natural production observation; do
+1. Complete and deploy the bounded AuthorizedUser Management UI refinement.
+2. Preserve the low-rate scheduler under natural production observation; do
    not manufacture a long polling run.
-2. Do not deploy the Candidate. The exact current stop gate is
-   `RAW_CONNECTION_SLOW`; seek a new owner-approved, bounded evidence plan for
-   that layer only.
-3. After that gate is resolved, obtain a lawful ordinary non-AuthorizedUser
-   test account for the required real `403` access-control evidence.
+3. Keep production user writes for a later explicit owner action. The current
+   refinement verifies list rendering and read-only access boundaries only.

@@ -160,6 +160,7 @@ class InspectionsAPITests(unittest.IsolatedAsyncioTestCase):
         await _seed_authorized(anonymous_store)
         for path in (
             "/api/v2/dashboard/inspections",
+            "/api/v2/dashboard/users",
             "/api/v2/inspections",
             "/api/v2/inspections/metrics",
         ):
@@ -189,6 +190,17 @@ class InspectionsAPITests(unittest.IsolatedAsyncioTestCase):
                 )
             ).status_code,
             200,
+        )
+
+        self.assertEqual(
+            (
+                await _request(
+                    inspector_app,
+                    "GET",
+                    "/api/v2/dashboard/users",
+                )
+            ).status_code,
+            403,
         )
         self.assertEqual(
             (
@@ -383,12 +395,23 @@ class InspectionsAPITests(unittest.IsolatedAsyncioTestCase):
         }
         self.assertIn("inspector-a", usernames)
 
+        page = await _request(
+            app,
+            "GET",
+            "/api/v2/dashboard/users",
+        )
+        self.assertEqual(page.status_code, 200)
+        self.assertIn("用户权限管理", page.body.decode("utf-8"))
+        self.assertIn(
+            "/api/v2/inspections/authorized-users",
+            page.body.decode("utf-8"),
+        )
+
         added = await _request(
             app,
             "POST",
             "/api/v2/inspections/authorized-users",
             {
-                "aee_account_id": "acc-new",
                 "username": "inspector-new",
                 "role": "inspector",
                 "enabled": True,
@@ -401,6 +424,9 @@ class InspectionsAPITests(unittest.IsolatedAsyncioTestCase):
                 at=dt.datetime.now(UTC),
             )
         )
+        added_user = await store.get_authorized_user(username="inspector-new")
+        self.assertIsNotNone(added_user)
+        self.assertEqual(added_user.aee_account_id, "inspector-new")
 
         disabled = await _request(
             app,
@@ -415,13 +441,37 @@ class InspectionsAPITests(unittest.IsolatedAsyncioTestCase):
             )
         )
 
+        enabled = await _request(
+            app,
+            "POST",
+            "/api/v2/inspections/authorized-users/inspector-new/enable",
+        )
+        self.assertEqual(enabled.status_code, 200)
+        self.assertTrue(
+            await store.is_account_authorized(
+                username="inspector-new",
+                at=dt.datetime.now(UTC),
+            )
+        )
+
+        invalid_role = await _request(
+            app,
+            "POST",
+            "/api/v2/inspections/authorized-users",
+            {
+                "username": "invalid-role-user",
+                "role": "operator",
+            },
+        )
+        self.assertEqual(invalid_role.status_code, 422)
+
         audit = await store.list_user_audit_events(
             target_username="inspector-new",
         )
         actions = [event.action for event in audit]
         self.assertEqual(
             actions,
-            ["USER_ADDED", "USER_DISABLED"],
+            ["USER_ADDED", "USER_DISABLED", "USER_ENABLED"],
         )
         self.assertEqual(audit[0].operator_username, "admin-a")
 
@@ -438,6 +488,12 @@ class InspectionsAPITests(unittest.IsolatedAsyncioTestCase):
             response.json()["data"]["code"],
             "admin_forbidden",
         )
+        page = await _request(
+            app,
+            "GET",
+            "/api/v2/dashboard/users",
+        )
+        self.assertEqual(page.status_code, 403)
 
     async def test_candidates_returns_reference_items(self) -> None:
         class _FakeCandidateService:

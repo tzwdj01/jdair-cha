@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>用户权限管理 · 监察数据中心</title>
+  <style>
+    :root { font-family: "Microsoft YaHei", Arial, sans-serif; color: #1f2b36; background: #eef2f5; }
+    * { box-sizing: border-box; }
+    body { margin: 0; }
+    header { min-height: 58px; background: #12395a; color: #fff; display: grid; grid-template-columns: 280px 1fr auto; align-items: center; gap: 14px; padding: 0 18px; }
+    h1 { font-size: 18px; margin: 0; font-weight: 650; white-space: nowrap; }
+    .topnav { display: flex; gap: 8px; flex-wrap: wrap; }
+    .topnav button { border: 1px solid #276b9d; background: #287bb6; color: #fff; border-radius: 4px; padding: 7px 11px; cursor: pointer; font: inherit; }
+    .topnav button.active { background: #fff; color: #12395a; border-color: #fff; }
+    .meta { color: #d9e8f2; font-size: 12px; text-align: right; }
+    main { padding: 18px; max-width: 1180px; margin: 0 auto; }
+    .card { background: #fff; border: 1px solid #d4dee7; border-radius: 8px; padding: 14px; margin-bottom: 14px; }
+    .card h2 { font-size: 16px; margin: 0 0 8px; }
+    .description { color: #5f7385; font-size: 13px; line-height: 1.65; margin: 0; }
+    .toolbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; }
+    .toolbar button, .button { border: 1px solid #276b9d; background: #287bb6; color: #fff; border-radius: 4px; padding: 7px 11px; cursor: pointer; font: inherit; }
+    .button.secondary { background: #fff; color: #12395a; }
+    .button.danger { background: #a74343; border-color: #8f3535; }
+    .button:disabled { opacity: .55; cursor: wait; }
+    .form-grid { display: grid; grid-template-columns: minmax(220px, 1fr) 180px auto; gap: 10px; align-items: end; }
+    label { display: grid; gap: 5px; color: #354c60; font-size: 13px; }
+    input, select { border: 1px solid #c6d4df; border-radius: 4px; padding: 7px 8px; font: inherit; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { text-align: left; padding: 9px; border-bottom: 1px solid #e3ebf2; }
+    th { background: #f2f6fa; color: #354c60; }
+    .state { font-weight: 700; }
+    .state-enabled { color: #1c7a3d; }
+    .state-disabled { color: #b23b3b; }
+    .notice { border: 1px solid #e6c35c; background: #fff8e6; color: #6b5200; border-radius: 6px; padding: 10px 12px; font-size: 13px; margin-bottom: 12px; }
+    .empty { color: #8a97a5; font-size: 13px; padding: 12px 0; }
+    @media (max-width: 760px) {
+      header { grid-template-columns: 1fr; gap: 8px; padding: 10px 14px; }
+      .meta { text-align: left; }
+      .form-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>监察数据中心</h1>
+    <nav class="topnav" aria-label="Dashboard 导航">
+      <button data-route="overview-page">监察总览</button>
+      <button data-route="devices">设备运行</button>
+      <button data-route="media">视频上传</button>
+      <button data-route="realtime">监察使用</button>
+      <button data-route="inspections">监察记录</button>
+      <button data-route="tasks">航班/任务</button>
+      <button data-route="map">设备定位</button>
+      <button data-route="alarms">告警异常</button>
+      <button data-route="data-quality">数据质量</button>
+      <button class="active" aria-current="page">用户权限</button>
+    </nav>
+    <div class="meta">v{{CHA_V2_VERSION}} · {{CHA_V2_BUILD}}</div>
+  </header>
+  <main>
+    <section class="card">
+      <h2>用户权限管理</h2>
+      <p class="description">管理可以访问 CHA 监察功能的 AuthorizedUser。此处不创建 AEE 用户，也不修改 AEE 登录密码。</p>
+    </section>
+
+    <div id="notice" class="notice" role="status" style="display:none"></div>
+
+    <section class="card">
+      <div class="toolbar">
+        <button id="openCreate" class="button" type="button">新增授权用户</button>
+      </div>
+      <form id="createForm" hidden>
+        <div class="form-grid">
+          <label>登录账号
+            <input id="username" name="username" maxlength="128" required autocomplete="off" placeholder="填写现有 CHA 登录 identity">
+          </label>
+          <label>角色
+            <select id="role" name="role">
+              <option value="inspector" selected>监察员</option>
+              <option value="admin">管理员</option>
+            </select>
+          </label>
+          <button id="submitCreate" class="button" type="submit">确认新增</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="card">
+      <h2>当前授权用户</h2>
+      <div id="table" class="empty">正在加载…</div>
+    </section>
+  </main>
+  <script>
+    const API = "/api/v2/inspections/authorized-users";
+    const dashboardRoute = (route) => "/api/v2/dashboard/" + route;
+    const byId = (id) => document.getElementById(id);
+    const esc = (value) => String(value == null ? "" : value).replace(/[&<>"']/g, (char) => ({
+      "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+    }[char]));
+    const roleText = (role) => {
+      if (role === "admin") return "管理员";
+      if (role === "inspector") return "监察员";
+      return "未设置";
+    };
+
+    function notice(message, kind) {
+      const target = byId("notice");
+      target.textContent = message || "";
+      target.style.display = message ? "block" : "none";
+      target.style.borderColor = kind === "error" ? "#d28a8a" : "";
+      target.style.background = kind === "error" ? "#fff0f0" : "";
+      target.style.color = kind === "error" ? "#8a2424" : "";
+    }
+
+    async function request(path, options) {
+      const response = await fetch(path, {
+        headers: { "Accept": "application/json", "Content-Type": "application/json" },
+        ...options
+      });
+      let payload = {};
+      try { payload = await response.json(); } catch (err) { /* bounded error below */ }
+      if (!response.ok) {
+        const code = payload && payload.data && payload.data.code;
+        throw new Error(code || ("HTTP " + response.status));
+      }
+      return payload.data || {};
+    }
+
+    function renderUsers(items) {
+      const rows = (items || []).map((user) => {
+        const enabled = Boolean(user.enabled);
+        const action = enabled ? "disable" : "enable";
+        const label = enabled ? "禁用" : "启用";
+        const buttonClass = enabled ? "button danger" : "button secondary";
+        return "<tr>" +
+          "<td>" + esc(user.username) + "</td>" +
+          "<td>" + esc(roleText(user.role)) + "</td>" +
+          "<td><span class=\"state state-" + (enabled ? "enabled\">已启用" : "disabled\">已禁用") + "</span></td>" +
+          "<td><button class=\"" + buttonClass + "\" data-action=\"" + action + "\" data-username=\"" + esc(user.username) + "\">" + label + "</button></td>" +
+          "</tr>";
+      }).join("");
+      byId("table").innerHTML = rows
+        ? "<table><thead><tr><th>账号</th><th>角色</th><th>状态</th><th>操作</th></tr></thead><tbody>" + rows + "</tbody></table>"
+        : "<div class=\"empty\">当前没有 AuthorizedUser。</div>";
+    }
+
+    async function loadUsers() {
+      byId("table").innerHTML = '<div class="empty">正在加载…</div>';
+      try {
+        const data = await request(API);
+        renderUsers(data.items || []);
+      } catch (err) {
+        byId("table").innerHTML = '<div class="empty">用户列表暂不可用。</div>';
+        notice("无法读取 AuthorizedUser：" + err.message, "error");
+      }
+    }
+
+    async function setEnabled(username, enabled) {
+      const action = enabled ? "启用" : "禁用";
+      if (!confirm("确认" + action + "用户 " + username + "？" + (enabled ? "" : " 禁用后该用户将无法继续使用需要 AuthorizedUser 权限的 CHA 功能。"))) {
+        return;
+      }
+      notice("");
+      try {
+        await request(API + "/" + encodeURIComponent(username) + "/" + (enabled ? "enable" : "disable"), { method: "POST" });
+        notice("已" + action + "用户 " + username + "。", "success");
+        await loadUsers();
+      } catch (err) {
+        notice(action + "失败：" + err.message, "error");
+      }
+    }
+
+    document.addEventListener("DOMContentLoaded", () => {
+      document.querySelectorAll("[data-route]").forEach((button) => {
+        button.addEventListener("click", () => { window.location.href = dashboardRoute(button.dataset.route); });
+      });
+      byId("openCreate").addEventListener("click", () => {
+        byId("createForm").hidden = !byId("createForm").hidden;
+        if (!byId("createForm").hidden) byId("username").focus();
+      });
+      byId("createForm").addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const submit = byId("submitCreate");
+        submit.disabled = true;
+        notice("");
+        try {
+          await request(API, {
+            method: "POST",
+            body: JSON.stringify({ username: byId("username").value.trim(), role: byId("role").value })
+          });
+          byId("createForm").reset();
+          byId("createForm").hidden = true;
+          notice("已新增 AuthorizedUser。", "success");
+          await loadUsers();
+        } catch (err) {
+          notice("新增失败：" + err.message, "error");
+        } finally {
+          submit.disabled = false;
+        }
+      });
+      byId("table").addEventListener("click", (event) => {
+        const target = event.target;
+        if (target && target.dataset && target.dataset.action) {
+          setEnabled(target.dataset.username, target.dataset.action === "enable");
+        }
+      });
+      loadUsers();
+    });
+  </script>
+</body>
+</html>

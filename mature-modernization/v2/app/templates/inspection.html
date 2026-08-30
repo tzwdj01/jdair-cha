@@ -57,6 +57,7 @@
       <button id="tab-locations">设备定位</button>
       <button id="tab-alarms">告警异常</button>
       <button id="tab-data_quality">数据质量</button>
+      <button id="tab-users" hidden>用户权限</button>
     </nav>
     <div class="meta">v{{CHA_V2_VERSION}} · {{CHA_V2_BUILD}}</div>
   </header>
@@ -733,9 +734,26 @@
           window.location.href = "/api/v2/dashboard/" + key;
         });
       });
+      loadAdminNavigation();
       byId("refresh").addEventListener("click", load);
       load();
     });
+
+    async function loadAdminNavigation() {
+      const usersTab = byId("tab-users");
+      try {
+        const response = await fetch("/api/v2/inspections/authorized-users", {
+          headers: { "Accept": "application/json" }
+        });
+        if (!response.ok) return;
+        usersTab.hidden = false;
+        usersTab.addEventListener("click", () => {
+          window.location.href = "/api/v2/dashboard/users";
+        });
+      } catch (err) {
+        // The protected page remains unavailable when admin verification fails.
+      }
+    }
   </script>
 </body>
 </html>

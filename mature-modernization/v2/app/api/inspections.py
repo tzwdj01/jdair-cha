@@ -6,7 +6,7 @@ import json
 from collections.abc import Callable
 from dataclasses import asdict, is_dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response
@@ -27,6 +27,11 @@ UTC = dt.timezone.utc
 Envelope = Callable[..., JSONResponse]
 TEMPLATE_PATH = (
     Path(__file__).resolve().parents[1] / "templates" / "inspections.html"
+)
+AUTHORIZED_USERS_TEMPLATE_PATH = (
+    Path(__file__).resolve().parents[1]
+    / "templates"
+    / "authorized_users.html"
 )
 
 
@@ -82,11 +87,19 @@ class CorrectBody(BaseModel):
 
 
 class AuthorizedUserBody(BaseModel):
-    aee_account_id: str
-    username: str
+    """Admin-maintained CHA access entry.
+
+    The CHA login name is the only required form field.  ``aee_account_id``
+    remains an optional compatibility field for existing API callers; when it
+    is absent, the verified login identity is used for the stored account id.
+    No AEE credential is created, changed or stored by this model.
+    """
+
+    aee_account_id: str | None = None
+    username: str = Field(min_length=1, max_length=128)
     display_name: str | None = None
     department: str | None = None
-    role: str | None = None
+    role: Literal["admin", "inspector"] = "inspector"
     enabled: bool = True
     valid_from: dt.datetime | None = None
     valid_until: dt.datetime | None = None
@@ -165,6 +178,39 @@ def create_inspections_router(
             return HTMLResponse(
                 status_code=500,
                 content="Inspection template unavailable.",
+            )
+        return HTMLResponse(
+            content=html.replace(
+                "{{CHA_V2_VERSION}}",
+                settings.version,
+            ).replace("{{CHA_V2_BUILD}}", settings.build)
+        )
+
+    @router.get(
+        "/api/v2/dashboard/users",
+        response_class=HTMLResponse,
+        include_in_schema=False,
+    )
+    async def authorized_users_page(request: Request) -> Response:
+        """Render the small CHA AuthorizedUser administration page.
+
+        The route is deliberately protected on the server.  The navigation
+        affordance in the Dashboard is only a convenience; it is never the
+        security boundary.
+        """
+
+        blocked = require_admin_route(request)
+        if blocked is not None:
+            return blocked
+        _identity, access_error = await access.require_admin(request)
+        if access_error is not None:
+            return access_error
+        try:
+            html = AUTHORIZED_USERS_TEMPLATE_PATH.read_text(encoding="utf-8")
+        except OSError:
+            return HTMLResponse(
+                status_code=500,
+                content="Authorized user management template unavailable.",
             )
         return HTMLResponse(
             content=html.replace(
@@ -360,7 +406,7 @@ def create_inspections_router(
         if auth_error is not None:
             return auth_error
         user = build_authorized_user(
-            aee_account_id=body.aee_account_id,
+            aee_account_id=body.aee_account_id or body.username,
             username=body.username,
             display_name=body.display_name,
             department=body.department,
