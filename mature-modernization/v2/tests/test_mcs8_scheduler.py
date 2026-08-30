@@ -422,7 +422,7 @@ class MCS8ProductionSchedulerTests(unittest.IsolatedAsyncioTestCase):
 
         asyncio.create_task(stopper())
         with self.assertLogs(
-            "uvicorn.error.cha.inspection.mcs8_scheduler",
+            "mcs8-scheduler",
             level="INFO",
         ) as captured:
             results = await scheduler.run(

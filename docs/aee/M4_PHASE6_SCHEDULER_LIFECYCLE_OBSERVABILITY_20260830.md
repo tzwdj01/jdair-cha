@@ -37,6 +37,14 @@ No password, token, session identifier, authorization header, cookie, database
 connection string, public address, raw upstream response or device payload is
 included in these records.
 
+The first production application of this change exposed one configuration
+detail: the initial lifecycle logger used the `uvicorn` hierarchy, while the
+standalone scheduler entrypoint correctly lowers that noisy hierarchy to
+`WARNING`. The collection cycle itself completed and persisted state, but its
+new `INFO` records were suppressed. The logger now uses the entrypoint's own
+`mcs8-scheduler` hierarchy; no collection, database, systemd or MCS8 behavior
+changed.
+
 ## Automated evidence
 
 `tests.test_mcs8_scheduler` verifies that one controlled cycle emits the start,

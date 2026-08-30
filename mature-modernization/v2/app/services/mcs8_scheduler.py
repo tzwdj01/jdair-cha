@@ -17,7 +17,10 @@ from ..data.store import InspectionStore
 
 
 UTC = dt.timezone.utc
-logger = logging.getLogger("uvicorn.error.cha.inspection.mcs8_scheduler")
+# The standalone scheduler entrypoint configures this logger at INFO for
+# journald.  Do not use the ``uvicorn`` hierarchy here: the entrypoint lowers
+# that noisy hierarchy to WARNING and would hide lifecycle evidence.
+logger = logging.getLogger("mcs8-scheduler")
 
 
 @dataclass(frozen=True, slots=True)
