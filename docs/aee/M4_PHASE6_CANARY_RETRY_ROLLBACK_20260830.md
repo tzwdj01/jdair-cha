@@ -1,7 +1,7 @@
 # M4 Phase 6 — AuthorizedUser Dashboard Canary Retry
 
-**Date:** `2026-08-30`  
-**Status:** `BLOCKED / ROLLED BACK`  
+**Date:** `2026-08-30`
+**Status:** `BLOCKED / ROLLED BACK`
 **Scope:** controlled V2 Candidate deployment and AuthorizedUser Dashboard
 Canary only.
 
