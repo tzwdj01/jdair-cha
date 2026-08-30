@@ -49,6 +49,7 @@
     <h1>监察数据中心</h1>
     <nav class="topnav">
       <button id="tab-overview">监察总览</button>
+      <button id="tab-workbench">视频监察</button>
       <button id="tab-devices">设备运行</button>
       <button id="tab-media">视频上传</button>
       <button id="tab-realtime">监察使用</button>
@@ -100,6 +101,17 @@
       locations: "设备定位",
       alarms: "告警与异常分析",
       data_quality: "数据质量"
+    };
+    const PAGE_PATHS = {
+      overview: "overview-page",
+      devices: "devices",
+      media: "media",
+      realtime: "realtime",
+      inspections: "inspections",
+      flights_tasks: "flights_tasks",
+      locations: "locations",
+      alarms: "alarms",
+      data_quality: "data_quality"
     };
     const byId = (id) => document.getElementById(id);
 
@@ -731,8 +743,11 @@
       document.title = TITLES[ACTIVE] + " · 监察数据中心";
       Object.keys(ENDPOINTS).forEach((key) => {
         byId("tab-" + key).addEventListener("click", () => {
-          window.location.href = "/api/v2/dashboard/" + key;
+          window.location.href = "/api/v2/dashboard/" + PAGE_PATHS[key];
         });
+      });
+      byId("tab-workbench").addEventListener("click", () => {
+        window.location.href = "/api/v2/dashboard/workbench";
       });
       loadAdminNavigation();
       byId("refresh").addEventListener("click", load);

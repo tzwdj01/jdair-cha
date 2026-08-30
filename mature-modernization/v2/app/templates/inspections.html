@@ -34,6 +34,7 @@
 <body>
   <header>
     <h1>监察记录</h1>
+    <a href="/api/v2/dashboard/workbench" style="color:#fff;border:1px solid #276b9d;background:#287bb6;border-radius:4px;padding:7px 11px;text-decoration:none;font-size:13px">视频监察工作台</a>
     <div class="meta">v{{CHA_V2_VERSION}} · {{CHA_V2_BUILD}} · 北京时间 Asia/Shanghai</div>
   </header>
   <main>
@@ -132,7 +133,7 @@
           "<td>" + (item.has_issue ? "<b>是</b>" : "否") + "</td>" +
           "<td><span class=\"" + stateClass(item.status) + "\">" + esc(item.status) + "</span></td>" +
           "<td>" + fmtLocal(item.inspection_started_at) + "</td>" +
-          "<td><a href=\"/api/v2/inspections/" + encodeURIComponent(item.inspection_id) + "\">详情</a></td>" +
+          "<td><a href=\"/api/v2/dashboard/workbench?inspection_id=" + encodeURIComponent(item.inspection_id) + "\">详情/审计</a></td>" +
           "</tr>").join("");
         $("list").innerHTML = rows
           ? '<table><thead><tr><th>ID</th><th>监察人</th><th>设备</th><th>飞机</th><th>站点</th><th>问题</th><th>状态</th><th>开始时间</th><th></th></tr></thead><tbody>' + rows + '</tbody></table>'

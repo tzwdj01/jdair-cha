@@ -181,6 +181,7 @@ class ReleaseToolingTests(unittest.TestCase):
             source,
         )
         self.assertIn("refusing to package a dirty source tree", source)
+        self.assertIn('"app/templates/video_workbench.html"', source)
 
     def test_phase6_deploy_delegates_rollback_to_bounded_helper(self) -> None:
         assert PHASE0_DEPLOY_SCRIPT is not None

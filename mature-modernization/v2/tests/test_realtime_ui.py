@@ -70,6 +70,12 @@ class RealtimeProductUITests(unittest.TestCase):
         self.assertIn("stream_limit_reached", self.app_js)
         self.assertIn("duplicate_device", self.app_js)
 
+    def test_workbench_embed_reuses_the_existing_realtime_lifecycle(self) -> None:
+        self.assertIn("cha-realtime-inspection-context", self.app_js)
+        self.assertIn("startRequestedDevice", self.app_js)
+        self.assertIn("workbenchEmbed", self.app_js)
+        self.assertNotIn("new window.mcs8Client", self.app_js)
+
 
 if __name__ == "__main__":
     unittest.main()

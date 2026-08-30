@@ -210,6 +210,59 @@ class FlightsTasksOverview:
     quality_flags: tuple[str, ...]
 
 
+@dataclass(frozen=True, slots=True)
+class WorkbenchDeviceSource:
+    """A safe, durable device-source projection for the inspection workbench.
+
+    This is intentionally a status snapshot, not a realtime-media capability
+    assertion.  The existing M3 realtime route remains the authority for the
+    final online check before a stream is opened.
+    """
+
+    device_id: str
+    device_name: str | None
+    group_id: str | None
+    online: bool | None
+    observed_at: dt.datetime | None
+
+
+@dataclass(frozen=True, slots=True)
+class WorkbenchMediaSource:
+    """Safe metadata for a persisted uploaded-video source.
+
+    No object key, signed URL, storage path, token or restricted media field is
+    projected.  A source identifier can help an operator recognise the file,
+    but it is not itself a browser playback capability.
+    """
+
+    source_record_id: str | None
+    device_id: str
+    device_name: str | None
+    group_id: str | None
+    title: str | None
+    duration_seconds: int | None
+    file_size_bytes: int | None
+    created_at_source: dt.datetime | None
+    end_at_source: dt.datetime | None
+    uploaded_at_source: dt.datetime | None
+    upload_status_code: int | None
+    deleted_marker: bool | None
+    playback_available: bool
+    playback_status: str
+
+
+@dataclass(frozen=True, slots=True)
+class WorkbenchSources:
+    generated_at: dt.datetime
+    scope_start: dt.datetime
+    scope_end: dt.datetime
+    devices: tuple[WorkbenchDeviceSource, ...]
+    media_files: tuple[WorkbenchMediaSource, ...]
+    media_total_count: int
+    media_truncated: bool
+    uploaded_video_playback_status: str
+
+
 class InspectionDataService:
     """Read-only page-oriented data service over the InspectionStore.
 
@@ -286,6 +339,110 @@ class InspectionDataService:
             current_online_count=online,
             current_offline_count=offline,
             current_unknown_count=unknown,
+        )
+
+    async def workbench_sources(
+        self,
+        *,
+        start: dt.datetime,
+        end: dt.datetime,
+        media_limit: int = 100,
+    ) -> WorkbenchSources:
+        """Return bounded, safe sources for the owner-facing workbench.
+
+        ``media_files`` is a metadata contract.  It deliberately does not
+        manufacture a preview URL: current CHA persistence does not retain a
+        permitted browser-playback source, and AEE signed-file behaviour still
+        needs the documented evidence gate.
+        """
+
+        if media_limit < 1:
+            raise ValueError("media_limit must be positive")
+        start_utc = _aware(start).astimezone(UTC)
+        end_utc = _aware(end).astimezone(UTC)
+        if end_utc <= start_utc:
+            raise ValueError("end must be after start")
+
+        latest_statuses = await self._store.fetch_latest_device_statuses()
+        files = await self._store.fetch_media_files(
+            start=start_utc,
+            end=end_utc,
+        )
+        videos = [item for item in files if item.media_kind == "video"]
+        videos.sort(
+            key=lambda item: (
+                item.uploaded_at_source
+                or item.created_at_source
+                or item.observed_at,
+                item.source_record_id or "",
+            ),
+            reverse=True,
+        )
+
+        latest_names: dict[str, str] = {}
+        latest_groups: dict[str, str] = {}
+        for item in videos:
+            if item.device_name_at_capture and item.device_id not in latest_names:
+                latest_names[item.device_id] = item.device_name_at_capture
+            if item.group_id and item.device_id not in latest_groups:
+                latest_groups[item.device_id] = item.group_id
+
+        device_ids = set(latest_statuses) | {
+            item.device_id for item in videos
+        }
+        devices: list[WorkbenchDeviceSource] = []
+        for device_id in device_ids:
+            status = latest_statuses.get(device_id)
+            status_code = status.status_code if status is not None else None
+            online = True if status_code == 1 else False if status_code == 0 else None
+            devices.append(
+                WorkbenchDeviceSource(
+                    device_id=device_id,
+                    device_name=latest_names.get(device_id),
+                    group_id=(
+                        status.group_id
+                        if status is not None and status.group_id
+                        else latest_groups.get(device_id)
+                    ),
+                    online=online,
+                    observed_at=(
+                        status.occurred_at.astimezone(UTC)
+                        if status is not None
+                        else None
+                    ),
+                )
+            )
+        devices.sort(key=lambda item: item.device_id)
+
+        limited_videos = videos[:media_limit]
+        media = tuple(
+            WorkbenchMediaSource(
+                source_record_id=item.source_record_id,
+                device_id=item.device_id,
+                device_name=item.device_name_at_capture,
+                group_id=item.group_id,
+                title=item.title,
+                duration_seconds=item.duration_seconds,
+                file_size_bytes=item.file_size_bytes,
+                created_at_source=item.created_at_source,
+                end_at_source=item.end_at_source,
+                uploaded_at_source=item.uploaded_at_source,
+                upload_status_code=item.upload_status_code,
+                deleted_marker=item.deleted_marker,
+                playback_available=False,
+                playback_status="AEE_VERIFICATION_REQUIRED",
+            )
+            for item in limited_videos
+        )
+        return WorkbenchSources(
+            generated_at=dt.datetime.now(UTC),
+            scope_start=start_utc,
+            scope_end=end_utc,
+            devices=tuple(devices),
+            media_files=media,
+            media_total_count=len(videos),
+            media_truncated=len(videos) > len(limited_videos),
+            uploaded_video_playback_status="AEE_VERIFICATION_REQUIRED",
         )
 
     async def media_overview(

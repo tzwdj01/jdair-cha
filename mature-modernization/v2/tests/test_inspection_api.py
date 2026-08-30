@@ -605,6 +605,7 @@ class InspectionAPITests(unittest.IsolatedAsyncioTestCase):
 
         pages = (
             "/api/v2/dashboard/overview-page",
+            "/api/v2/dashboard/workbench",
             "/api/v2/dashboard/devices",
             "/api/v2/dashboard/media",
             "/api/v2/dashboard/realtime",
@@ -615,6 +616,7 @@ class InspectionAPITests(unittest.IsolatedAsyncioTestCase):
             "/api/v2/dashboard/data-quality",
         )
         data_apis = (
+            "/api/v2/inspection/workbench/sources",
             "/api/v2/inspection/devices",
             "/api/v2/inspection/media",
             "/api/v2/inspection/realtime",
@@ -651,6 +653,16 @@ class InspectionAPITests(unittest.IsolatedAsyncioTestCase):
             )
             self.assertEqual(
                 (await _request(app, "/api/v2/dashboard/devices")).status_code,
+                200,
+                username,
+            )
+            self.assertEqual(
+                (await _request(app, "/api/v2/dashboard/workbench")).status_code,
+                200,
+                username,
+            )
+            self.assertEqual(
+                (await _request(app, "/api/v2/inspection/workbench/sources")).status_code,
                 200,
                 username,
             )
@@ -992,6 +1004,43 @@ class InspectionAPITests(unittest.IsolatedAsyncioTestCase):
             "source_event_quality_flags_present",
             timeline["quality_flags"],
         )
+
+    async def test_workbench_page_and_sources_are_safe_and_bounded(
+        self,
+    ) -> None:
+        app = _app(_settings(feature=True), await _seeded_service())
+        page = await _request(app, "/api/v2/dashboard/workbench")
+        self.assertEqual(page.status_code, 200)
+        self.assertIn("视频监察工作台", page.text)
+        self.assertIn("/api/v2/inspections/candidates", page.text)
+        self.assertIn("AEE VERIFICATION REQUIRED", page.text)
+
+        response = await _request(
+            app,
+            "/api/v2/inspection/workbench/sources?days=30&media_limit=1",
+        )
+        self.assertEqual(response.status_code, 200)
+        sources = response.json()["data"]["sources"]
+        self.assertEqual(sources["uploaded_video_playback_status"], "AEE_VERIFICATION_REQUIRED")
+        self.assertEqual(len(sources["media_files"]), 1)
+        media = sources["media_files"][0]
+        self.assertFalse(media["playback_available"])
+        self.assertEqual(media["playback_status"], "AEE_VERIFICATION_REQUIRED")
+        for restricted_key in (
+            "path",
+            "web_url",
+            "oss_bucket",
+            "oss_object_name",
+            "people_no",
+            "work_no",
+        ):
+            self.assertNotIn(restricted_key, media)
+        self.assertTrue(sources["devices"])
+
+    async def test_workbench_feature_disabled_returns_404(self) -> None:
+        app = _app(_settings(feature=False), None)
+        response = await _request(app, "/api/v2/dashboard/workbench")
+        self.assertEqual(response.status_code, 404)
 
     async def test_device_timeline_feature_disabled(self) -> None:
         app = _app(_settings(feature=False), None)

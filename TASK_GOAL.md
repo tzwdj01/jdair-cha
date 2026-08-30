@@ -20,19 +20,21 @@ plans.
 
 **ACTIVE PHASE: PHASE 6 — DASHBOARD CONSOLIDATION & CANARY HARDENING**
 
-**CURRENT SUBPHASE: OWNER-OBSERVED REFINEMENT — AUTHORIZEDUSER MANAGEMENT UI**
+**CURRENT SUBPHASE: OWNER-OBSERVED REFINEMENT — VIDEO INSPECTION WORKSPACE**
 
-The owner-authorized Phase 6 Candidate at commit `c2e14c1` is deployed and
-usable in production. V2, Legacy, Nginx and the low-rate scheduler are active;
-the protected public PostgreSQL TLS path is the accepted production path. This
-does not close M4, authorize a full rollout or authorize M5.
+Production release `e6cbaab` is deployed and usable. V2, Legacy, Nginx and
+the low-rate scheduler are active; the protected public PostgreSQL TLS path is
+the accepted production path. This does not close M4, authorize a full rollout
+or authorize M5.
 
-Owner Business Acceptance identified one bounded M4 usability gap: the
-AuthorizedUser API exists, but an administrator has no dedicated management
-page. The current work is limited to an admin-protected Dashboard page that
-reuses the existing AuthorizedUser list/create/enable/disable API. It must not
-create a second identity system, manage AEE credentials, add a role beyond
-`admin`/`inspector`, or alter existing production users during verification.
+The previous AuthorizedUser-management refinement is `COMPLETED / VERIFIED`:
+the admin-only page is live and uses the existing AuthorizedUser API without
+handling AEE credentials or adding roles. Owner Business Acceptance now found
+the next bounded M4 usability gap: Dashboard data pages do not form a clear
+daily **video inspection workbench**. This refinement must reuse the existing
+M3 realtime viewer and InspectionRecord lifecycle, preserve the current
+AuthorizedUser boundary, and introduce no video copy, transcoding or media
+infrastructure.
 
 All dated recovery and retry records below remain historical evidence. They
 must not override this current production state.
@@ -176,56 +178,41 @@ Use only these labels: `COMPLETED / VERIFIED`, `COMPLETED / UNVERIFIED`,
 
 **ACTIVE PHASE: PHASE 6 — DASHBOARD CONSOLIDATION & CANARY HARDENING**
 
-**CURRENT SUBPHASE: OWNER-OBSERVED REFINEMENT — AUTHORIZEDUSER MANAGEMENT UI**
+**CURRENT SUBPHASE: OWNER-OBSERVED REFINEMENT — VIDEO INSPECTION WORKSPACE**
 
-**STATUS: IN PROGRESS — IMPLEMENT, VERIFY, EXACT-PACKAGE DEPLOY AND VALIDATE
-THE ADMIN/INSPECTOR BOUNDARY WITHOUT CHANGING EXISTING PRODUCTION USERS**
+**STATUS: IN PROGRESS — IMPLEMENT, VERIFY, EXACT-PACKAGE DEPLOY AND OWNER-TEST
+THE REALTIME INSPECTION WORKFLOW WITHOUT ALTERING MEDIA INFRASTRUCTURE**
 
-The first resumed Candidate deployment was **not** an accepted Canary attempt.
-The operator-side preflight validated the new package, but the historical
-release helper selected its separate fixed default package path. Runtime
-identity therefore exposed an older Candidate before business or authorization
-acceptance tests began. The generated rollback helper immediately restored the
-prior V2 release; V2, Legacy, Nginx and the scheduler remained healthy. This is
-a release-tooling P0, not evidence of a Dashboard, PostgreSQL, MCS8 or
-AuthorizedUser product regression.
+Current evidence distinguishes the two source types:
 
-The helper now accepts an explicit package path and optional expected SHA-256
-and commit, verifies those values before it installs a trap, creates a release
-directory, changes `current` or touches a service, and supports a no-mutation
-verify-only preflight. Local release-tooling regression and full-suite evidence
-passed. A future production retry must use that exact-package preflight and
-receive a fresh owner confirmation after the rollback stop gate.
+- **Realtime:** existing M3 is a verified Class B MCS8/AEE WebRTC adapter.
+  It is currently a separate, Canary-gated page; an active stream can create
+  an InspectionRecord draft, but the edit/submit workflow lacks owner UI.
+- **Uploaded video:** `media_files` contains safe Class A metadata (source ID,
+  device, title, kind, duration and source times), but intentionally persists
+  neither storage path nor signed playback URL. CHA has no preview/download
+  route. The upstream SignedUrl operation has only static evidence, so browser
+  preview is not assumed.
 
-The private-listener recovery, pool/concurrency hardening and timeout
-containment remain `COMPLETED / VERIFIED`; they are not being reopened. The
-earlier private-path scratch result (`RAW_CONNECTION_SLOW`) remains dated
-evidence, but it is no longer the active stop gate: the owner-approved public
-TLS endpoint subsequently completed bounded TCP and fresh-connection evidence.
-
-The systemd scheduler did not stall. Its journal records one complete managed
-cycle followed by the configured wait interval; the later stop was manual. The
-root cause of the false block was insufficient lifecycle observability. This
-branch adds bounded credential-free `scheduler_cycle_started`,
-`scheduler_cycle_completed` and `scheduler_waiting` records before the
-authorized restart verification.
+The current work therefore implements a secure workbench shell, safe metadata
+source list, realtime context handoff, manual candidate confirmation,
+InspectionRecord draft/submit and audit UI. It does **not** claim uploaded
+video playback until the required AEE comparison is complete.
 
 ### TODO — current Owner-Observed Refinement
 
-1. Add the administrator-only `/api/v2/dashboard/users` page and admin-only
-   navigation affordance, reusing the existing AuthorizedUser API and server
-   access boundary.
-2. Limit new user roles to `admin` and `inspector`; allow the page to submit a
-   current CHA login identity without collecting a password or AEE credential.
-3. Complete isolated admin/inspector/anonymous/invalid-role tests, then run
-   the full suite, source/package sensitive scan and `git diff --check`.
-4. Build one clean, committed Candidate and use explicit package path,
-   SHA-256, commit and verify-only release gates. Never select a historical or
-   `/tmp` artifact implicitly.
-5. After the short normal production preflight, deploy only that exact package
-   and verify the existing admin can open the page, the existing inspector gets
-   `403`, and current AuthorizedUser rows remain unchanged. Production write
-   actions remain for a later explicit owner operation.
+1. Add `/api/v2/dashboard/workbench` and a protected bounded source endpoint
+   for current device snapshots and safe uploaded-video metadata.
+2. Reuse the existing M3 viewer through the same-origin workbench handoff;
+   preserve M3 stream lifecycle, close behaviour and Canary enforcement.
+3. Add owner UI for InspectionRecord draft/save, candidate confirmation,
+   normal/problem result, submit and audit view using existing APIs only.
+4. Keep uploaded-video selection truthful: metadata is usable, but no preview
+   button or fake media association may be shipped before AEE evidence.
+5. Complete route/access/UI regression tests, full suite, secret scan,
+   `git diff --check`, exact-package verification and controlled deployment.
+6. Owner acceptance: authorized login → realtime view → record context →
+   candidate/manual confirmation → submit → record query/statistics/export.
 
 ### BLOCKED
 
@@ -237,14 +224,27 @@ authorized restart verification.
 - Completion of the actual non-AuthorizedUser `403` gate requires a lawful,
   explicitly supplied test identity; do not enumerate AEE/MCS8 users or
   repurpose unrelated accounts.
+- **Uploaded-video browser preview and a durable MediaFile ↔ InspectionRecord
+  relationship** are `AEE VERIFICATION REQUIRED`; no SignedUrl, object path or
+  playback workaround may be guessed or persisted in the meantime.
 
 ### AEE VERIFICATION REQUIRED
 
-No new AEE/MCS8/media protocol behavior is in this Phase 6 remediation scope.
-The running scheduler continues to use the already verified native MCS8
-read-only path. Any future AEE/MCS8/media behavior change remains
-`AEE VERIFICATION REQUIRED` and must follow
-`docs/codex/AEE_REFERENCE_IMPLEMENTATION.md` before implementation.
+**Question:** can a lawful CHA server-side adapter request a temporary browser
+preview URL for one `RecordFileList.id` without exposing an AEE credential or
+persisting a signed URL?
+
+**Required evidence:** same authorized user, same representative video device
+and record, same browser/network window. Observe the AEE file preview action,
+the request to `/api/v1/oss/SignedUrl?id=...`, response content type and expiry
+behaviour, and whether the resulting media is browser-playable. Do not retain
+the URL, token, Cookie, object key or storage fields.
+
+**Current result:** this execution environment reached `493 JFE Forbidden`
+before an authorized AEE page session could be established. This is not a
+reason to bypass JFE/WAF or add a proxy. Re-run only through a lawful,
+authorized AEE browser/session and then classify the capability before any
+CHA playback work.
 
 ---
 
@@ -384,8 +384,12 @@ permission to start M5.
 
 ## 12. Next Recommended Actions
 
-1. Complete and deploy the bounded AuthorizedUser Management UI refinement.
+1. Complete the bounded Video Inspection Workspace refinement: owner UI for
+   realtime inspection context, manual candidate confirmation, draft/submit
+   and audit visibility.
 2. Preserve the low-rate scheduler under natural production observation; do
    not manufacture a long polling run.
-3. Keep production user writes for a later explicit owner action. The current
-   refinement verifies list rendering and read-only access boundaries only.
+3. Run the lawful AEE SignedUrl preview evidence comparison before proposing
+   any uploaded-video playback or durable file-to-record association.
+4. Keep standalone Issue workflow, automatic matching, M4 closure, full
+   rollout and M5 out of scope until separately authorized.

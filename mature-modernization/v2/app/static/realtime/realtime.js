@@ -5,6 +5,8 @@
   const HEARTBEAT_INTERVAL_MS = 15000;
   const AUTO_RECONNECT_DELAY_MS = 1500;
   const MAX_AUTO_RECONNECT_ATTEMPTS = 1;
+  const requestedDeviceId = new URLSearchParams(location.search).get("device") || "";
+  const workbenchEmbed = new URLSearchParams(location.search).get("workbench") === "1";
   const STATUS_TEXT = {
     CONNECTING: "正在连接",
     WAITING_FIRST_FRAME: "等待首帧",
@@ -319,10 +321,31 @@
       );
       renderDevices();
       if (!quiet) showNotice("");
+      return state.devices;
     } catch (error) {
       els.deviceList.innerHTML = '<div class="device-empty">设备列表加载失败</div>';
       showNotice(friendlyError(error), "error");
+      return [];
     }
+  }
+
+  async function startRequestedDevice() {
+    if (!requestedDeviceId) return;
+    const device = state.devices.find(
+      (item) => item.device_id === requestedDeviceId,
+    );
+    if (!device) {
+      showNotice("工作台选择的设备不在当前实时设备列表中。", "error");
+      return;
+    }
+    if (!device.online) {
+      showNotice(ERROR_TEXT.device_offline, "error");
+      return;
+    }
+    state.selected.add(requestedDeviceId);
+    updateSummary();
+    renderDevices();
+    await startSelected();
   }
 
   async function createSession() {
@@ -1016,6 +1039,17 @@
     const started = record.firstFrameAt
       ? new Date(record.firstFrameAt)
       : new Date(now.getTime() - 5 * 60 * 1000);
+    if (workbenchEmbed && window.parent !== window) {
+      window.parent.postMessage({
+        type: "cha-realtime-inspection-context",
+        device_id: record.deviceId,
+        inspection_started_at: started.toISOString(),
+        inspection_ended_at: now.toISOString(),
+        realtime_view_event_ids: [record.streamId],
+      }, window.location.origin);
+      showNotice("已带入视频监察工作台，请在右侧填写并提交监察记录。", "success");
+      return;
+    }
     try {
       const response = await fetch("/api/v2/inspections", {
         method: "POST",
@@ -1216,5 +1250,5 @@
 
   initializeTheme();
   updateSummary();
-  loadDevices();
+  loadDevices().then(startRequestedDevice);
 })();

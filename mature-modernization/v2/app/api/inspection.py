@@ -28,6 +28,9 @@ Envelope = Callable[..., JSONResponse]
 TEMPLATE_PATH = (
     Path(__file__).resolve().parents[1] / "templates" / "inspection.html"
 )
+WORKBENCH_TEMPLATE_PATH = (
+    Path(__file__).resolve().parents[1] / "templates" / "video_workbench.html"
+)
 PAGE_ROUTES = {
     "devices": "设备运行分析",
     "media": "视频上传与文件分析",
@@ -121,6 +124,33 @@ def create_inspection_router(
                 settings.build,
             )
         )
+
+    async def render_workbench(request: Request) -> Response:
+        if not settings.feature_inspection_v2:
+            return page_disabled(request)
+        access_error = await require_access(request)
+        if access_error is not None:
+            return access_error
+        try:
+            html = WORKBENCH_TEMPLATE_PATH.read_text(encoding="utf-8")
+        except OSError:
+            return HTMLResponse(
+                status_code=500,
+                content="Video inspection workbench template is unavailable.",
+            )
+        return HTMLResponse(
+            content=html.replace(
+                "{{CHA_V2_VERSION}}", settings.version
+            ).replace("{{CHA_V2_BUILD}}", settings.build)
+        )
+
+    @router.get(
+        "/api/v2/dashboard/workbench",
+        response_class=HTMLResponse,
+        include_in_schema=False,
+    )
+    async def video_inspection_workbench(request: Request) -> Response:
+        return await render_workbench(request)
 
     for page_name in PAGE_ROUTES:
 
@@ -480,6 +510,43 @@ def create_inspection_router(
                 "scope": scope_payload(scope_start, scope_end, days),
                 "meta": overview_meta(overview),
                 "overview": _json_safe(overview),
+            },
+        )
+
+    @router.get("/api/v2/inspection/workbench/sources")
+    async def inspection_workbench_sources(
+        request: Request,
+        days: int = Query(7, ge=1, le=30),
+        media_limit: int = Query(100, ge=1, le=200),
+    ) -> JSONResponse:
+        """Bounded device/video metadata for the owner workbench.
+
+        Uploaded-file playback is deliberately marked as an evidence-gated
+        capability rather than exposing a guessed or persisted signed URL.
+        """
+
+        blocked = await data_gate(request)
+        if blocked is not None:
+            return blocked
+        if service is None:
+            return store_unavailable(request)
+        end = dt.datetime.now(UTC)
+        start = end - dt.timedelta(days=days)
+        try:
+            sources = await service.workbench_sources(
+                start=start,
+                end=end,
+                media_limit=media_limit,
+            )
+        except ValueError as exc:
+            return invalid_scope(request, str(exc))
+        return envelope(
+            request,
+            {
+                "source": "inspection_store",
+                "store_configured": True,
+                "scope": scope_payload(start, end, days),
+                "sources": _json_safe(sources),
             },
         )
 

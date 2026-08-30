@@ -130,6 +130,7 @@ def main() -> None:
         "app/services/trend_store.py",
         "app/templates/inspection.html",
         "app/templates/inspections.html",
+        "app/templates/video_workbench.html",
         "app/templates/m2_dashboard.html",
         "app/templates/m3_realtime.html",
         "app/static/realtime/realtime.js",
