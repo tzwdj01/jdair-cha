@@ -30,13 +30,14 @@
     .state-corrected { color: #12395a; font-weight: 700; }
     .flag { display: inline-block; background: #eef3f8; border: 1px solid #d4dee7; border-radius: 10px; font-size: 11px; padding: 2px 7px; margin: 2px 3px 0 0; color: #4a5a6b; }
   </style>
+  <script defer src="/api/v2/dashboard/assets/navigation.js"></script>
 </head>
 <body>
   <header>
     <h1>监察记录</h1>
-    <a href="/api/v2/dashboard/workbench" style="color:#fff;border:1px solid #276b9d;background:#287bb6;border-radius:4px;padding:7px 11px;text-decoration:none;font-size:13px">视频监察工作台</a>
     <div class="meta">v{{CHA_V2_VERSION}} · {{CHA_V2_BUILD}} · 北京时间 Asia/Shanghai</div>
   </header>
+  <nav data-cha-dashboard-nav data-active="inspections"><a href="/api/v2/dashboard/workbench">视频监察工作台</a></nav>
   <main>
     <div class="toolbar">
       <label>近 <select id="days"><option value="1">1 天</option><option value="7" selected>7 天</option><option value="30">30 天</option></select></label>

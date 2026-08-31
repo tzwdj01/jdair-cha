@@ -10,7 +10,7 @@ from typing import Any
 
 from fastapi import FastAPI, Query, Request
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 
 from .api.inspection import create_inspection_router
 from .api.inspection_access import InspectionAccess
@@ -53,6 +53,9 @@ started_monotonic = time.monotonic()
 started_at = dt.datetime.now(UTC)
 dashboard_template_path = (
     Path(__file__).resolve().parent / "templates" / "m2_dashboard.html"
+)
+dashboard_navigation_asset_path = (
+    Path(__file__).resolve().parent / "static" / "dashboard" / "navigation.js"
 )
 # The inspection store is optional. Production always returns None until a
 # durable PostgreSQL store is wired and rehearsed. A non-production deployment
@@ -544,6 +547,19 @@ async def dashboard_page(request: Request):
             "{{CHA_V2_BUILD}}",
             settings.build,
         )
+    )
+
+
+@app.get(
+    "/api/v2/dashboard/assets/navigation.js",
+    include_in_schema=False,
+)
+async def dashboard_navigation_asset() -> FileResponse:
+    """Serve the shared, data-free navigation script for V2 dashboard pages."""
+
+    return FileResponse(
+        dashboard_navigation_asset_path,
+        media_type="application/javascript",
     )
 
 

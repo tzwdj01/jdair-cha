@@ -40,25 +40,14 @@
       .form-grid { grid-template-columns: 1fr; }
     }
   </style>
+  <script defer src="/api/v2/dashboard/assets/navigation.js"></script>
 </head>
 <body>
   <header>
     <h1>监察数据中心</h1>
-    <nav class="topnav" aria-label="Dashboard 导航">
-      <button data-route="overview-page">监察总览</button>
-      <button data-route="workbench">视频监察</button>
-      <button data-route="devices">设备运行</button>
-      <button data-route="media">视频上传</button>
-      <button data-route="realtime">监察使用</button>
-      <button data-route="inspections">监察记录</button>
-      <button data-route="tasks">航班/任务</button>
-      <button data-route="map">设备定位</button>
-      <button data-route="alarms">告警异常</button>
-      <button data-route="data-quality">数据质量</button>
-      <button class="active" aria-current="page">用户权限</button>
-    </nav>
     <div class="meta">v{{CHA_V2_VERSION}} · {{CHA_V2_BUILD}}</div>
   </header>
+  <nav data-cha-dashboard-nav data-active="users"></nav>
   <main>
     <section class="card">
       <h2>用户权限管理</h2>
@@ -94,7 +83,6 @@
   </main>
   <script>
     const API = "/api/v2/inspections/authorized-users";
-    const dashboardRoute = (route) => "/api/v2/dashboard/" + route;
     const byId = (id) => document.getElementById(id);
     const esc = (value) => String(value == null ? "" : value).replace(/[&<>"']/g, (char) => ({
       "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
@@ -173,9 +161,6 @@
     }
 
     document.addEventListener("DOMContentLoaded", () => {
-      document.querySelectorAll("[data-route]").forEach((button) => {
-        button.addEventListener("click", () => { window.location.href = dashboardRoute(button.dataset.route); });
-      });
       byId("openCreate").addEventListener("click", () => {
         byId("createForm").hidden = !byId("createForm").hidden;
         if (!byId("createForm").hidden) byId("username").focus();
