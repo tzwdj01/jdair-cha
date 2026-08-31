@@ -69,19 +69,19 @@ CHA with an uploaded-video playback URL.
 ## CHA current-state inventory (code and production evidence)
 
 The classifications below distinguish an Owner-visible action from a merely
-present API, data table or backend service.  They are current as of the
-`aa90fd9` workbench release plus the pending dedicated InspectionRecord route
-registration correction; the latter must be packaged before the workflow page
-is considered production-reachable.
+present API, data table or backend service. They reflect the deployed
+`889d0b1` visual-workspace refinement and its production browser evidence;
+Owner business acceptance of records that write production data remains
+separate.
 
 | # | Capability | Classification | Evidence / limitation |
 | --- | --- | --- | --- |
 | 1 | Device list/status | `OWNER_USABLE` | Workbench sources expose normalized status; M3 re-checks online state before opening. |
 | 2 | Realtime video | `OWNER_USABLE` | M3 native session path has production first-frame evidence. |
-| 3 | Realtime multi-tile | `PARTIAL` | Existing one/four/six auto-layout and release path exist; visual-workspace multi-select is pending this refinement; nine/sixteen are evidence-gated. |
+| 3 | Realtime multi-tile | `PARTIAL` | Visual-workspace multi-select now reuses one M3 session. Production evidence covered 1→2 tiles; existing M3 retains its 1/4/6 ceiling and 9/16 remain evidence-gated. |
 | 4 | Media/upload record list | `OWNER_USABLE` | Safe persisted `MediaFile` metadata is rendered in the workbench. |
 | 5 | Uploaded-video playback | `NOT_IMPLEMENTED` | No browser-playable source is stored or claimed; `AEE VERIFICATION REQUIRED`. |
-| 6 | `RealtimeViewEvent` | `BACKEND_ONLY` | Persisted by M3 lifecycle; no per-tile Owner history view is exposed in the workbench. |
+| 6 | `RealtimeViewEvent` | `PARTIAL` | Persisted by M3 lifecycle and summarized in the protected realtime Dashboard; no per-tile event-history view is exposed in the workbench. |
 | 7 | Video Inspection Workbench | `OWNER_USABLE` | Existing `/api/v2/dashboard/workbench`; this refinement improves its visual multi-tile flow. |
 | 8 | Create InspectionRecord from realtime | `OWNER_USABLE` | Tile `记` sends same-origin context into the Owner form; service derives identity. |
 | 9 | Edit InspectionRecord | `OWNER_USABLE` | Drafts load and save through the existing endpoint. |
@@ -92,10 +92,10 @@ is considered production-reachable.
 | 14 | Inspection result | `OWNER_USABLE` | Normal / issue result and remarks are recorded. |
 | 15 | Issue fields/workflow | `PARTIAL` | Existing record fields and audit exist; no independent Issue entity/workflow. |
 | 16 | Submit | `OWNER_USABLE` | Draft → submit uses existing InspectionRecord API. |
-| 17 | Correction | `BACKEND_ONLY` before this refinement | Backend allows submitted/corrected records to be corrected; this refinement adds minimal Owner UI. |
-| 18 | Audit | `OWNER_USABLE` after route correction | Workbench detail renders audit; dedicated list route needs the pending registration order fix. |
-| 19 | Query/filter | `PARTIAL` | Dedicated workflow template provides filters, but its production route was shadowed by generic summary before the pending fix. |
-| 20 | CSV/XLSX | `PARTIAL` | Existing workflow template has exports; production reachability depends on the route correction. |
+| 17 | Correction | `OWNER_USABLE` | Minimal correction UI reuses the existing endpoint and requires a reason; live correction is reserved for Owner acceptance against a deliberate test record. |
+| 18 | Audit | `OWNER_USABLE` | The corrected dedicated route is production-reachable; workbench detail renders audit. |
+| 19 | Query/filter | `OWNER_USABLE` | Dedicated workflow template and production route are reachable after the registration-order correction. |
+| 20 | CSV/XLSX | `OWNER_USABLE` | Existing workflow exports are reachable through the dedicated production route. |
 | 21 | Dashboard statistics | `OWNER_USABLE` | Existing protected dashboard/inspection metrics remain the data authority. |
 | 22 | Location/map | `OWNER_USABLE` | Protected location analysis exists; coordinate detail remains intentionally limited. |
 | 23 | AuthorizedUser management | `OWNER_USABLE` for admin | Existing admin-only page/API; inspector/anonymous boundaries remain server-enforced. |

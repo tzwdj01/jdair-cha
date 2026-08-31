@@ -22,21 +22,23 @@ plans.
 
 **CURRENT SUBPHASE: OWNER-OBSERVED REFINEMENT — VIDEO INSPECTION WORKSPACE**
 
-Production release `aa90fd9` is deployed and usable. It includes the first
-bounded Video Inspection Workbench. V2, Legacy, Nginx and the low-rate
-scheduler are active; the protected public PostgreSQL TLS path is the accepted
-production path. The later local workbench-route/visual-workspace corrections
-are not yet deployed. This does not close M4, authorize a full rollout or
-authorize M5.
+Production release `889d0b1` is deployed and usable. It includes the bounded
+Video Inspection Workbench visual refinement, the dedicated InspectionRecord
+route-order correction, shared-session multi-tile handoff and the minimal
+record-correction UI. V2, Legacy, Nginx and the low-rate scheduler are active;
+the protected public PostgreSQL TLS path is the accepted production path. The
+release's exact package SHA-256 and runtime commit were verified at deployment.
+This does not close M4, authorize a full rollout or authorize M5.
 
 The previous AuthorizedUser-management refinement is `COMPLETED / VERIFIED`:
 the admin-only page is live and uses the existing AuthorizedUser API without
 handling AEE credentials or adding roles. Owner Business Acceptance now found
-the next bounded M4 usability gap: Dashboard data pages do not form a clear
-daily **video inspection workbench**. This refinement must reuse the existing
-M3 realtime viewer and InspectionRecord lifecycle, preserve the current
-AuthorizedUser boundary, and introduce no video copy, transcoding or media
-infrastructure.
+the next bounded M4 usability gap: Dashboard data pages did not form a clear
+daily **video inspection workbench**. The released refinement reuses the
+existing M3 realtime viewer and InspectionRecord lifecycle, preserves the
+current AuthorizedUser boundary, and introduces no video copy, transcoding or
+media infrastructure. Owner business acceptance of record creation/submission
+and correction remains a deliberately separate non-destructive step.
 
 All dated recovery and retry records below remain historical evidence. They
 must not override this current production state.
@@ -155,24 +157,28 @@ Use only these labels: `COMPLETED / VERIFIED`, `COMPLETED / UNVERIFIED`,
   amplifier; it does **not** prove why the Candidate's production connection
   was slow. Source and extracted-package suites passed 318 tests (2 source
   isolated-PostgreSQL skips; 10 archive-only skips).
+- **2026-08-31 Video Inspection Workspace refinement:** exact package commit
+  `889d0b1` was deployed with matching SHA-256 and runtime identity. Source
+  validation passed 332 tests with 2 explicit isolated-PostgreSQL skips; the
+  extracted production package passed 332 tests with 12 intentional
+  archive-only skips. The deployed dedicated InspectionRecord route exposes
+  query/filter/CSV/XLSX UI instead of the previously shadowing generic page.
+  Browser evidence confirmed the workbench source navigator, same-session
+  1-to-2 live tiles, first frames at 1920x1080 with live tracks, a selective
+  close with the survivor still playing, explicit workspace close, truthful
+  uploaded-media metadata and same-origin inspection-context handoff. See
+  `docs/aee/M4_VIDEO_INSPECTION_VISUAL_WORKSPACE_20260831.md`.
 
 ### COMPLETED / UNVERIFIED
 
 - Historical M3 fullscreen user-activation evidence remains
   `COMPLETED / UNVERIFIED` by the approved M3 waiver.
-- The Phase 6 Candidate was deployed for the controlled retry and then rolled
-  back. A lawfully supplied enabled test user could open the authorized
-  Dashboard shell, but its production-overview data request did not complete
-  within a bounded browser probe. Candidate V2 readiness reported PostgreSQL
-  `degraded`; a protected one-shot `PostgresInspectionStore` health check
-  timed out while the separate workflow-store health check passed. Any claim
-  that the Candidate is active or accepted in production is false.
-- Real authenticated-but-not-AuthorizedUser `403`, disabled-user `403`, and
-  admin `200` have not been completed in this retry. Do not simulate these
-  outcomes with arbitrary production identities.
-- Full Dashboard API cold/warm performance, candidate pool recovery behavior,
-  PostgreSQL -> API -> Dashboard reconciliation, and M2 compatibility were
-  not accepted. The browser probe exposed the blocking pool failure first.
+- Historical earlier Phase 6 candidates were deployed and rolled back before
+  the current runtime. Their PostgreSQL timeout evidence remains historical;
+  it does not describe the current `889d0b1` release.
+- The workbench correction form is deployed, but no production correction was
+  written during technical acceptance. Actual draft creation, submission and
+  correction remain for a lawful Owner business-acceptance session.
 
 ### IN PROGRESS
 
@@ -182,45 +188,39 @@ Use only these labels: `COMPLETED / VERIFIED`, `COMPLETED / UNVERIFIED`,
 
 **CURRENT SUBPHASE: OWNER-OBSERVED REFINEMENT — VIDEO INSPECTION WORKSPACE**
 
-**STATUS: IN PROGRESS — IMPLEMENT, VERIFY, EXACT-PACKAGE DEPLOY AND OWNER-TEST
-THE REALTIME INSPECTION WORKFLOW WITHOUT ALTERING MEDIA INFRASTRUCTURE**
+**STATUS: IN PROGRESS — OWNER BUSINESS ACCEPTANCE OF THE RELEASED REALTIME
+INSPECTION WORKFLOW WITHOUT ALTERING MEDIA INFRASTRUCTURE**
 
 Current evidence distinguishes the two source types:
 
 - **Realtime:** existing M3 is a verified Class B MCS8/AEE WebRTC adapter.
-  The deployed workbench embeds it for a single selected source and carries
-  its same-origin record context into existing owner draft/submit/audit UI.
-  The active refinement reuses one M3 session for visual multi-tile selection;
-  it does not change the evidenced six-stream maximum.
+  The deployed workbench embeds it and reuses one M3 session for visual
+  multi-tile selection. Production browser evidence covered one then two live
+  sources, first frames, selective close and explicit workspace close; it does
+  not change the evidenced six-stream maximum.
 - **Uploaded video:** `media_files` contains safe Class A metadata (source ID,
   device, title, kind, duration and source times), but intentionally persists
   neither storage path nor signed playback URL. CHA has no preview/download
   route. The upstream SignedUrl operation has only static evidence, so browser
   preview is not assumed.
 
-The current work therefore preserves the secure workbench shell, safe metadata
-source list, realtime context handoff, manual candidate confirmation and
-InspectionRecord draft/submit/audit UI. It is completing the dedicated
-InspectionRecord route correction, visual multi-tile handoff and minimal
-Owner correction UI. It does **not** claim uploaded video playback until the
-required AEE comparison is complete.
+The released workbench preserves the secure shell, safe metadata source list,
+realtime context handoff, manual candidate confirmation and InspectionRecord
+draft/submit/audit UI. The dedicated InspectionRecord route correction, visual
+multi-tile handoff and minimal Owner correction UI are deployed. It does
+**not** claim uploaded-video playback until the required AEE comparison is
+complete.
 
 ### TODO — current Owner-Observed Refinement
 
-1. Finish and package the dedicated `/api/v2/dashboard/inspections` route
-   registration correction so the Owner query/filter/export/detail/audit page
-   is not shadowed by the generic summary route.
-2. Reuse one existing M3 viewer/session through same-origin visual-workspace
-   messages so additional devices join and close through the verified stream
-   lifecycle. Keep nine/sixteen disabled pending capacity evidence.
-3. Expose the already-existing InspectionRecord correction endpoint through a
-   minimal Owner form; do not invent a second record or Issue workflow.
-4. Keep uploaded-video selection truthful: metadata is usable, but no preview
+1. Owner acceptance: authorized login → realtime view → record context →
+   candidate/manual confirmation → save draft / submit → record
+   query/statistics/export/audit; test correction only with an intentionally
+   created owner-owned record.
+2. Keep uploaded-video selection truthful: metadata is usable, but no preview
    button or fake media association may be shipped before AEE evidence.
-5. Complete route/access/UI regression tests, full suite, secret scan,
-   `git diff --check`, exact-package verification and controlled deployment.
-6. Owner acceptance: authorized login → realtime view → record context →
-   candidate/manual confirmation → submit → record query/statistics/export.
+3. Keep 9/16 layouts disabled until a same-device AEE vs CHA capacity and
+   resource-release comparison proves a safe configuration above six streams.
 
 ### BLOCKED
 
@@ -396,14 +396,16 @@ permission to start M5.
 | 2026-08-30 | Authorized private PostgreSQL recovery found a cluster startup-order defect: PostgreSQL had the correct existing private listener configuration but started before its Tailnet address was ready and listened only on loopback. A minimal service dependency drop-in restored the private listener. Three fresh protected TLS connections passed; `chrony` remained healthy on both nodes; the existing controlled scheduler cycle passed without duplicate identities; and the systemd scheduler was recovered active with no immediate PostgreSQL failure or restart. See `docs/aee/M4_PHASE6_PRIVATE_PG_CONNECTIVITY_RECOVERY_20260830.md`. |
 | 2026-08-30 | Authorized Phase 6 Candidate retry: source and extracted-package tests passed, Candidate `0d389d8` deployed with verified runtime identity and correct anonymous `401` boundary. A lawful enabled test user loaded the Dashboard shell, but `/api/v2/dashboard/production-overview` did not finish within the bounded browser probe; Candidate readiness reported PostgreSQL `degraded`, and a protected `PostgresInspectionStore` health check timed out while the workflow-store check passed. The generated rollback helper restored the prior V2 release; scheduler remained active with `NRestarts=0`. See `docs/aee/M4_PHASE6_CANARY_RETRY_ROLLBACK_20260830.md`. |
 | 2026-08-30 | Owner-authorized bounded scratch revalidation used current protected production PostgreSQL configuration with Candidate `a83199a`; it did not switch `current`. Raw fresh `psycopg` `SELECT 1` was only 1/3 successful, with two 10-second `OperationalError` outcomes. Candidate pool acquire/release was 2/3 successful; health check was 3/3 eventually true but 6.3–8.1 seconds; the minimal production read was 3/3 successful but 9.9–16.7 seconds. Candidate deployment and Dashboard Canary were not started. Stable V2/Legacy/Nginx and the actual M4 scheduler service remained active. See `docs/aee/M4_PHASE6_PRODUCTION_DATASTORE_BOUNDED_REVALIDATION_20260830.md`. |
+| 2026-08-31 | AEE `/v3/visual` comparison is `STATIC_EVIDENCE_ONLY`: the lawful browser context redirected to login, so only public static page evidence was used. It supports a status-first left/centre/right workspace model, not claims about camera-wall media, playback URLs or capacity. See `docs/aee/M4_AEE_VISUAL_CHA_COMPARISON.md`. |
+| 2026-08-31 | Exact package `889d0b1` was deployed as the Video Inspection Workspace visual refinement. Production browser evidence confirmed M3 same-session 1-to-2 live tiles, 1920x1080/live tracks, selective close with a surviving tile, explicit workspace close, inspection-context handoff, honest uploaded-media metadata and the corrected InspectionRecord query/export route. V2, Legacy, Nginx and scheduler remained active with zero restarts. No InspectionRecord was written in technical acceptance. See `docs/aee/M4_VIDEO_INSPECTION_VISUAL_WORKSPACE_20260831.md`. |
 
 ---
 
 ## 12. Next Recommended Actions
 
-1. Complete the bounded Video Inspection Workspace refinement: owner UI for
-   realtime inspection context, manual candidate confirmation, draft/submit
-   and audit visibility.
+1. Run Owner business acceptance of the deployed workbench using a deliberate
+   test record: realtime view → context → manual candidate confirmation →
+   draft/submit → query/export/audit; test correction only against that record.
 2. Preserve the low-rate scheduler under natural production observation; do
    not manufacture a long polling run.
 3. Run the lawful AEE SignedUrl preview evidence comparison before proposing
