@@ -219,17 +219,7 @@ app.include_router(
         envelope,
     )
 )
-app.include_router(
-    create_inspection_router(
-        settings,
-        inspection_service,
-        envelope,
-        realtime_manager,
-        inspection_access,
-    )
-)
 if inspection_record_store is not None and inspection_record_service is not None:
-
     candidate_service = InspectionBusinessCandidateService(
         LegacyBusinessDataClient(legacy_client),
     )
@@ -244,6 +234,20 @@ if inspection_record_store is not None and inspection_record_service is not None
             candidate_service,
         )
     )
+
+# The dedicated InspectionRecord workflow owns its Dashboard route.  Register
+# it before the generic data-center pages so `/dashboard/inspections` exposes
+# owner-facing query, detail/audit and export controls rather than the summary
+# tab with the same historical path.
+app.include_router(
+    create_inspection_router(
+        settings,
+        inspection_service,
+        envelope,
+        realtime_manager,
+        inspection_access,
+    )
+)
 
 
 @app.exception_handler(Exception)

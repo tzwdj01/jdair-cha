@@ -74,7 +74,24 @@ class RealtimeProductUITests(unittest.TestCase):
         self.assertIn("cha-realtime-inspection-context", self.app_js)
         self.assertIn("startRequestedDevice", self.app_js)
         self.assertIn("workbenchEmbed", self.app_js)
+        self.assertIn('data-inspection-state', self.html)
+        self.assertIn("record.inspectionState =", self.app_js)
         self.assertNotIn("new window.mcs8Client", self.app_js)
+
+    def test_visual_embed_accepts_only_same_origin_parent_commands(self) -> None:
+        for expected in (
+            "workbenchVisualEmbed",
+            "event.origin !== window.location.origin",
+            "event.source !== window.parent",
+            "cha-workbench-add-device",
+            "queueWorkbenchDevice",
+            "flushWorkbenchDevices",
+            "cha-workbench-close-session",
+            "closeSession({quiet: true})",
+            "emitWorkbenchState",
+            "workbench-visual-embed",
+        ):
+            self.assertIn(expected, self.app_js)
 
 
 if __name__ == "__main__":

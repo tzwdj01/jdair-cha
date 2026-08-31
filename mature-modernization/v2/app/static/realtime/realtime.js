@@ -5,8 +5,10 @@
   const HEARTBEAT_INTERVAL_MS = 15000;
   const AUTO_RECONNECT_DELAY_MS = 1500;
   const MAX_AUTO_RECONNECT_ATTEMPTS = 1;
-  const requestedDeviceId = new URLSearchParams(location.search).get("device") || "";
-  const workbenchEmbed = new URLSearchParams(location.search).get("workbench") === "1";
+  const realtimeQuery = new URLSearchParams(location.search);
+  const requestedDeviceId = realtimeQuery.get("device") || "";
+  const workbenchEmbed = realtimeQuery.get("workbench") === "1";
+  const workbenchVisualEmbed = workbenchEmbed && realtimeQuery.get("embed") === "visual";
   const STATUS_TEXT = {
     CONNECTING: "正在连接",
     WAITING_FIRST_FRAME: "等待首帧",
@@ -86,6 +88,8 @@
     autoReconnectAttempts: 0,
     autoReconnectTimer: null,
     pageLeaving: false,
+    devicesLoaded: false,
+    pendingWorkbenchDevices: [],
   };
 
   function apiPath(path) {
@@ -201,6 +205,23 @@
       setSessionStatus("READY");
     }
     updateLayout();
+    emitWorkbenchState();
+  }
+
+  function emitWorkbenchState() {
+    if (!workbenchVisualEmbed || window.parent === window) return;
+    window.parent.postMessage({
+      type: "cha-realtime-workbench-state",
+      session_id: state.sessionId || null,
+      session_status: state.sessionStatus,
+      max_streams: state.maxStreams,
+      streams: [...state.tiles.values()].map((record) => ({
+        stream_id: record.streamId,
+        device_id: record.deviceId,
+        status: record.status,
+        first_frame_at: record.firstFrameAt,
+      })),
+    }, window.location.origin);
   }
 
   function updateLayout() {
@@ -316,10 +337,12 @@
     try {
       const data = await api("devices");
       state.devices = data.devices || [];
+      state.devicesLoaded = true;
       els.onlineCount.textContent = String(
         state.devices.filter((item) => item.online).length,
       );
       renderDevices();
+      void flushWorkbenchDevices();
       if (!quiet) showNotice("");
       return state.devices;
     } catch (error) {
@@ -346,6 +369,26 @@
     updateSummary();
     renderDevices();
     await startSelected();
+  }
+
+  async function flushWorkbenchDevices() {
+    if (!workbenchVisualEmbed || !state.devicesLoaded) return;
+    while (state.pendingWorkbenchDevices.length) {
+      const deviceId = state.pendingWorkbenchDevices.shift();
+      if (deviceId) await addDevice(deviceId);
+    }
+  }
+
+  function queueWorkbenchDevice(deviceId) {
+    if (!workbenchVisualEmbed || !deviceId) return;
+    if (state.deviceToStream.has(deviceId)) {
+      showNotice(ERROR_TEXT.duplicate_device, "error");
+      return;
+    }
+    if (!state.pendingWorkbenchDevices.includes(deviceId)) {
+      state.pendingWorkbenchDevices.push(deviceId);
+    }
+    void flushWorkbenchDevices();
   }
 
   async function createSession() {
@@ -542,6 +585,7 @@
       firstFrameTimer: null,
       resolution: "—",
       trackState: "—",
+      inspectionState: "未记录",
     };
     element.dataset.streamId = record.streamId;
     element.classList.remove("hidden");
@@ -593,6 +637,9 @@
     );
     record.element.querySelector("[data-resolution]").textContent = record.resolution;
     record.element.querySelector("[data-track]").textContent = record.trackState;
+    record.element.querySelector("[data-inspection-state]").textContent = (
+      record.inspectionState || "未记录"
+    );
     record.element.querySelector("[data-first-frame]").textContent = (
       record.firstFrameAt
         ? new Date(record.firstFrameAt).toLocaleTimeString()
@@ -1040,6 +1087,8 @@
       ? new Date(record.firstFrameAt)
       : new Date(now.getTime() - 5 * 60 * 1000);
     if (workbenchEmbed && window.parent !== window) {
+      record.inspectionState = "已带入记录";
+      updateTile(record, record.status);
       window.parent.postMessage({
         type: "cha-realtime-inspection-context",
         device_id: record.deviceId,
@@ -1086,6 +1135,8 @@
           : "已创建监察草稿，可在监察记录页继续填写。",
         "success"
       );
+      record.inspectionState = "已创建草稿";
+      updateTile(record, record.status);
       window.open("/api/v2/dashboard/inspections", "_blank");
     } catch (err) {
       showNotice("记录监察结果失败：" + String(err), "error");
@@ -1216,6 +1267,24 @@
   els.closeSession.addEventListener("click", () => closeSession());
   els.reconnect.addEventListener("click", () => reconnectSession());
   window.addEventListener("pagehide", cleanupOnExit);
+
+  if (workbenchVisualEmbed) {
+    document.body.classList.add("workbench-visual-embed");
+    window.addEventListener("message", (event) => {
+      if (event.origin !== window.location.origin || event.source !== window.parent) {
+        return;
+      }
+      const message = event.data || {};
+      if (message.type === "cha-workbench-add-device") {
+        queueWorkbenchDevice(String(message.device_id || ""));
+      } else if (message.type === "cha-workbench-close-session") {
+        closeSession({quiet: true});
+      }
+    });
+    window.parent.postMessage({
+      type: "cha-realtime-workbench-ready",
+    }, window.location.origin);
+  }
 
   window.chaRealtimeInspection = {
     snapshot: () => ({

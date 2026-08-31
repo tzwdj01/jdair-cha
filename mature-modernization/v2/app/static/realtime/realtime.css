@@ -396,6 +396,20 @@ button:disabled { cursor: not-allowed; opacity: .48; }
 .video-tile:fullscreen { width: 100vw; height: 100vh; border-radius: 0; }
 .video-tile:fullscreen .tile-stage { min-height: 0; }
 
+/* The Visual Workspace owns source navigation and the inspection form.  The
+   embedded M3 page therefore exposes its already-verified monitor grid only;
+   it does not create a second realtime/session implementation. */
+body.workbench-visual-embed { min-width: 0; background: var(--bg-elevated); }
+body.workbench-visual-embed .topbar,
+body.workbench-visual-embed .summary,
+body.workbench-visual-embed .device-panel,
+body.workbench-visual-embed #globalNotice { display: none; }
+body.workbench-visual-embed .page { padding: 0; }
+body.workbench-visual-embed .workspace { min-height: 535px; display: block; }
+body.workbench-visual-embed .monitor-panel { min-height: 535px; border: 0; border-radius: 0; box-shadow: none; }
+body.workbench-visual-embed .video-grid { min-height: 462px; }
+body.workbench-visual-embed .monitor-footer { min-height: 34px; }
+
 @media (max-width: 1250px) {
   .summary { grid-template-columns: 1fr 1.3fr; }
   .summary-actions { grid-column: 1 / -1; justify-content: flex-end; }

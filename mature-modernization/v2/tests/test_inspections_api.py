@@ -4,6 +4,7 @@ import datetime as dt
 import json
 import os
 import unittest
+from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
@@ -11,6 +12,7 @@ from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 
 from app.api.inspection_access import InspectionAccess
+from app.api.inspection import create_inspection_router
 from app.api.inspections import create_inspections_router
 from app.config import Settings
 from app.data.inspection_records import build_authorized_user
@@ -153,6 +155,51 @@ async def _seed_authorized(store) -> None:
 
 
 class InspectionsAPITests(unittest.IsolatedAsyncioTestCase):
+    async def test_workflow_page_wins_over_generic_dashboard_summary_route(
+        self,
+    ) -> None:
+        """Keep the owner workflow UI reachable when both routers are wired."""
+
+        store = MemoryInspectionRecordStore()
+        await _seed_authorized(store)
+        access = InspectionAccess(store, _Identity("inspector-a"), _envelope)
+        app = FastAPI()
+        app.include_router(
+            create_inspections_router(
+                _settings(),
+                InspectionRecordService(store),
+                store,
+                _envelope,
+                access,
+            )
+        )
+        app.include_router(
+            create_inspection_router(
+                _settings(),
+                None,
+                _envelope,
+                access=access,
+            )
+        )
+
+        response = await _request(
+            app,
+            "GET",
+            "/api/v2/dashboard/inspections",
+        )
+        self.assertEqual(response.status_code, 200)
+        page = response.body.decode("utf-8")
+        self.assertIn("导出 CSV", page)
+        self.assertIn("视频监察工作台", page)
+
+        main_source = (
+            Path(__file__).resolve().parents[1] / "app" / "main.py"
+        ).read_text(encoding="utf-8")
+        self.assertLess(
+            main_source.index("app.include_router(\n        create_inspections_router"),
+            main_source.index("app.include_router(\n    create_inspection_router"),
+        )
+
     async def test_workflow_page_and_apis_share_authorized_user_boundary(
         self,
     ) -> None:

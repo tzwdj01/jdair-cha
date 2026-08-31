@@ -22,10 +22,12 @@ plans.
 
 **CURRENT SUBPHASE: OWNER-OBSERVED REFINEMENT — VIDEO INSPECTION WORKSPACE**
 
-Production release `e6cbaab` is deployed and usable. V2, Legacy, Nginx and
-the low-rate scheduler are active; the protected public PostgreSQL TLS path is
-the accepted production path. This does not close M4, authorize a full rollout
-or authorize M5.
+Production release `aa90fd9` is deployed and usable. It includes the first
+bounded Video Inspection Workbench. V2, Legacy, Nginx and the low-rate
+scheduler are active; the protected public PostgreSQL TLS path is the accepted
+production path. The later local workbench-route/visual-workspace corrections
+are not yet deployed. This does not close M4, authorize a full rollout or
+authorize M5.
 
 The previous AuthorizedUser-management refinement is `COMPLETED / VERIFIED`:
 the admin-only page is live and uses the existing AuthorizedUser API without
@@ -186,27 +188,33 @@ THE REALTIME INSPECTION WORKFLOW WITHOUT ALTERING MEDIA INFRASTRUCTURE**
 Current evidence distinguishes the two source types:
 
 - **Realtime:** existing M3 is a verified Class B MCS8/AEE WebRTC adapter.
-  It is currently a separate, Canary-gated page; an active stream can create
-  an InspectionRecord draft, but the edit/submit workflow lacks owner UI.
+  The deployed workbench embeds it for a single selected source and carries
+  its same-origin record context into existing owner draft/submit/audit UI.
+  The active refinement reuses one M3 session for visual multi-tile selection;
+  it does not change the evidenced six-stream maximum.
 - **Uploaded video:** `media_files` contains safe Class A metadata (source ID,
   device, title, kind, duration and source times), but intentionally persists
   neither storage path nor signed playback URL. CHA has no preview/download
   route. The upstream SignedUrl operation has only static evidence, so browser
   preview is not assumed.
 
-The current work therefore implements a secure workbench shell, safe metadata
-source list, realtime context handoff, manual candidate confirmation,
-InspectionRecord draft/submit and audit UI. It does **not** claim uploaded
-video playback until the required AEE comparison is complete.
+The current work therefore preserves the secure workbench shell, safe metadata
+source list, realtime context handoff, manual candidate confirmation and
+InspectionRecord draft/submit/audit UI. It is completing the dedicated
+InspectionRecord route correction, visual multi-tile handoff and minimal
+Owner correction UI. It does **not** claim uploaded video playback until the
+required AEE comparison is complete.
 
 ### TODO — current Owner-Observed Refinement
 
-1. Add `/api/v2/dashboard/workbench` and a protected bounded source endpoint
-   for current device snapshots and safe uploaded-video metadata.
-2. Reuse the existing M3 viewer through the same-origin workbench handoff;
-   preserve M3 stream lifecycle, close behaviour and Canary enforcement.
-3. Add owner UI for InspectionRecord draft/save, candidate confirmation,
-   normal/problem result, submit and audit view using existing APIs only.
+1. Finish and package the dedicated `/api/v2/dashboard/inspections` route
+   registration correction so the Owner query/filter/export/detail/audit page
+   is not shadowed by the generic summary route.
+2. Reuse one existing M3 viewer/session through same-origin visual-workspace
+   messages so additional devices join and close through the verified stream
+   lifecycle. Keep nine/sixteen disabled pending capacity evidence.
+3. Expose the already-existing InspectionRecord correction endpoint through a
+   minimal Owner form; do not invent a second record or Issue workflow.
 4. Keep uploaded-video selection truthful: metadata is usable, but no preview
    button or fake media association may be shipped before AEE evidence.
 5. Complete route/access/UI regression tests, full suite, secret scan,
@@ -245,6 +253,15 @@ before an authorized AEE page session could be established. This is not a
 reason to bypass JFE/WAF or add a proxy. Re-run only through a lawful,
 authorized AEE browser/session and then classify the capability before any
 CHA playback work.
+
+**Visual-page evidence update (2026-08-31):** opening AEE `/v3/visual` in the
+available browser context redirected to `/v3/login`; no credential was entered.
+Static `mcs__p__v3__visual.chunk.js` evidence is recorded in
+`docs/aee/M4_AEE_VISUAL_CHA_COMPARISON.md` as `STATIC_EVIDENCE_ONLY`. It shows
+a device/file/alarm/map visual dashboard, not a proven WebRTC tile runtime.
+CHA continues to reuse the independently verified M3 MCS8/AEE adapter. The
+current six-stream ceiling remains in force; any 9/16-stream expansion is
+`AEE VERIFICATION REQUIRED` and cannot be inferred from a visual layout.
 
 ---
 
