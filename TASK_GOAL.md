@@ -33,8 +33,9 @@ SHA-256 and runtime commit were verified at deployment.
 V2 and Legacy are intentionally coexisting production products. The V2 primary
 entry is `/api/v2/dashboard`; its shared navigation exposes the M0–M4 business
 pages and an explicit `经典视频监控` link back to the still-stable Legacy root
-`/`. The root entry was not switched. This does not close M4, authorize a full
-rollout, authorize Legacy retirement or authorize M5.
+`/`. The Legacy root now supplies the reciprocal `监察数据中心` link to V2. The
+root entry was not switched. This does not close M4, authorize a full rollout,
+authorize Legacy retirement or authorize M5.
 
 The previous AuthorizedUser-management refinement is `COMPLETED / VERIFIED`:
 the admin-only page is live and uses the existing AuthorizedUser API without
@@ -183,6 +184,13 @@ Use only these labels: `COMPLETED / VERIFIED`, `COMPLETED / UNVERIFIED`,
   Legacy root HTTP 200. The source and extracted package suites each passed
   336 tests (the extracted package has its intentional archive-only skips).
   See `docs/aee/M4_PRODUCT_INTEGRATION_20260901.md`.
+- **2026-09-01 Legacy ↔ V2 navigation bridge:** the tracked Legacy source and
+  production-current release were reconciled before a new isolated Legacy
+  release was created from the active production base. It adds only the
+  `监察数据中心` link to `/api/v2/dashboard`; Legacy root, video functions and
+  authentication behavior remain unchanged. Production root and V2 navigation
+  asset were both HTTP 200 with the reciprocal links present. See
+  `docs/aee/M4_LEGACY_V2_NAVIGATION_BRIDGE_20260901.md`.
 
 ### COMPLETED / UNVERIFIED
 
@@ -224,14 +232,17 @@ realtime context handoff, manual candidate confirmation and InspectionRecord
 draft/submit/audit UI. The dedicated InspectionRecord route correction, visual
 multi-tile handoff and minimal Owner correction UI are deployed. The shared V2
 navigation makes the workbench the visible new inspection entry while retaining
-Legacy as the mature video entry. CHA does **not** claim uploaded-video playback
-until the required AEE comparison is complete.
+Legacy as the mature video entry; the Legacy header reciprocally exposes V2
+without changing the stable root path. Legacy remains session-authenticated
+only, while V2 requires both that existing session identity and an enabled
+AuthorizedUser. CHA does **not** claim uploaded-video playback until the
+required AEE comparison is complete.
 
 ### TODO — current Owner Business Acceptance
 
 1. Owner acceptance: enter V2 through `/api/v2/dashboard`, confirm the shared
-   navigation and explicit Legacy entry, then run authorized login → realtime
-   view → record context →
+   navigation and the reciprocal Legacy ↔ V2 entries, then run authorized
+   login → realtime view → record context →
    candidate/manual confirmation → save draft / submit → record
    query/statistics/export/audit; test correction only with an intentionally
    created owner-owned record.
@@ -243,6 +254,9 @@ until the required AEE comparison is complete.
 ### BLOCKED
 
 - `M4 CLOSED`, broad user rollout, M5 and Legacy retirement are not authorized.
+- Legacy authorization must remain session-only until a separate Owner-approved
+  access-control migration defines its user migration, `401`/`403` behavior,
+  audit, fallback and rollback boundary.
 - No historical infrastructure investigation is an active blocker. Stop only
   for new production P0 evidence: failed fresh public TLS connection, wrong
   runtime identity, anonymous exposure, AuthorizedUser regression, PoolError
@@ -417,19 +431,22 @@ permission to start M5.
 | 2026-08-31 | AEE `/v3/visual` comparison is `STATIC_EVIDENCE_ONLY`: the lawful browser context redirected to login, so only public static page evidence was used. It supports a status-first left/centre/right workspace model, not claims about camera-wall media, playback URLs or capacity. See `docs/aee/M4_AEE_VISUAL_CHA_COMPARISON.md`. |
 | 2026-08-31 | Exact package `889d0b1` was deployed as the Video Inspection Workspace visual refinement. Production browser evidence confirmed M3 same-session 1-to-2 live tiles, 1920x1080/live tracks, selective close with a surviving tile, explicit workspace close, inspection-context handoff, honest uploaded-media metadata and the corrected InspectionRecord query/export route. V2, Legacy, Nginx and scheduler remained active with zero restarts. No InspectionRecord was written in technical acceptance. See `docs/aee/M4_VIDEO_INSPECTION_VISUAL_WORKSPACE_20260831.md`. |
 | 2026-09-01 | Exact package `9b67222` was deployed as the V2 + Legacy product-integration refinement. Runtime commit and package SHA-256 matched; V2 live/ready, Legacy root, the shared navigation asset and all service states passed postflight. V2 navigation exposes M0–M4 pages with Video Inspection as the new business entry, and explicitly retains `经典视频监控` to `/`; the root entry itself was not changed. Scheduler was active and had completed successive low-rate cycles after its current start; its cumulative restart counter remained historical evidence, not a current loop. See `docs/aee/M4_PRODUCT_INTEGRATION_20260901.md`. |
+| 2026-09-01 | Legacy ↔ V2 navigation bridge was deployed from an isolated copy of the active Legacy release after source reconciliation. The Legacy header now exposes `监察数据中心` → `/api/v2/dashboard`; the V2 shared asset still exposes `经典视频监控` → `/`. Root/V2/Legacy/Nginx/scheduler health checks passed. Legacy continues to use its MCS8-backed server session and does not query AuthorizedUser; V2 continues to require AuthorizedUser after resolving that session. See `docs/aee/M4_LEGACY_V2_NAVIGATION_BRIDGE_20260901.md`. |
 
 ---
 
 ## 12. Next Recommended Actions
 
-1. Run Owner business acceptance from `/api/v2/dashboard`: navigate to the
-   workbench, validate the explicit Legacy entry, and use a deliberate test
-   record for realtime context → manual candidate confirmation → draft/submit
-   → query/export/audit. Test correction only against that record.
+1. Run Owner business acceptance from `/api/v2/dashboard`: validate both
+   Legacy ↔ V2 navigation directions, navigate to the workbench, and use a
+   deliberate test record for realtime context → manual candidate confirmation
+   → draft/submit → query/export/audit. Test correction only against that
+   record.
 2. Preserve the low-rate scheduler under natural production observation; do
    not manufacture a long polling run.
 3. When a lawful authenticated AEE browser context is available, obtain the
    SignedUrl preview and 9/16 multi-tile evidence before proposing uploaded
    playback or a stream-capacity increase.
 4. Keep standalone Issue workflow, automatic matching, M4 closure, full
-   rollout, Legacy retirement and M5 out of scope until separately authorized.
+   rollout, Legacy authorization migration, Legacy retirement and M5 out of
+   scope until separately authorized.
