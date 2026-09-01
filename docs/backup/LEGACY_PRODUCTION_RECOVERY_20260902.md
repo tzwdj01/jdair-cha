@@ -3,9 +3,10 @@
 ## Status
 
 An application-level recovery snapshot of the active Legacy product was created
-from production on 2026-09-01 UTC and verified locally. This document is safe
-to commit; the encrypted production archive, its DPAPI key material, production
-environment files and all credentials remain outside Git.
+from production on 2026-09-01 UTC immediately before the HTTPS change and
+verified locally. This document is safe to commit; the encrypted production
+archive, its DPAPI key material, production environment files and all
+credentials remain outside Git.
 
 ## Recovery identity
 
@@ -14,10 +15,10 @@ environment files and all credentials remain outside Git.
 | Legacy service | `jdair-cha.service` |
 | Active release target | `20260901125005-legacy-v2-nav-6aa499b` |
 | Legacy runtime | `/opt/jdair-cha/venv` |
-| Legacy reverse-proxy site | `/etc/nginx/sites-available/jdair-cha.conf` |
+| Legacy reverse-proxy site | `/etc/nginx/sites-enabled/jdair-cha.conf` and `/etc/nginx/sites-available/jdair-cha.conf` |
 | Archive format | `CHALEGACY1` AES-GCM (local only) |
-| Plain archive SHA-256 | `8fa803f5adb5254b190a06a0684fb21c796bbc69837278363c85f94e1c628db4` |
-| Archive entries | `410` |
+| Plain archive SHA-256 | `2795c104c7a926a7359dc18fe16aca0bfba930f1c309c1e554f07002d3750127` |
+| Archive entries | `411` |
 | Local decrypt-and-list round trip | PASS |
 
 The Git source baseline for this snapshot is the production-oriented Legacy
@@ -31,7 +32,8 @@ production-only material and may include credential-bearing legacy source.
 * the Legacy Python runtime under `/opt/jdair-cha/venv`;
 * the active `current` link target;
 * `jdair-cha.service` and its effective systemd metadata;
-* the Legacy Nginx site configuration and Nginx syntax-test output;
+* both active and available Legacy Nginx site configurations and the Nginx
+  syntax-test output;
 * file-level SHA-256 manifest and a recovery-scope manifest.
 
 ## Deliberate exclusions
@@ -52,7 +54,7 @@ V2 and the scheduler; do not alter their `current` links or environment files.
 
 1. On the owner workstation, decrypt the local snapshot with the local
    DPAPI-protected recovery tool. Verify the plain archive SHA-256 above and
-   verify it lists 410 entries. Transfer that short-lived plain archive over an
+   verify it lists 411 entries. Transfer that short-lived plain archive over an
    encrypted administrative channel, then remove the workstation copy after
    transfer.
 2. On the target server, extract to a new staging directory. Verify the staged
