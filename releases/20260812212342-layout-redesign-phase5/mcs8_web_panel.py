@@ -2572,6 +2572,26 @@ HTML = """<!doctype html>
       background: #31b3ff;
       box-shadow: 0 0 12px rgba(49, 179, 255, .75);
     }
+    .topnav .v2-data-center-link {
+      min-width: 116px;
+      height: 100%;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0 14px;
+      color: #8bd5ff;
+      border-left: 1px solid rgba(79, 148, 190, .34);
+      background: rgba(38, 167, 255, .05);
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: .2px;
+      text-decoration: none;
+      white-space: nowrap;
+    }
+    .topnav .v2-data-center-link:hover {
+      color: #e5f7ff;
+      background: rgba(38, 167, 255, .15);
+    }
     .header-actions { display: flex; align-items: center; justify-content: flex-end; gap: 7px; }
     .header-actions button { min-height: 34px; padding: 6px 10px; font-size: 12px; white-space: nowrap; }
     .status {
@@ -3599,6 +3619,15 @@ HTML = """<!doctype html>
       background: #fff;
       box-shadow: none;
     }
+    html[data-theme="day"] .topnav .v2-data-center-link {
+      color: #d8efff;
+      border-left-color: rgba(255,255,255,.24);
+      background: rgba(255,255,255,.08);
+    }
+    html[data-theme="day"] .topnav .v2-data-center-link:hover {
+      color: #fff;
+      background: rgba(255,255,255,.16);
+    }
     html[data-theme="day"] button.secondary {
       color: #245d88;
       border-color: #b8cad8;
@@ -3867,6 +3896,7 @@ HTML = """<!doctype html>
     <button id="nav-dashboard" class="active" onclick="showView('dashboard')">监察工作台</button>
     <button id="nav-map" onclick="showView('map')">指挥调度</button>
     <button id="nav-aux" onclick="showView('aux')">辅助查询</button>
+    <a class="v2-data-center-link" href="/api/v2/dashboard" title="打开 V2 监察数据中心">监察数据中心</a>
   </nav>
   <div class="header-actions">
     <div id="status" class="status"></div>
