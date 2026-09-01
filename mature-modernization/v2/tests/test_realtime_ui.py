@@ -93,6 +93,16 @@ class RealtimeProductUITests(unittest.TestCase):
         ):
             self.assertIn(expected, self.app_js)
 
+    def test_legacy_embed_uses_the_server_enforced_maintenance_scope(self) -> None:
+        for expected in (
+            'realtimeQuery.get("scope") === "maintenance_wxb"',
+            '"maintenance_wxb"',
+            "scopeQuery",
+            "device_not_in_scope",
+            "scope: deviceScope",
+        ):
+            self.assertIn(expected, self.app_js)
+
 
 if __name__ == "__main__":
     unittest.main()

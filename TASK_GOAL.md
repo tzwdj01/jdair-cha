@@ -1,6 +1,6 @@
 # CHA Video Record System Optimization — Active Task Goal
 
-Last updated: `2026-08-31`
+Last updated: `2026-09-02`
 
 ## 1. Overall Objective
 
@@ -211,8 +211,8 @@ Use only these labels: `COMPLETED / VERIFIED`, `COMPLETED / UNVERIFIED`,
 
 **CURRENT SUBPHASE: OWNER BUSINESS ACCEPTANCE — V2 + LEGACY PRODUCT INTEGRATION**
 
-**STATUS: READY FOR OWNER BUSINESS ACCEPTANCE — V2 AND LEGACY COEXIST WITHOUT
-ALTERING MEDIA INFRASTRUCTURE**
+**STATUS: IN PROGRESS — LEGACY MAINTENANCE REALTIME WORKSPACE IS
+DEVELOPMENT-VALIDATED; CONTROLLED RELEASE AND OWNER BROWSER ACCEPTANCE PENDING**
 
 Current evidence distinguishes the two source types:
 
@@ -227,6 +227,19 @@ Current evidence distinguishes the two source types:
   route. The upstream SignedUrl operation has only static evidence, so browser
   preview is not assumed.
 
+- **2026-09-02 Legacy maintenance realtime workspace:** `IN PROGRESS / NOT
+  DEPLOYED`. A bounded Legacy `实时视频` modal has been implemented to reuse the
+  existing M3 same-origin visual viewer. It exposes only online `WXB*` devices
+  as the uniform `维修部` group and retains the existing maximum of six streams.
+  The V2 realtime API now enforces this scope on both listing and stream-add,
+  so the Legacy device filter is not the only boundary. Development validation
+  passed 343 tests (2 explicit isolated-PostgreSQL skips), Python compilation,
+  Node runtime regression and Legacy inline-JavaScript syntax checks. No
+  feature flag, realtime allowlist, credential, AEE behavior, Nginx, systemd
+  or production release has changed. Controlled package release and lawful
+  Owner browser validation are required before it can be marked deployed. See
+  `docs/aee/M4_LEGACY_REALTIME_WORKSPACE_20260902.md`.
+
 The released workbench preserves the secure shell, safe metadata source list,
 realtime context handoff, manual candidate confirmation and InspectionRecord
 draft/submit/audit UI. The dedicated InspectionRecord route correction, visual
@@ -240,15 +253,19 @@ required AEE comparison is complete.
 
 ### TODO — current Owner Business Acceptance
 
-1. Owner acceptance: enter V2 through `/api/v2/dashboard`, confirm the shared
+1. Controlled release and Owner validation of the Legacy `实时视频` workspace:
+   verify an eligible session sees only online `WXB*` devices, one and then two
+   first frames play in one M3 session, explicit close releases the session,
+   and re-open succeeds. Keep the existing six-stream ceiling.
+2. Owner acceptance: enter V2 through `/api/v2/dashboard`, confirm the shared
    navigation and the reciprocal Legacy ↔ V2 entries, then run authorized
    login → realtime view → record context →
    candidate/manual confirmation → save draft / submit → record
    query/statistics/export/audit; test correction only with an intentionally
    created owner-owned record.
-2. Keep uploaded-video selection truthful: metadata is usable, but no preview
+3. Keep uploaded-video selection truthful: metadata is usable, but no preview
    button or fake media association may be shipped before AEE evidence.
-3. Keep 9/16 layouts disabled until a same-device AEE vs CHA capacity and
+4. Keep 9/16 layouts disabled until a same-device AEE vs CHA capacity and
    resource-release comparison proves a safe configuration above six streams.
 
 ### BLOCKED

@@ -100,6 +100,7 @@ class RealtimeSession:
     expires_at: dt.datetime
     adapter: Any
     updated_at: dt.datetime
+    device_scope: str = "all"
     connection_reusable: bool = False
     closed_at: dt.datetime | None = None
     streams: dict[str, RealtimeStream] = field(default_factory=dict)
@@ -119,6 +120,7 @@ class RealtimeSession:
             "expires_at": iso_datetime(self.expires_at),
             "closed_at": iso_datetime(self.closed_at),
             "connection_reusable": self.connection_reusable,
+            "device_scope": self.device_scope,
             "audio_enabled": bool(
                 getattr(
                     getattr(self.adapter, "settings", None),

@@ -16,12 +16,13 @@ from ..services.legacy import (
     LegacyTransportError,
 )
 from .errors import AEEUpstreamError, RealtimeError
-from .schemas import AddStreamRequest
+from .schemas import AddStreamRequest, CreateSessionRequest
 from .session_manager import RealtimeSessionManager
 
 
 Envelope = Callable[..., JSONResponse]
 COOKIE_PREFIX = "cha_rt_"
+MAINTENANCE_WXB_SCOPE = "maintenance_wxb"
 ASSET_ROOT = Path(__file__).resolve().parents[1] / "static" / "realtime"
 VENDOR_ROOT = Path(__file__).resolve().parents[1] / "static" / "vendor"
 TEMPLATE_PATH = (
@@ -101,9 +102,35 @@ def create_realtime_router(
             )
         return owner_key, owner_name
 
+    def is_maintenance_wxb_device(row: dict[str, Any]) -> bool:
+        """Return whether an online device is in the maintenance terminal fleet.
+
+        The Legacy integration presents this fixed fleet as one ``维修部``
+        group. The WXB identifier is the source-of-truth membership marker,
+        not an arbitrary upstream display label.
+        """
+
+        device_id = str(row.get("devId") or "").strip().upper()
+        return device_id.startswith("WXB") and bool(row.get("online"))
+
+    def public_device(row: dict[str, Any], *, scope: str) -> dict[str, Any]:
+        device_id = str(row.get("devId") or "").strip()
+        return {
+            "device_id": device_id,
+            "name": str(row.get("name") or device_id)[:80],
+            "group": (
+                "维修部"
+                if scope == MAINTENANCE_WXB_SCOPE
+                else str(row.get("groupName") or "未分组")[:80]
+            ),
+            "online": bool(row.get("online")),
+        }
+
     async def require_online_device(
         request: Request,
         device_id: str,
+        *,
+        scope: str,
     ) -> None:
         try:
             source = await legacy_client.devices(
@@ -142,6 +169,15 @@ def create_realtime_router(
                 "device_offline",
                 "The selected realtime device is offline.",
                 status_code=409,
+            )
+        if (
+            scope == MAINTENANCE_WXB_SCOPE
+            and not is_maintenance_wxb_device(match)
+        ):
+            raise RealtimeError(
+                "device_not_in_scope",
+                "The selected device is outside the maintenance realtime scope.",
+                status_code=403,
             )
 
     def require_same_origin(request: Request) -> None:
@@ -270,11 +306,20 @@ def create_realtime_router(
         )
 
     @router.get("/api/v2/realtime/devices")
-    async def realtime_devices(request: Request) -> JSONResponse:
+    async def realtime_devices(
+        request: Request,
+        scope: str = "all",
+    ) -> JSONResponse:
         if not settings.feature_realtime_readonly:
             return disabled(request)
         try:
             await canary_identity(request)
+            if scope not in {"all", MAINTENANCE_WXB_SCOPE}:
+                raise RealtimeError(
+                    "invalid_device_scope",
+                    "The requested realtime device scope is invalid.",
+                    status_code=400,
+                )
             source = await legacy_client.devices(
                 request.headers.get("cookie", "")
             )
@@ -292,14 +337,12 @@ def create_realtime_router(
                 device_id = str(row.get("devId") or "").strip()
                 if not device_id:
                     continue
-                devices.append(
-                    {
-                        "device_id": device_id,
-                        "name": str(row.get("name") or device_id)[:80],
-                        "group": str(row.get("groupName") or "未分组")[:80],
-                        "online": bool(row.get("online")),
-                    }
-                )
+                if (
+                    scope == MAINTENANCE_WXB_SCOPE
+                    and not is_maintenance_wxb_device(row)
+                ):
+                    continue
+                devices.append(public_device(row, scope=scope))
             devices.sort(
                 key=lambda item: (
                     not item["online"],
@@ -379,6 +422,7 @@ def create_realtime_router(
     @router.post("/api/v2/realtime/sessions", status_code=201)
     async def create_session(
         request: Request,
+        body: CreateSessionRequest | None = None,
     ) -> JSONResponse:
         if not settings.feature_realtime_readonly:
             return disabled(request)
@@ -388,6 +432,7 @@ def create_realtime_router(
             session, lease = await manager.create_session(
                 owner_key=owner_key,
                 owner_name=owner_name,
+                device_scope=(body.scope if body is not None else "all"),
             )
             response = envelope(
                 request,
@@ -454,7 +499,15 @@ def create_realtime_router(
         try:
             require_same_origin(request)
             owner_key, _ = await canary_identity(request)
-            await require_online_device(request, body.device_id)
+            session = await manager.get_session(
+                session_id,
+                owner_key=owner_key,
+            )
+            await require_online_device(
+                request,
+                body.device_id,
+                scope=session.device_scope,
+            )
             stream = await manager.add_stream(
                 session_id,
                 owner_key=owner_key,

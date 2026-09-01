@@ -9,6 +9,7 @@ import threading
 import unittest
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import urlsplit
 from unittest.mock import patch
 
 
@@ -53,6 +54,12 @@ class _LegacyHandler(http.server.BaseHTTPRequestHandler):
                         "devId": "WXB342",
                         "name": "JDTY03099",
                         "groupName": "Maintenance",
+                        "online": True,
+                    },
+                    {
+                        "devId": "CAM001",
+                        "name": "Non-maintenance terminal",
+                        "groupName": "Other",
                         "online": True,
                     },
                 ]
@@ -136,15 +143,16 @@ async def _request(
     if json_body is not None:
         raw_headers.append((b"content-type", b"application/json"))
     raw_headers.append((b"host", b"testserver"))
+    parsed_path = urlsplit(path)
     scope = {
         "type": "http",
         "asgi": {"version": "3.0", "spec_version": "2.3"},
         "http_version": "1.1",
         "method": method,
         "scheme": scheme,
-        "path": path,
-        "raw_path": path.encode("ascii"),
-        "query_string": b"",
+        "path": parsed_path.path,
+        "raw_path": parsed_path.path.encode("ascii"),
+        "query_string": parsed_path.query.encode("ascii"),
         "root_path": "",
         "headers": raw_headers,
         "client": ("127.0.0.1", 12345),
@@ -386,6 +394,63 @@ class RealtimeAPITests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(closed.json()["data"]["status"], "CLOSED")
         self.assertEqual(repeated.json()["data"]["status"], "CLOSED")
+
+    async def test_legacy_maintenance_scope_is_server_enforced(self) -> None:
+        devices = await self.request(
+            "GET",
+            "/api/v2/realtime/devices?scope=maintenance_wxb",
+        )
+        self.assertEqual(devices.status_code, 200)
+        rows = devices.json()["data"]["devices"]
+        self.assertEqual(
+            {row["device_id"] for row in rows},
+            {"WXB339", "WXB337", "WXB342"},
+        )
+        self.assertTrue(all(row["online"] for row in rows))
+        self.assertEqual({row["group"] for row in rows}, {"维修部"})
+
+        invalid = await self.request(
+            "GET",
+            "/api/v2/realtime/devices?scope=unrestricted",
+        )
+        self.assertEqual(invalid.status_code, 400)
+        self.assertEqual(
+            invalid.json()["data"]["code"],
+            "invalid_device_scope",
+        )
+
+        created = await self.request(
+            "POST",
+            "/api/v2/realtime/sessions",
+            {"scope": "maintenance_wxb"},
+        )
+        self.assertEqual(created.status_code, 201)
+        session_id = created.json()["data"]["session_id"]
+        self.assertEqual(
+            created.json()["data"]["device_scope"],
+            "maintenance_wxb",
+        )
+
+        allowed = await self.request(
+            "POST",
+            f"/api/v2/realtime/sessions/{session_id}/streams",
+            {"device_id": "WXB339"},
+        )
+        self.assertEqual(allowed.status_code, 201)
+        rejected = await self.request(
+            "POST",
+            f"/api/v2/realtime/sessions/{session_id}/streams",
+            {"device_id": "CAM001"},
+        )
+        self.assertEqual(rejected.status_code, 403)
+        self.assertEqual(
+            rejected.json()["data"]["code"],
+            "device_not_in_scope",
+        )
+        await self.request(
+            "DELETE",
+            f"/api/v2/realtime/sessions/{session_id}",
+        )
 
     async def test_api_enforces_configured_active_stream_limit(self) -> None:
         created = await self.request(

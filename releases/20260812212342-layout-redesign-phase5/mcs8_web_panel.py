@@ -3571,6 +3571,41 @@ HTML = """<!doctype html>
     .playlist-item button { min-height: 24px; padding: 2px 6px; font-size: 10px; }
     .playlist-empty { padding: 8px; color: #687f91; font-size: 12px; }
 
+    /* Reuse the established Legacy playback dialog for the M3 realtime shell.
+       The iframe owns only the already-verified WebRTC session lifecycle. */
+    .realtime-dialog { width: min(1580px, 97vw); height: min(900px, 94vh); }
+    .realtime-dialog-body { padding: 8px; overflow: hidden; }
+    .realtime-workspace { height: 100%; min-height: 0; display: grid; grid-template-columns: 250px minmax(0, 1fr); gap: 8px; }
+    .realtime-source-pane { min-height: 0; display: flex; flex-direction: column; gap: 8px; padding: 10px; border: 1px solid #1f405b; border-radius: 6px; background: #091725; }
+    .realtime-source-head { display: grid; gap: 3px; }
+    .realtime-source-head strong { color: #dff2ff; font-size: 14px; }
+    .realtime-source-head span, .realtime-source-note { color: #7895aa; font-size: 11px; line-height: 1.5; }
+    .realtime-source-pane input { width: 100%; min-height: 34px; padding: 6px 8px; }
+    .realtime-device-list { min-height: 0; overflow: auto; display: grid; gap: 6px; align-content: start; }
+    .realtime-device { width: 100%; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; padding: 8px; text-align: left; color: #cce3f4; border-color: #294b66; background: #0d2133; }
+    .realtime-device:hover:not(:disabled), .realtime-device.active { color: #effaff; border-color: #2ba9f9; background: rgba(38, 167, 255, .14); transform: none; box-shadow: none; }
+    .realtime-device:disabled { opacity: .66; cursor: not-allowed; }
+    .realtime-device-main { min-width: 0; display: grid; gap: 3px; }
+    .realtime-device-main strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+    .realtime-device-main span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #7d9db4; font-size: 11px; }
+    .realtime-device-state { align-self: center; color: #67d7a4; font-size: 11px; white-space: nowrap; }
+    .realtime-device.active .realtime-device-state { color: #75c8ff; }
+    .realtime-stage { min-width: 0; min-height: 0; overflow: hidden; border: 1px solid #203f59; border-radius: 6px; background: #07111c; }
+    .realtime-stage iframe { display: block; width: 100%; height: 100%; min-height: 560px; border: 0; background: #07111c; }
+    .realtime-state-empty { min-height: 560px; display: grid; place-items: center; padding: 28px; color: #7895aa; text-align: center; line-height: 1.7; }
+    html[data-theme="day"] .realtime-source-pane { border-color: #cbdce8; background: #f7fbfe; }
+    html[data-theme="day"] .realtime-source-head strong { color: #27465c; }
+    html[data-theme="day"] .realtime-source-head span, html[data-theme="day"] .realtime-source-note { color: #657b8d; }
+    html[data-theme="day"] .realtime-device { color: #29465a; border-color: #c7d8e4; background: #fff; }
+    html[data-theme="day"] .realtime-device-main span { color: #718596; }
+    html[data-theme="day"] .realtime-stage { border-color: #c7d9e6; background: #eff5f9; }
+    @media (max-width: 900px) {
+      .realtime-dialog-body { overflow: auto; }
+      .realtime-workspace { height: auto; grid-template-columns: 1fr; }
+      .realtime-source-pane { max-height: 240px; }
+      .realtime-stage iframe, .realtime-state-empty { min-height: 420px; }
+    }
+
     html[data-theme="day"] {
       color-scheme: light;
       --bg: #eef2f5;
@@ -4019,6 +4054,7 @@ HTML = """<!doctype html>
             <button class="secondary active" id="tabPlatform" onclick="setFileMode('platform')">平台文件</button>
             <button class="secondary" id="tabDevice" onclick="setFileMode('device')">设备文件</button>
             <button class="secondary player-launch-btn" onclick="openPlayerModal()">播放窗口 <span id="playerLaunchCount">0</span></button>
+            <button class="secondary player-launch-btn" id="tabRealtime" onclick="openRealtimeModal()">实时视频 <span id="realtimeLaunchCount">0</span></button>
             <button id="referenceAllToggle" class="secondary reference-all-toggle" onclick="toggleAllReferenceInfo(this)" disabled>展开全部参考信息</button>
           </div>
         </div>
@@ -4309,6 +4345,36 @@ HTML = """<!doctype html>
   </section>
 </div>
 
+<div id="realtimeModal" class="player-modal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="realtimeDialogTitle" onclick="handleRealtimeBackdrop(event)">
+  <section class="player-dialog realtime-dialog">
+    <div class="player-dialog-head">
+      <div class="player-dialog-title">
+        <strong id="realtimeDialogTitle">实时视频</strong>
+        <span id="realtimeStateText">仅显示维修部在线 WXB 设备；点击设备即可加入同一实时会话。</span>
+      </div>
+      <div class="player-dialog-actions">
+        <button class="ghost" onclick="reloadRealtimeDevices()">刷新设备</button>
+        <button class="ghost" onclick="closeRealtimeSession()">结束实时观看</button>
+        <button class="ghost player-dialog-close" onclick="closeRealtimeModal()" title="关闭实时视频" aria-label="关闭实时视频">×</button>
+      </div>
+    </div>
+    <div class="player-dialog-body realtime-dialog-body">
+      <div class="realtime-workspace">
+        <aside class="realtime-source-pane" aria-label="维修部实时设备">
+          <div class="realtime-source-head"><strong>维修部实时设备</strong><span id="realtimeDeviceSummary">正在加载在线设备…</span></div>
+          <input id="realtimeDeviceSearch" type="search" placeholder="搜索 WXB 编号或设备名称" oninput="renderRealtimeDevices()">
+          <div id="realtimeDeviceList" class="realtime-device-list"></div>
+          <div class="realtime-source-note">统一分组：维修部 · 仅在线 WXB 设备 · 已验证最多 6 路同时播放。关闭窗口会主动释放本次实时会话。</div>
+        </aside>
+        <section class="realtime-stage">
+          <iframe id="legacyRealtimeFrame" class="hidden" title="维修部实时视频"></iframe>
+          <div id="legacyRealtimeEmpty" class="realtime-state-empty">选择左侧在线设备后开始实时观看。实时播放复用已验证的 M3 原生 AEE/MCS8 WebRTC 链路，不复制视频、不增加转码服务。</div>
+        </section>
+      </div>
+    </div>
+  </section>
+</div>
+
 <div id="copyFallbackModal" class="copy-fallback-modal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="copyFallbackTitle" onclick="if(event.target===this)closeCopyFallback()">
   <section class="copy-fallback-card">
     <strong id="copyFallbackTitle">复制文件名称</strong>
@@ -4349,6 +4415,14 @@ let leafletTrackLayer = null;
 let appStarted = false;
 let activeMapPane = "location";
 let activeAuxPane = "flights";
+let legacyRealtimeFrameReady = false;
+let legacyRealtimeFrameLoaded = false;
+let legacyRealtimeClosing = false;
+let legacyRealtimeMaxStreams = 6;
+let legacyRealtimePendingDevices = [];
+let legacyRealtimeRequestedDevices = new Set();
+let legacyRealtimeActiveDevices = new Set();
+let legacyRealtimeCloseTimer = null;
 
 
 let gpsTrack = null;
@@ -4564,6 +4638,206 @@ function closePlayerModal() {
 function handlePlayerBackdrop(event) {
   if (event && event.target === byId("playerModal")) closePlayerModal();
 }
+
+function maintenanceRealtimeDevices() {
+  return devices.filter(function(device) {
+    return !!device.online && /^WXB/i.test(String(device.devId || ""));
+  }).sort(function(a, b) {
+    return String(a.devId || "").localeCompare(String(b.devId || ""));
+  });
+}
+
+function updateRealtimeSummary(message) {
+  var activeCount = legacyRealtimeActiveDevices.size;
+  var count = byId("realtimeLaunchCount");
+  if (count) count.textContent = String(activeCount);
+  var state = byId("realtimeStateText");
+  if (state && message) state.textContent = message;
+}
+
+function renderRealtimeDevices() {
+  var container = byId("realtimeDeviceList");
+  var summary = byId("realtimeDeviceSummary");
+  if (!container || !summary) return;
+  var query = String(byId("realtimeDeviceSearch")?.value || "").trim().toLowerCase();
+  var rows = maintenanceRealtimeDevices().filter(function(device) {
+    var haystack = `${device.devId || ""} ${device.name || ""}`.toLowerCase();
+    return !query || haystack.includes(query);
+  });
+  summary.textContent = `维修部 · ${maintenanceRealtimeDevices().length} 台在线 WXB 设备 · ${legacyRealtimeActiveDevices.size}/${legacyRealtimeMaxStreams} 路播放中`;
+  if (!rows.length) {
+    container.innerHTML = '<div class="muted">没有符合条件的在线 WXB 设备。</div>';
+    return;
+  }
+  container.innerHTML = rows.map(function(device) {
+    var deviceId = String(device.devId || "");
+    var active = legacyRealtimeActiveDevices.has(deviceId);
+    var pending = legacyRealtimeRequestedDevices.has(deviceId) && !active;
+    var requestedNotActive = Array.from(legacyRealtimeRequestedDevices).filter(function(id) { return !legacyRealtimeActiveDevices.has(id); }).length;
+    var full = legacyRealtimeActiveDevices.size + requestedNotActive >= legacyRealtimeMaxStreams;
+    var disabled = active || pending || full || legacyRealtimeClosing;
+    var state = active ? "播放中" : pending ? "正在加入" : "在线";
+    return `<button class="realtime-device ${active || pending ? "active" : ""}" type="button" ${disabled ? "disabled" : ""} data-realtime-device="${esc(deviceId)}">
+      <span class="realtime-device-main"><strong>${esc(deviceId)}</strong><span>${esc(device.name || deviceId)} · 维修部</span></span>
+      <span class="realtime-device-state">${state}</span>
+    </button>`;
+  }).join("");
+  container.querySelectorAll("[data-realtime-device]").forEach(function(button) {
+    button.addEventListener("click", function() {
+      addLegacyRealtimeDevice(String(button.dataset.realtimeDevice || ""));
+    });
+  });
+}
+
+function ensureLegacyRealtimeFrame() {
+  var frame = byId("legacyRealtimeFrame");
+  var empty = byId("legacyRealtimeEmpty");
+  if (!frame) return;
+  if (!legacyRealtimeFrameLoaded) {
+    legacyRealtimeFrameLoaded = true;
+    legacyRealtimeFrameReady = false;
+    frame.src = "/api/v2/realtime?workbench=1&embed=visual&scope=maintenance_wxb";
+  }
+  frame.classList.remove("hidden");
+  if (empty) empty.classList.add("hidden");
+}
+
+function flushLegacyRealtimeDevices() {
+  var frame = byId("legacyRealtimeFrame");
+  if (!legacyRealtimeFrameReady || !frame?.contentWindow || legacyRealtimeClosing) return;
+  while (legacyRealtimePendingDevices.length) {
+    var deviceId = legacyRealtimePendingDevices.shift();
+    frame.contentWindow.postMessage({type: "cha-workbench-add-device", device_id: deviceId}, location.origin);
+  }
+  renderRealtimeDevices();
+}
+
+function addLegacyRealtimeDevice(encodedDeviceId) {
+  var deviceId = decodeURIComponent(encodedDeviceId || "");
+  if (!deviceId || legacyRealtimeActiveDevices.has(deviceId) || legacyRealtimeRequestedDevices.has(deviceId)) return;
+  var requestedNotActive = Array.from(legacyRealtimeRequestedDevices).filter(function(id) { return !legacyRealtimeActiveDevices.has(id); }).length;
+  if (legacyRealtimeActiveDevices.size + requestedNotActive >= legacyRealtimeMaxStreams) {
+    updateRealtimeSummary(`当前最多支持 ${legacyRealtimeMaxStreams} 路实时视频。`);
+    renderRealtimeDevices();
+    return;
+  }
+  ensureLegacyRealtimeFrame();
+  legacyRealtimeRequestedDevices.add(deviceId);
+  legacyRealtimePendingDevices.push(deviceId);
+  updateRealtimeSummary(`正在加入 ${deviceId}，等待实时视频首帧…`);
+  renderRealtimeDevices();
+  flushLegacyRealtimeDevices();
+}
+
+async function reloadRealtimeDevices() {
+  updateRealtimeSummary("正在刷新维修部在线 WXB 设备…");
+  try {
+    await loadDevices();
+    updateRealtimeSummary("设备列表已刷新；点击设备即可加入实时观看。");
+  } catch (err) {
+    updateRealtimeSummary("设备列表刷新失败，请稍后重试。");
+  }
+  renderRealtimeDevices();
+}
+
+function openRealtimeModal() {
+  var modal = byId("realtimeModal");
+  if (!modal) return;
+  if (legacyRealtimeCloseTimer) {
+    clearTimeout(legacyRealtimeCloseTimer);
+    legacyRealtimeCloseTimer = null;
+  }
+  legacyRealtimeClosing = false;
+  modal.classList.add("open");
+  modal.setAttribute("aria-hidden", "false");
+  document.body.classList.add("player-modal-open");
+  byId("tabRealtime")?.classList.add("active");
+  renderRealtimeDevices();
+  if (!devices.length) void reloadRealtimeDevices();
+}
+
+function releaseLegacyRealtimeFrame() {
+  var frame = byId("legacyRealtimeFrame");
+  var empty = byId("legacyRealtimeEmpty");
+  if (frame) {
+    frame.src = "about:blank";
+    frame.classList.add("hidden");
+  }
+  if (empty) empty.classList.remove("hidden");
+  legacyRealtimeFrameReady = false;
+  legacyRealtimeFrameLoaded = false;
+  legacyRealtimePendingDevices = [];
+  legacyRealtimeRequestedDevices.clear();
+  legacyRealtimeActiveDevices.clear();
+  legacyRealtimeClosing = false;
+  updateRealtimeSummary("实时会话已关闭，设备和媒体资源已请求释放。");
+  renderRealtimeDevices();
+}
+
+function closeRealtimeSession() {
+  var frame = byId("legacyRealtimeFrame");
+  if (!legacyRealtimeFrameLoaded) {
+    releaseLegacyRealtimeFrame();
+    return;
+  }
+  legacyRealtimeClosing = true;
+  legacyRealtimePendingDevices = [];
+  updateRealtimeSummary("正在关闭实时会话并释放视频资源…");
+  renderRealtimeDevices();
+  if (frame?.contentWindow) {
+    frame.contentWindow.postMessage({type: "cha-workbench-close-session"}, location.origin);
+  }
+  if (legacyRealtimeCloseTimer) clearTimeout(legacyRealtimeCloseTimer);
+  legacyRealtimeCloseTimer = setTimeout(releaseLegacyRealtimeFrame, 1500);
+}
+
+function closeRealtimeModal() {
+  var modal = byId("realtimeModal");
+  if (modal) {
+    modal.classList.remove("open");
+    modal.setAttribute("aria-hidden", "true");
+  }
+  byId("tabRealtime")?.classList.remove("active");
+  document.body.classList.remove("player-modal-open");
+  closeRealtimeSession();
+}
+
+function handleRealtimeBackdrop(event) {
+  if (event && event.target === byId("realtimeModal")) closeRealtimeModal();
+}
+
+window.addEventListener("message", function(event) {
+  var frame = byId("legacyRealtimeFrame");
+  if (event.origin !== location.origin || event.source !== frame?.contentWindow) return;
+  var message = event.data || {};
+  if (message.type === "cha-realtime-workbench-ready") {
+    legacyRealtimeFrameReady = true;
+    updateRealtimeSummary("实时视频已就绪；点击维修部在线设备即可播放。");
+    flushLegacyRealtimeDevices();
+    return;
+  }
+  if (message.type !== "cha-realtime-workbench-state") return;
+  legacyRealtimeMaxStreams = Math.min(Number(message.max_streams || 6), 6);
+  var streamRows = message.streams || [];
+  legacyRealtimeActiveDevices = new Set(streamRows.filter(function(stream) {
+    return stream && stream.status !== "CLOSED";
+  }).map(function(stream) { return String(stream.device_id || ""); }).filter(Boolean));
+  streamRows.forEach(function(stream) {
+    if (stream && ["CLOSED", "FAILED"].includes(stream.status)) {
+      legacyRealtimeRequestedDevices.delete(String(stream.device_id || ""));
+    } else if (stream && stream.device_id) {
+      legacyRealtimeRequestedDevices.delete(String(stream.device_id));
+    }
+  });
+  var playing = streamRows.filter(function(stream) { return stream && stream.status === "PLAYING"; }).length;
+  updateRealtimeSummary(`${playing} 路播放中 · ${legacyRealtimeActiveDevices.size}/${legacyRealtimeMaxStreams} 路已加入 · ${message.session_status || "等待会话"}`);
+  if (!legacyRealtimeActiveDevices.size && message.session_status === "READY" && legacyRealtimeClosing) {
+    if (legacyRealtimeCloseTimer) clearTimeout(legacyRealtimeCloseTimer);
+    releaseLegacyRealtimeFrame();
+    return;
+  }
+  renderRealtimeDevices();
+});
 
 function setPlaylistExpanded(expanded) {
   playlistExpanded = !!expanded;
@@ -4835,6 +5109,7 @@ async function loadDevices() {
     renderDashBtns();
     renderMap();
     renderDispatchTable();
+    renderRealtimeDevices();
   } catch (err) {
     showError(document.getElementById("deviceTree"), err);
   }

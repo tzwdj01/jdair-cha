@@ -9,6 +9,9 @@
   const requestedDeviceId = realtimeQuery.get("device") || "";
   const workbenchEmbed = realtimeQuery.get("workbench") === "1";
   const workbenchVisualEmbed = workbenchEmbed && realtimeQuery.get("embed") === "visual";
+  const deviceScope = realtimeQuery.get("scope") === "maintenance_wxb"
+    ? "maintenance_wxb"
+    : "all";
   const STATUS_TEXT = {
     CONNECTING: "正在连接",
     WAITING_FIRST_FRAME: "等待首帧",
@@ -20,6 +23,7 @@
   };
   const ERROR_TEXT = {
     device_offline: "设备当前离线，暂时无法加入实时监控。",
+    device_not_in_scope: "该设备不属于维修部实时设备范围。",
     device_not_found: "没有找到该设备，请刷新设备列表。",
     stream_limit_reached: "当前最多支持 6 路实时视频。",
     duplicate_device: "该设备已在监控中。",
@@ -335,7 +339,10 @@
   async function loadDevices({quiet = false} = {}) {
     if (!quiet) els.deviceList.innerHTML = '<div class="device-loading">正在加载设备…</div>';
     try {
-      const data = await api("devices");
+      const scopeQuery = deviceScope === "all"
+        ? ""
+        : `?scope=${encodeURIComponent(deviceScope)}`;
+      const data = await api(`devices${scopeQuery}`);
       state.devices = data.devices || [];
       state.devicesLoaded = true;
       els.onlineCount.textContent = String(
@@ -398,7 +405,10 @@
     els.connection.textContent = "正在创建 CHA 实时会话";
     const session = await api("sessions", {
       method: "POST",
-      body: JSON.stringify({client_label: "six-grid-inspection"}),
+      body: JSON.stringify({
+        client_label: "six-grid-inspection",
+        scope: deviceScope,
+      }),
     });
     state.sessionId = session.session_id;
     state.maxStreams = Math.min(Number(session.max_streams || 6), 6);

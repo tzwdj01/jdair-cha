@@ -94,6 +94,7 @@ class RealtimeSessionManager:
         *,
         owner_key: str,
         owner_name: str,
+        device_scope: str = "all",
     ) -> tuple[RealtimeSession, str]:
         started = time.perf_counter()
         now = utc_now()
@@ -124,6 +125,7 @@ class RealtimeSessionManager:
             + dt.timedelta(seconds=self.settings.realtime_session_ttl_seconds),
             adapter=adapter,
             updated_at=now,
+            device_scope=device_scope,
         )
         async with self._lock:
             self._prune_closed_sessions_locked()
