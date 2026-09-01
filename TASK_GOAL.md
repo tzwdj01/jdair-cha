@@ -20,15 +20,21 @@ plans.
 
 **ACTIVE PHASE: PHASE 6 — DASHBOARD CONSOLIDATION & CANARY HARDENING**
 
-**CURRENT SUBPHASE: OWNER-OBSERVED REFINEMENT — VIDEO INSPECTION WORKSPACE**
+**CURRENT SUBPHASE: OWNER BUSINESS ACCEPTANCE — V2 + LEGACY PRODUCT INTEGRATION**
 
-Production release `889d0b1` is deployed and usable. It includes the bounded
-Video Inspection Workbench visual refinement, the dedicated InspectionRecord
-route-order correction, shared-session multi-tile handoff and the minimal
-record-correction UI. V2, Legacy, Nginx and the low-rate scheduler are active;
-the protected public PostgreSQL TLS path is the accepted production path. The
-release's exact package SHA-256 and runtime commit were verified at deployment.
-This does not close M4, authorize a full rollout or authorize M5.
+Production release `9b67222` is deployed and usable. It retains the bounded
+Video Inspection Workbench visual refinement, dedicated InspectionRecord
+route-order correction, shared-session multi-tile handoff and minimal
+record-correction UI, then adds a shared V2 product navigation. V2, Legacy,
+Nginx and the low-rate scheduler are active; the protected public PostgreSQL
+TLS path remains the accepted production path. The release's exact package
+SHA-256 and runtime commit were verified at deployment.
+
+V2 and Legacy are intentionally coexisting production products. The V2 primary
+entry is `/api/v2/dashboard`; its shared navigation exposes the M0–M4 business
+pages and an explicit `经典视频监控` link back to the still-stable Legacy root
+`/`. The root entry was not switched. This does not close M4, authorize a full
+rollout, authorize Legacy retirement or authorize M5.
 
 The previous AuthorizedUser-management refinement is `COMPLETED / VERIFIED`:
 the admin-only page is live and uses the existing AuthorizedUser API without
@@ -168,6 +174,15 @@ Use only these labels: `COMPLETED / VERIFIED`, `COMPLETED / UNVERIFIED`,
   close with the survivor still playing, explicit workspace close, truthful
   uploaded-media metadata and same-origin inspection-context handoff. See
   `docs/aee/M4_VIDEO_INSPECTION_VISUAL_WORKSPACE_20260831.md`.
+- **2026-09-01 V2 + Legacy product integration:** exact package commit
+  `9b67222` was deployed with matching SHA-256 and runtime identity. All V2
+  Dashboard templates use one data-free navigation asset for the V2 product
+  pages, while the existing Legacy root remains an explicit `经典视频监控` entry.
+  Production postflight confirmed V2/Legacy/Nginx/scheduler active, V2
+  live/ready HTTP 200, the navigation asset HTTP 200 with the Legacy link, and
+  Legacy root HTTP 200. The source and extracted package suites each passed
+  336 tests (the extracted package has its intentional archive-only skips).
+  See `docs/aee/M4_PRODUCT_INTEGRATION_20260901.md`.
 
 ### COMPLETED / UNVERIFIED
 
@@ -175,7 +190,7 @@ Use only these labels: `COMPLETED / VERIFIED`, `COMPLETED / UNVERIFIED`,
   `COMPLETED / UNVERIFIED` by the approved M3 waiver.
 - Historical earlier Phase 6 candidates were deployed and rolled back before
   the current runtime. Their PostgreSQL timeout evidence remains historical;
-  it does not describe the current `889d0b1` release.
+  it does not describe the current `9b67222` release.
 - The workbench correction form is deployed, but no production correction was
   written during technical acceptance. Actual draft creation, submission and
   correction remain for a lawful Owner business-acceptance session.
@@ -186,10 +201,10 @@ Use only these labels: `COMPLETED / VERIFIED`, `COMPLETED / UNVERIFIED`,
 
 **ACTIVE PHASE: PHASE 6 — DASHBOARD CONSOLIDATION & CANARY HARDENING**
 
-**CURRENT SUBPHASE: OWNER-OBSERVED REFINEMENT — VIDEO INSPECTION WORKSPACE**
+**CURRENT SUBPHASE: OWNER BUSINESS ACCEPTANCE — V2 + LEGACY PRODUCT INTEGRATION**
 
-**STATUS: IN PROGRESS — OWNER BUSINESS ACCEPTANCE OF THE RELEASED REALTIME
-INSPECTION WORKFLOW WITHOUT ALTERING MEDIA INFRASTRUCTURE**
+**STATUS: READY FOR OWNER BUSINESS ACCEPTANCE — V2 AND LEGACY COEXIST WITHOUT
+ALTERING MEDIA INFRASTRUCTURE**
 
 Current evidence distinguishes the two source types:
 
@@ -207,13 +222,16 @@ Current evidence distinguishes the two source types:
 The released workbench preserves the secure shell, safe metadata source list,
 realtime context handoff, manual candidate confirmation and InspectionRecord
 draft/submit/audit UI. The dedicated InspectionRecord route correction, visual
-multi-tile handoff and minimal Owner correction UI are deployed. It does
-**not** claim uploaded-video playback until the required AEE comparison is
-complete.
+multi-tile handoff and minimal Owner correction UI are deployed. The shared V2
+navigation makes the workbench the visible new inspection entry while retaining
+Legacy as the mature video entry. CHA does **not** claim uploaded-video playback
+until the required AEE comparison is complete.
 
-### TODO — current Owner-Observed Refinement
+### TODO — current Owner Business Acceptance
 
-1. Owner acceptance: authorized login → realtime view → record context →
+1. Owner acceptance: enter V2 through `/api/v2/dashboard`, confirm the shared
+   navigation and explicit Legacy entry, then run authorized login → realtime
+   view → record context →
    candidate/manual confirmation → save draft / submit → record
    query/statistics/export/audit; test correction only with an intentionally
    created owner-owned record.
@@ -398,17 +416,20 @@ permission to start M5.
 | 2026-08-30 | Owner-authorized bounded scratch revalidation used current protected production PostgreSQL configuration with Candidate `a83199a`; it did not switch `current`. Raw fresh `psycopg` `SELECT 1` was only 1/3 successful, with two 10-second `OperationalError` outcomes. Candidate pool acquire/release was 2/3 successful; health check was 3/3 eventually true but 6.3–8.1 seconds; the minimal production read was 3/3 successful but 9.9–16.7 seconds. Candidate deployment and Dashboard Canary were not started. Stable V2/Legacy/Nginx and the actual M4 scheduler service remained active. See `docs/aee/M4_PHASE6_PRODUCTION_DATASTORE_BOUNDED_REVALIDATION_20260830.md`. |
 | 2026-08-31 | AEE `/v3/visual` comparison is `STATIC_EVIDENCE_ONLY`: the lawful browser context redirected to login, so only public static page evidence was used. It supports a status-first left/centre/right workspace model, not claims about camera-wall media, playback URLs or capacity. See `docs/aee/M4_AEE_VISUAL_CHA_COMPARISON.md`. |
 | 2026-08-31 | Exact package `889d0b1` was deployed as the Video Inspection Workspace visual refinement. Production browser evidence confirmed M3 same-session 1-to-2 live tiles, 1920x1080/live tracks, selective close with a surviving tile, explicit workspace close, inspection-context handoff, honest uploaded-media metadata and the corrected InspectionRecord query/export route. V2, Legacy, Nginx and scheduler remained active with zero restarts. No InspectionRecord was written in technical acceptance. See `docs/aee/M4_VIDEO_INSPECTION_VISUAL_WORKSPACE_20260831.md`. |
+| 2026-09-01 | Exact package `9b67222` was deployed as the V2 + Legacy product-integration refinement. Runtime commit and package SHA-256 matched; V2 live/ready, Legacy root, the shared navigation asset and all service states passed postflight. V2 navigation exposes M0–M4 pages with Video Inspection as the new business entry, and explicitly retains `经典视频监控` to `/`; the root entry itself was not changed. Scheduler was active and had completed successive low-rate cycles after its current start; its cumulative restart counter remained historical evidence, not a current loop. See `docs/aee/M4_PRODUCT_INTEGRATION_20260901.md`. |
 
 ---
 
 ## 12. Next Recommended Actions
 
-1. Run Owner business acceptance of the deployed workbench using a deliberate
-   test record: realtime view → context → manual candidate confirmation →
-   draft/submit → query/export/audit; test correction only against that record.
+1. Run Owner business acceptance from `/api/v2/dashboard`: navigate to the
+   workbench, validate the explicit Legacy entry, and use a deliberate test
+   record for realtime context → manual candidate confirmation → draft/submit
+   → query/export/audit. Test correction only against that record.
 2. Preserve the low-rate scheduler under natural production observation; do
    not manufacture a long polling run.
-3. Run the lawful AEE SignedUrl preview evidence comparison before proposing
-   any uploaded-video playback or durable file-to-record association.
+3. When a lawful authenticated AEE browser context is available, obtain the
+   SignedUrl preview and 9/16 multi-tile evidence before proposing uploaded
+   playback or a stream-capacity increase.
 4. Keep standalone Issue workflow, automatic matching, M4 closure, full
-   rollout and M5 out of scope until separately authorized.
+   rollout, Legacy retirement and M5 out of scope until separately authorized.
