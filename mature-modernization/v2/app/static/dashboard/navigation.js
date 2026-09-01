@@ -7,6 +7,7 @@
   const entries = [
     { id: "overview", label: "监察总览", href: "/api/v2/dashboard", active: ["overview"] },
     { id: "workbench", label: "视频监察", href: "/api/v2/dashboard/workbench", active: ["workbench"] },
+    { id: "legacy", label: "经典视频监控", href: "/", active: [] },
     { id: "inspections", label: "监察记录", href: "/api/v2/dashboard/inspections", active: ["inspections"] },
     { id: "devices", label: "设备运行", href: "/api/v2/dashboard/devices", active: ["devices"] },
     { id: "media", label: "视频上传", href: "/api/v2/dashboard/media", active: ["media"] },

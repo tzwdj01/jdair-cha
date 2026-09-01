@@ -35,6 +35,7 @@ class DashboardNavigationTests(unittest.TestCase):
         expected = {
             "监察总览": "/api/v2/dashboard",
             "视频监察": "/api/v2/dashboard/workbench",
+            "经典视频监控": "/",
             "监察记录": "/api/v2/dashboard/inspections",
             "设备运行": "/api/v2/dashboard/devices",
             "视频上传": "/api/v2/dashboard/media",
